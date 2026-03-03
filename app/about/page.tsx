@@ -191,19 +191,16 @@ function SplitHeadline({ text, className }: { text: string; className?: string }
   );
 }
 
-type BookStage = 'frontClosed' | 'open' | 'backClosed';
 type TurningSheet = {
   direction: 'forward' | 'backward';
   index: number;
 };
 
 type FrontCoverProps = {
-  closed?: boolean;
-  onOpen?: () => void;
   onSelectMember: (index: number) => void;
 };
 
-function FrontCoverPage({ closed = false, onOpen, onSelectMember }: FrontCoverProps) {
+function FrontCoverPage({ onSelectMember }: FrontCoverProps) {
   return (
     <div className="relative flex h-full flex-col overflow-hidden bg-aesthetic-white p-6 md:p-10">
       <div className="absolute inset-0 overflow-hidden">
@@ -211,7 +208,7 @@ function FrontCoverPage({ closed = false, onOpen, onSelectMember }: FrontCoverPr
           src="/images/magazine-background.avif"
           alt=""
           fill
-          priority={closed}
+          priority
           className="object-cover grayscale contrast-125 brightness-75"
         />
       </div>
@@ -232,35 +229,19 @@ function FrontCoverPage({ closed = false, onOpen, onSelectMember }: FrontCoverPr
         <span>Volume 01</span>
         <span>Issue 01</span>
       </div>
-
-      {closed && onOpen ? (
-        <button
-          type="button"
-          onClick={onOpen}
-          className="absolute right-5 top-1/2 flex h-11 w-11 -translate-y-1/2 items-center justify-center rounded-full border border-rich-black/20 bg-aesthetic-white/90 text-rich-black transition-all hover:border-guardsman-red hover:bg-guardsman-red hover:text-aesthetic-white"
-          aria-label="Open book"
-        >
-          <ChevronRight className="h-4 w-4" />
-        </button>
-      ) : null}
     </div>
   );
 }
 
 type BackCoverProps = {
-  closed?: boolean;
-  onClose?: () => void;
-  onOpen?: () => void;
 };
 
-function BackCoverPage({ closed = false, onClose, onOpen }: BackCoverProps) {
+function BackCoverPage({}: BackCoverProps) {
   return (
     <div className="relative flex h-full flex-col items-center justify-center overflow-hidden bg-aesthetic-white p-8 text-center">
       <div className="absolute inset-0 bg-[radial-gradient(circle_at_top,rgba(197,0,0,0.12),transparent_42%)]" />
       <div className="relative">
-        <p className="font-imperial text-4xl text-guardsman-red md:text-5xl">
-          {closed ? 'Closed edition' : 'Back cover'}
-        </p>
+        <p className="font-imperial text-4xl text-guardsman-red md:text-5xl">Back cover</p>
         <h2 className="mt-4 font-abril text-4xl uppercase leading-none text-rich-black md:text-5xl">
           The chapter continues.
         </h2>
@@ -275,28 +256,6 @@ function BackCoverPage({ closed = false, onClose, onOpen }: BackCoverProps) {
           Join The Collective
         </Link>
       </div>
-
-      {onClose ? (
-        <button
-          type="button"
-          onClick={onClose}
-          className="absolute right-5 top-1/2 flex h-11 w-11 -translate-y-1/2 items-center justify-center rounded-full border border-rich-black/20 bg-aesthetic-white/90 text-rich-black transition-all hover:border-guardsman-red hover:bg-guardsman-red hover:text-aesthetic-white"
-          aria-label="Close into back cover"
-        >
-          <ChevronRight className="h-4 w-4" />
-        </button>
-      ) : null}
-
-      {closed && onOpen ? (
-        <button
-          type="button"
-          onClick={onOpen}
-          className="absolute left-5 top-1/2 flex h-11 w-11 -translate-y-1/2 items-center justify-center rounded-full border border-rich-black/20 bg-aesthetic-white/90 text-rich-black transition-all hover:border-guardsman-red hover:bg-guardsman-red hover:text-aesthetic-white"
-          aria-label="Open back cover"
-        >
-          <ChevronLeft className="h-4 w-4" />
-        </button>
-      ) : null}
     </div>
   );
 }
@@ -319,7 +278,7 @@ function ImageProfilePage({
   previousLabel,
 }: Omit<SpreadPageProps, 'onNext' | 'nextLabel'>) {
   return (
-    <div className="relative flex h-full flex-col overflow-hidden border border-r-0 border-rich-black/10 bg-aesthetic-white shadow-[-16px_0_40px_rgba(10,10,10,0.08)]">
+    <div className="relative flex h-full flex-col overflow-hidden border border-r-0 border-rich-black/10 bg-aesthetic-white">
       <div className={`absolute inset-0 bg-gradient-to-br ${member.accent}`} />
       <div className="absolute inset-0 bg-[radial-gradient(circle_at_top_right,rgba(255,255,255,0.18),transparent_30%)]" />
       <div className="absolute inset-0 opacity-30 [background-image:linear-gradient(rgba(255,255,255,0.16)_1px,transparent_1px),linear-gradient(90deg,rgba(255,255,255,0.16)_1px,transparent_1px)] [background-size:42px_42px]" />
@@ -350,7 +309,7 @@ function TextProfilePage({
   nextLabel,
 }: Omit<SpreadPageProps, 'onPrevious' | 'previousLabel'>) {
   return (
-    <div className="relative flex h-full flex-col overflow-hidden border border-rich-black/10 bg-aesthetic-white shadow-[16px_0_40px_rgba(10,10,10,0.08)]">
+    <div className="relative flex h-full flex-col overflow-hidden border border-rich-black/10 bg-aesthetic-white">
       <div className="flex h-full flex-col p-6 md:p-8">
         <div className="flex items-start justify-between">
           <div>
@@ -479,21 +438,13 @@ function PageSheet({
 }
 
 export default function AboutPage() {
-  const [bookStage, setBookStage] = useState<BookStage>('frontClosed');
-  const [settledIndex, setSettledIndex] = useState(0);
+  const [flippedCount, setFlippedCount] = useState(0);
   const [turningSheet, setTurningSheet] = useState<TurningSheet | null>(null);
-  const lastSpreadIndex = members.length - 1;
-
-  const openBook = () => {
-    setSettledIndex(0);
-    setTurningSheet(null);
-    setBookStage('open');
-  };
+  const totalSheets = members.length + 1;
 
   const openBookToMember = (index: number) => {
-    setSettledIndex(index);
     setTurningSheet(null);
-    setBookStage('open');
+    setFlippedCount(index + 1);
   };
 
   const goNext = () => {
@@ -501,12 +452,11 @@ export default function AboutPage() {
       return;
     }
 
-    if (settledIndex === lastSpreadIndex) {
-      setBookStage('backClosed');
+    if (flippedCount >= totalSheets) {
       return;
     }
 
-    setTurningSheet({ direction: 'forward', index: settledIndex + 1 });
+    setTurningSheet({ direction: 'forward', index: flippedCount });
   };
 
   const goPrevious = () => {
@@ -514,23 +464,11 @@ export default function AboutPage() {
       return;
     }
 
-    if (settledIndex === 0) {
-      setBookStage('frontClosed');
+    if (flippedCount <= 0) {
       return;
     }
 
-    setTurningSheet({ direction: 'backward', index: settledIndex });
-  };
-
-  const closeBackCover = () => {
-    setTurningSheet(null);
-    setBookStage('backClosed');
-  };
-
-  const reopenBackCover = () => {
-    setSettledIndex(lastSpreadIndex);
-    setTurningSheet(null);
-    setBookStage('open');
+    setTurningSheet({ direction: 'backward', index: flippedCount - 1 });
   };
 
   const handleTurnComplete = (index: number) => {
@@ -539,9 +477,9 @@ export default function AboutPage() {
     }
 
     if (turningSheet.direction === 'forward') {
-      setSettledIndex(index);
+      setFlippedCount(index + 1);
     } else {
-      setSettledIndex(index - 1);
+      setFlippedCount(index);
     }
 
     setTurningSheet(null);
@@ -557,93 +495,65 @@ export default function AboutPage() {
 
         <div className="relative h-full max-h-[720px] w-full max-w-6xl">
           <div className="book-perspective relative h-full w-full rounded-[10px] bg-transparent">
-            <div className="absolute inset-0 rounded-[10px] bg-rich-black/8 blur-3xl" />
+            <div className="absolute inset-0">
+              <div className="absolute inset-y-0 left-1/2 hidden w-px bg-rich-black/10 lg:block" />
 
-            <AnimatePresence mode="wait">
-              {bookStage === 'frontClosed' ? (
-                <motion.div
-                  key="front-closed"
-                  initial={{ opacity: 0, rotateY: -10, x: 48 }}
-                  animate={{ opacity: 1, rotateY: 0, x: 0 }}
-                  exit={{ opacity: 0, rotateY: -145, x: -90, scale: 0.98 }}
-                  transition={{ duration: 0.95, ease: [0.22, 1, 0.36, 1] }}
-                  style={{ transformOrigin: 'left center', transformStyle: 'preserve-3d' }}
-                  className="absolute left-1/2 top-0 h-full w-1/2 -translate-x-1/2 overflow-hidden rounded-[10px] border border-rich-black/10 shadow-[0_35px_80px_rgba(10,10,10,0.18)]"
-                >
-                  <FrontCoverPage closed onOpen={openBook} onSelectMember={openBookToMember} />
-                </motion.div>
-              ) : null}
-            </AnimatePresence>
-
-            <AnimatePresence mode="wait">
-              {bookStage === 'open' ? (
-                <motion.div
-                  key="book-open-shell"
-                  initial={{ opacity: 0, scale: 0.99 }}
-                  animate={{ opacity: 1, scale: 1 }}
-                  exit={{ opacity: 0, scale: 0.99 }}
-                  transition={{ duration: 0.45, ease: [0.22, 1, 0.36, 1] }}
-                  className="absolute inset-0"
-                >
-                  <div className="absolute inset-y-0 left-1/2 hidden w-px bg-rich-black/10 lg:block" />
-                  <div className="absolute inset-y-0 left-1/2 w-14 -translate-x-1/2 bg-[radial-gradient(circle,rgba(0,0,0,0.08),transparent_70%)] blur-xl" />
+              <div className="absolute left-0 top-0 h-full w-1/2 overflow-hidden border border-r-0 border-transparent bg-transparent" />
+              <div className="absolute right-0 top-0 h-full w-1/2 overflow-hidden border border-l-0 border-transparent bg-transparent" />
 
                   {[
-                    {
-                      front: <FrontCoverPage onSelectMember={openBookToMember} />,
-                      back: (
-                        <ImageProfilePage
-                          member={members[0]}
-                          index={0}
-                          total={members.length}
-                          onPrevious={goPrevious}
-                          previousLabel="Close to front cover"
-                        />
-                      ),
-                    },
-                    ...members.slice(0, -1).map((member, index) => ({
-                      front: (
-                        <TextProfilePage
-                          member={member}
-                          index={index}
-                          total={members.length}
-                          onNext={goNext}
-                          nextLabel="Next member"
-                        />
-                      ),
-                      back: (
-                        <ImageProfilePage
-                          member={members[index + 1]}
-                          index={index + 1}
-                          total={members.length}
-                          onPrevious={goPrevious}
-                          previousLabel="Previous member"
-                        />
-                      ),
-                    })),
-                    {
-                      front: (
-                        <TextProfilePage
-                          member={members[members.length - 1]}
-                          index={members.length - 1}
-                          total={members.length}
-                          onNext={closeBackCover}
-                          nextLabel="Close to back cover"
-                        />
-                      ),
-                      back: <BackCoverPage />,
-                    },
+                {
+                  front: <FrontCoverPage onSelectMember={openBookToMember} />,
+                  back: (
+                    <ImageProfilePage
+                      member={members[0]}
+                      index={0}
+                      total={members.length}
+                      onPrevious={goPrevious}
+                      previousLabel="Previous page"
+                    />
+                  ),
+                },
+                ...members.slice(0, -1).map((member, index) => ({
+                  front: (
+                    <TextProfilePage
+                      member={member}
+                      index={index}
+                      total={members.length}
+                      onNext={goNext}
+                      nextLabel="Next member"
+                    />
+                  ),
+                  back: (
+                    <ImageProfilePage
+                      member={members[index + 1]}
+                      index={index + 1}
+                      total={members.length}
+                      onPrevious={goPrevious}
+                      previousLabel="Previous member"
+                    />
+                  ),
+                })),
+                {
+                  front: (
+                    <TextProfilePage
+                      member={members[members.length - 1]}
+                      index={members.length - 1}
+                      total={members.length}
+                      onNext={goNext}
+                      nextLabel="Next page"
+                    />
+                  ),
+                  back: <BackCoverPage />,
+                },
                   ].map((sheet, index, sheets) => {
                     const isTurning = turningSheet?.index === index;
-                    const isFlipped =
-                      index <= settledIndex ||
-                      (turningSheet?.direction === 'forward' && index === turningSheet.index);
                     const renderedFlipped =
-                      turningSheet?.direction === 'backward' && index === turningSheet.index
-                        ? false
-                        : isFlipped;
-                    const canFlipBackward = !turningSheet && index === settledIndex;
-                    const canFlipForward = !turningSheet && index === settledIndex + 1;
+                      (index < flippedCount &&
+                        !(turningSheet?.direction === 'backward' && index === turningSheet.index)) ||
+                      (turningSheet?.direction === 'forward' && index === turningSheet.index);
+                    const canFlipBackward = !turningSheet && index === flippedCount - 1;
+                    const canFlipForward = !turningSheet && index === flippedCount;
 
                     return (
                       <PageSheet
@@ -656,31 +566,13 @@ export default function AboutPage() {
                         canFlipBackward={canFlipBackward}
                         front={sheet.front}
                         back={sheet.back}
-                        onForward={index === sheets.length - 1 ? closeBackCover : goNext}
+                        onForward={goNext}
                         onBackward={goPrevious}
                         onTurnComplete={() => handleTurnComplete(index)}
                       />
                     );
                   })}
-                </motion.div>
-              ) : null}
-            </AnimatePresence>
-
-            <AnimatePresence mode="wait">
-              {bookStage === 'backClosed' ? (
-                <motion.div
-                  key="back-closed"
-                  initial={{ opacity: 0, rotateY: 145, x: 90, scale: 0.98 }}
-                  animate={{ opacity: 1, rotateY: 0, x: 0 }}
-                  exit={{ opacity: 0, rotateY: 145, x: 90 }}
-                  transition={{ duration: 0.95, ease: [0.22, 1, 0.36, 1] }}
-                  style={{ transformOrigin: 'right center', transformStyle: 'preserve-3d' }}
-                  className="absolute left-1/2 top-0 h-full w-1/2 -translate-x-1/2 overflow-hidden rounded-[10px] border border-rich-black/10 shadow-[0_35px_80px_rgba(10,10,10,0.18)]"
-                >
-                  <BackCoverPage closed onOpen={reopenBackCover} />
-                </motion.div>
-              ) : null}
-            </AnimatePresence>
+            </div>
           </div>
         </div>
       </div>
@@ -692,11 +584,11 @@ export default function AboutPage() {
         className="pointer-events-none fixed bottom-6 left-1/2 z-[200] flex -translate-x-1/2 items-center gap-4 font-mono text-[10px] uppercase tracking-[0.35em] text-rich-black/35"
       >
         <ChevronLeft className="h-3 w-3" />
-        {bookStage === 'frontClosed'
-          ? 'Open The Book'
-          : bookStage === 'backClosed'
-            ? 'Back Cover Closed'
-            : `Board Spread ${String(settledIndex + 1).padStart(2, '0')}`}
+        {flippedCount === 0
+          ? 'Front Cover'
+          : flippedCount === totalSheets
+            ? 'Back Cover'
+            : `Board Spread ${String(flippedCount).padStart(2, '0')}`}
         <ChevronRight className="h-3 w-3" />
       </motion.div>
 
