@@ -4,7 +4,6 @@ import React, { useState } from 'react';
 import { motion } from 'motion/react';
 import { 
   FlaskConical, 
-  Search, 
   Filter, 
   ChevronRight, 
   Clock, 

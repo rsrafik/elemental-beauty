@@ -9,7 +9,6 @@ import {
   Calendar, 
   Settings, 
   LogOut, 
-  Search, 
   Plus, 
   Filter,
   CheckCircle2,
@@ -94,15 +93,6 @@ const Header = ({ title }: { title: string }) => {
       <h1 className="font-header text-xl text-rich-black uppercase tracking-widest">{title}</h1>
       
       <div className="flex items-center gap-8">
-        <div className="relative hidden md:block">
-          <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-rich-black/20" />
-          <input 
-            type="text" 
-            placeholder="SEARCH..." 
-            className="bg-pale-powder/30 border-none pl-10 pr-6 py-2 text-[10px] font-header uppercase tracking-widest focus:ring-1 focus:ring-guardsman-red outline-none w-64 transition-all"
-          />
-        </div>
-        
         <button className="relative w-10 h-10 bg-pale-powder/30 flex items-center justify-center hover:bg-guardsman-red hover:text-white transition-colors">
           <Bell className="w-5 h-5" />
           <span className="absolute top-2 right-2 w-2 h-2 bg-guardsman-red border-2 border-white" />
