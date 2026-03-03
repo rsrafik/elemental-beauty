@@ -13,60 +13,15 @@ import {
   Sparkles,
   X,
 } from 'lucide-react';
-
-const members = [
-  {
-    name: 'Catherine Chang',
-    role: 'President',
-    kicker: 'Chemistry Major',
-    quote: 'Sets the pace for the chapter and keeps the vision sharp.',
-    bio: 'Catherine leads Elemental Beauty with a focus on clear direction, polished programming, and a chapter identity that feels authored instead of improvised.',
-    caption: 'Leadership, programming, and chapter direction.',
-    stamp: 'Issue 01',
-    accent: 'from-[#250000] via-[#8f0e18] to-[#d34040]',
-    instagram: 'https://www.instagram.com/ting._0425/',
-  },
-  {
-    name: 'Azu Nakao',
-    role: 'Vice-President',
-    kicker: 'Marketing Major',
-    quote: 'Turns ideas into calendars, meetings, and work that actually lands.',
-    bio: 'Azu keeps operations moving across the board, handling coordination and follow-through so the chapter can execute consistently instead of relying on last-minute momentum.',
-    caption: 'Operations, continuity, and execution.',
-    stamp: 'Issue 02',
-    accent: 'from-[#120d16] via-[#5f1d32] to-[#c47157]',
-    instagram: 'https://www.instagram.com/azuazu301/',
-  },
-  {
-    name: 'Rachel Rafik',
-    role: 'Software Developer',
-    kicker: 'Computer Science Major',
-    quote: 'Builds the chapter online with the same care as the work happening in person.',
-    bio: 'Rachel develops the site and digital identity for Elemental Beauty, shaping the public-facing experience so the chapter reads as deliberate, modern, and distinct.',
-    caption: 'Web, design system, and digital presence.',
-    stamp: 'Issue 03',
-    accent: 'from-[#09131b] via-[#103447] to-[#c50000]',
-    instagram: 'https://www.instagram.com/shaymarafi/',
-  },
-  {
-    name: 'Anjali Muthyala',
-    role: 'Treasurer',
-    kicker: 'Business Major',
-    quote: 'Keeps the chapter stable by treating the numbers like infrastructure.',
-    bio: 'Anjali manages dues, budgets, and purchasing with discipline, making sure the chapter can support labs, materials, and growth without losing control of the details.',
-    caption: 'Budgeting, dues, and sustainable growth.',
-    stamp: 'Issue 04',
-    accent: 'from-[#16110f] via-[#5a2d17] to-[#b6551f]',
-    instagram: 'https://www.instagram.com/anjali_571/',
-  },
-] as const;
+import { BoardBookCover, BoardBookMember, useBoardBookData } from '@/lib/board-book';
 
 const menuItems = [
   { id: '01', label: 'HOME', href: '/' },
   { id: '02', label: 'LABS', href: '/labs' },
   { id: '03', label: 'ABOUT', href: '/about' },
-  { id: '04', label: 'JOIN', href: '/join' },
-  { id: '05', label: 'PORTAL', href: '/portal' },
+  { id: '04', label: 'SPONSORS', href: '/sponsors' },
+  { id: '05', label: 'JOIN', href: '/join' },
+  { id: '06', label: 'PORTAL', href: '/portal' },
 ];
 
 function Navbar() {
@@ -189,6 +144,21 @@ function SplitHeadline({ text, className }: { text: string; className?: string }
   );
 }
 
+function BoardBookPlaceholder() {
+  return (
+    <div className="absolute inset-0 overflow-hidden bg-[linear-gradient(135deg,#efebe8,#f8f4f1_48%,#e4dcda)]">
+      <div className="absolute inset-0 opacity-70 [background-image:linear-gradient(rgba(0,0,0,0.05)_1px,transparent_1px),linear-gradient(90deg,rgba(0,0,0,0.05)_1px,transparent_1px)] [background-size:42px_42px]" />
+      <div className="absolute inset-x-[10%] top-[10%] h-[78%] border border-rich-black/10" />
+      <div className="absolute left-[16%] top-[18%] h-[22%] w-[18%] border border-rich-black/10 bg-white/40" />
+      <div className="absolute left-[40%] top-[18%] h-[22%] w-[22%] border border-rich-black/10 bg-rich-black/5" />
+      <div className="absolute left-[16%] top-[46%] h-[28%] w-[46%] border border-rich-black/10 bg-[linear-gradient(135deg,rgba(255,255,255,0.52),rgba(0,0,0,0.03))]" />
+      <div className="absolute right-[14%] top-[18%] h-[56%] w-[18%] border border-rich-black/10 bg-[linear-gradient(180deg,rgba(255,255,255,0.4),rgba(0,0,0,0.06))]" />
+      <div className="absolute right-[18%] top-[24%] h-[12%] w-[10%] rounded-full border border-rich-black/10" />
+      <div className="absolute left-[18%] top-[50%] h-[20%] w-[42%] bg-[linear-gradient(135deg,transparent_0%,transparent_46%,rgba(0,0,0,0.08)_46%,rgba(0,0,0,0.08)_50%,transparent_50%)] opacity-70" />
+    </div>
+  );
+}
+
 type TurningSheet = {
   direction: 'forward' | 'backward';
   index: number;
@@ -197,10 +167,11 @@ type TurningSheet = {
 type BookPosition = 'front' | 'open' | 'back';
 
 type FrontCoverProps = {
+  cover: BoardBookCover;
   onSelectMember: (index: number) => void;
 };
 
-function FrontCoverPage({ onSelectMember }: FrontCoverProps) {
+function FrontCoverPage({ cover }: FrontCoverProps) {
   return (
     <div className="relative flex h-full flex-col overflow-hidden bg-aesthetic-white p-6 md:p-10">
       <div className="absolute inset-0 overflow-hidden">
@@ -217,7 +188,7 @@ function FrontCoverPage({ onSelectMember }: FrontCoverProps) {
       <div className="relative flex flex-1 items-center">
         <div className="max-w-[62%]">
           <p className="font-imperial text-4xl text-rich-black md:text-6xl">
-            2026 edition
+            {cover.editionLabel}
           </p>
           <h1 className="mt-5 max-w-[6.5ch] font-abril text-6xl uppercase leading-[0.82] tracking-tight text-[#e01212] drop-shadow-[0_3px_18px_rgba(0,0,0,0.45)] md:text-[7.4rem]">
             The Board Book
@@ -226,8 +197,8 @@ function FrontCoverPage({ onSelectMember }: FrontCoverProps) {
       </div>
 
       <div className="relative flex items-center justify-between border-t border-white/30 pt-4 font-mono text-[10px] uppercase tracking-[0.35em] text-white/90">
-        <span>Volume 01</span>
-        <span>Issue 01</span>
+        <span>Volume {cover.volumeNumber}</span>
+        <span>Issue {cover.issueNumber}</span>
       </div>
     </div>
   );
@@ -257,7 +228,7 @@ function BackCoverPage({}: BackCoverProps) {
 }
 
 type SpreadPageProps = {
-  member: (typeof members)[number];
+  member: BoardBookMember;
   index: number;
   total: number;
   onPrevious: () => void;
@@ -275,16 +246,19 @@ function ImageProfilePage({
 }: Omit<SpreadPageProps, 'onNext' | 'nextLabel'>) {
   return (
     <div className="relative flex h-full flex-col overflow-hidden border border-r-0 border-rich-black/10 bg-aesthetic-white">
-      <div className={`absolute inset-0 bg-gradient-to-br ${member.accent}`} />
-      <div className="absolute inset-0 bg-[radial-gradient(circle_at_top_right,rgba(255,255,255,0.18),transparent_30%)]" />
-      <div className="absolute inset-0 opacity-30 [background-image:linear-gradient(rgba(255,255,255,0.16)_1px,transparent_1px),linear-gradient(90deg,rgba(255,255,255,0.16)_1px,transparent_1px)] [background-size:42px_42px]" />
-      <div className="absolute inset-x-[10%] top-[10%] h-[78%] border border-white/14" />
-      <div className="absolute left-[16%] top-[18%] h-[22%] w-[18%] border border-white/16 bg-white/6" />
-      <div className="absolute left-[40%] top-[18%] h-[22%] w-[22%] border border-white/12 bg-black/10" />
-      <div className="absolute left-[16%] top-[46%] h-[28%] w-[46%] border border-white/16 bg-[linear-gradient(135deg,rgba(255,255,255,0.12),rgba(255,255,255,0.02))]" />
-      <div className="absolute right-[14%] top-[18%] h-[56%] w-[18%] border border-white/12 bg-[linear-gradient(180deg,rgba(255,255,255,0.22),rgba(0,0,0,0.08))]" />
-      <div className="absolute right-[18%] top-[24%] h-[12%] w-[10%] rounded-full border border-white/16" />
-      <div className="absolute left-[18%] top-[50%] h-[20%] w-[42%] bg-[linear-gradient(135deg,transparent_0%,transparent_46%,rgba(255,255,255,0.2)_46%,rgba(255,255,255,0.2)_50%,transparent_50%)] opacity-75" />
+      {member.imageDataUrl ? (
+        <>
+          {/* eslint-disable-next-line @next/next/no-img-element */}
+          <img
+            src={member.imageDataUrl}
+            alt={member.name}
+            className="absolute inset-0 h-full w-full object-cover"
+          />
+          <div className="absolute inset-0 bg-[linear-gradient(180deg,rgba(0,0,0,0.08),rgba(0,0,0,0.2))]" />
+        </>
+      ) : (
+        <BoardBookPlaceholder />
+      )}
 
       <div className="relative flex h-full flex-col p-6 md:p-8">
         <div className="mt-auto flex items-end justify-between">
@@ -309,7 +283,9 @@ function TextProfilePage({
       <div className="flex h-full flex-col p-6 md:p-8">
         <div className="flex items-start justify-between">
           <div>
-            <p className="font-mono text-[10px] uppercase tracking-[0.35em] text-rich-black/40">{member.stamp}</p>
+            <p className="font-mono text-[10px] uppercase tracking-[0.35em] text-rich-black/40">
+              Issue {String(index + 1).padStart(2, '0')}
+            </p>
             <p className="mt-2 font-header text-sm uppercase tracking-[0.3em] text-guardsman-red">{member.kicker}</p>
           </div>
           <div className="font-mono text-[10px] uppercase tracking-[0.35em] text-rich-black/35">Elementist</div>
@@ -434,11 +410,18 @@ function PageSheet({
 }
 
 export default function AboutPage() {
+  const { data, isReady } = useBoardBookData();
+  const members = data.members;
+  const cover = data.cover;
   const [flippedCount, setFlippedCount] = useState(0);
   const [turningSheet, setTurningSheet] = useState<TurningSheet | null>(null);
   const [queuedTurn, setQueuedTurn] = useState<TurningSheet | null>(null);
   const [bookPosition, setBookPosition] = useState<BookPosition>('front');
   const totalSheets = members.length + 1;
+
+  if (!isReady || members.length === 0) {
+    return null;
+  }
 
   const openBookToMember = (index: number) => {
     setTurningSheet(null);
@@ -515,20 +498,55 @@ export default function AboutPage() {
   };
 
   return (
-    <main className="flex h-screen flex-col overflow-hidden bg-pale-powder selection:bg-guardsman-red selection:text-white">
+    <motion.main
+      initial={{ opacity: 0 }}
+      animate={{ opacity: 1 }}
+      transition={{ duration: 0.35, ease: [0.22, 1, 0.36, 1] }}
+      className="relative flex h-screen flex-col overflow-hidden bg-pale-powder selection:bg-guardsman-red selection:text-white"
+    >
+      <motion.div
+        initial={{ scaleX: 1 }}
+        animate={{ scaleX: 0 }}
+        transition={{ duration: 0.7, ease: [0.76, 0, 0.24, 1] }}
+        className="pointer-events-none absolute inset-0 z-[420] origin-right bg-aesthetic-white"
+      />
+      <motion.div
+        initial={{ opacity: 0.55 }}
+        animate={{ opacity: 0 }}
+        transition={{ duration: 0.45, ease: [0.22, 1, 0.36, 1] }}
+        className="pointer-events-none absolute inset-0 z-[410] bg-rich-black"
+      />
+
       <Navbar />
 
-      <div className="relative flex flex-1 items-center justify-center overflow-hidden px-4 pb-4 pt-24 md:px-8 md:pb-8">
+      <motion.div
+        initial={{ opacity: 0, y: 34, scale: 0.982 }}
+        animate={{ opacity: 1, y: 0, scale: 1 }}
+        transition={{ duration: 0.8, delay: 0.08, ease: [0.22, 1, 0.36, 1] }}
+        className="relative flex flex-1 items-center justify-center overflow-hidden px-4 pb-4 pt-24 md:px-8 md:pb-8"
+      >
         <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(circle_at_top,rgba(197,0,0,0.1),transparent_46%)]" />
         <div className="pointer-events-none absolute inset-x-0 bottom-0 h-36 bg-[linear-gradient(180deg,transparent,rgba(10,10,10,0.08))]" />
 
         <div className="relative h-full max-h-[720px] w-full max-w-6xl">
           <motion.div
-            initial={false}
+            initial={{ opacity: 0, y: 42, scale: 0.94, rotateX: 10, rotateY: -8 }}
             animate={{
+              opacity: 1,
+              y: 0,
+              scale: 1,
+              rotateX: 0,
+              rotateY: 0,
               x: bookPosition === 'front' ? '-25%' : bookPosition === 'back' ? '25%' : '0%',
             }}
-            transition={{ duration: 0.55, ease: [0.22, 1, 0.36, 1] }}
+            transition={{
+              opacity: { duration: 0.42, delay: 0.14, ease: [0.22, 1, 0.36, 1] },
+              y: { duration: 0.85, delay: 0.14, ease: [0.22, 1, 0.36, 1] },
+              scale: { duration: 0.85, delay: 0.14, ease: [0.22, 1, 0.36, 1] },
+              rotateX: { duration: 0.85, delay: 0.14, ease: [0.22, 1, 0.36, 1] },
+              rotateY: { duration: 0.85, delay: 0.14, ease: [0.22, 1, 0.36, 1] },
+              x: { duration: 0.55, ease: [0.22, 1, 0.36, 1] },
+            }}
             onAnimationComplete={handleBookPositionComplete}
             className="book-perspective relative h-full w-full rounded-[10px] bg-transparent"
           >
@@ -540,7 +558,7 @@ export default function AboutPage() {
 
                   {[
                 {
-                  front: <FrontCoverPage onSelectMember={openBookToMember} />,
+                  front: <FrontCoverPage cover={cover} onSelectMember={openBookToMember} />,
                   back: (
                     <ImageProfilePage
                       member={members[0]}
@@ -612,12 +630,12 @@ export default function AboutPage() {
             </div>
           </motion.div>
         </div>
-      </div>
+      </motion.div>
 
       <motion.div
         initial={{ opacity: 0 }}
         animate={{ opacity: 1 }}
-        transition={{ delay: 1.2 }}
+        transition={{ delay: 0.95, duration: 0.45 }}
         className="pointer-events-none fixed bottom-6 left-1/2 z-[200] flex -translate-x-1/2 items-center gap-4 font-mono text-[10px] uppercase tracking-[0.35em] text-rich-black/35"
       >
         <ChevronLeft className="h-3 w-3" />
@@ -630,6 +648,6 @@ export default function AboutPage() {
           perspective: 2600px;
         }
       `}</style>
-    </main>
+    </motion.main>
   );
 }

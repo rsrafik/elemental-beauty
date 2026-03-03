@@ -14,60 +14,14 @@ import {
 } from 'lucide-react';
 import Link from 'next/link';
 import Image from 'next/image';
-
-const MOCK_LABS = [
-  { 
-    id: '1', 
-    title: 'Vitamin C Serum', 
-    date: 'Feb 15, 2024', 
-    img: 'https://picsum.photos/seed/serum-vogue/800/600',
-    tags: ['Antioxidant', 'Formulation'],
-    difficulty: 'Intermediate',
-    time: '2 hours',
-    description: 'A stable, high-potency Vitamin C serum formulation using L-Ascorbic Acid and Ferulic Acid.',
-    visibility: 'Public'
-  },
-  { 
-    id: '2', 
-    title: 'Hydrating Mist', 
-    date: 'Jan 28, 2024', 
-    img: 'https://picsum.photos/seed/mist-vogue/800/600',
-    tags: ['Hydration', 'Botanical'],
-    difficulty: 'Beginner',
-    time: '1 hour',
-    description: 'Refreshing facial mist with rose water, glycerin, and hyaluronic acid for instant hydration.',
-    visibility: 'Public'
-  },
-  { 
-    id: '3', 
-    title: 'Mineral Sunscreen', 
-    date: 'Dec 12, 2023', 
-    img: 'https://picsum.photos/seed/sun-vogue/800/600',
-    tags: ['SPF', 'Physical Filter'],
-    difficulty: 'Advanced',
-    time: '3 hours',
-    description: 'Broad-spectrum SPF 30 formulation using non-nano Zinc Oxide and skin-soothing botanicals.',
-    visibility: 'Members Only'
-  },
-  { 
-    id: '4', 
-    title: 'Gentle Cleanser', 
-    date: 'Nov 05, 2023', 
-    img: 'https://picsum.photos/seed/clean-vogue/800/600',
-    tags: ['Cleansing', 'pH Balanced'],
-    difficulty: 'Beginner',
-    time: '1.5 hours',
-    description: 'A non-foaming, pH-balanced cream cleanser designed for sensitive skin barriers.',
-    visibility: 'Public'
-  },
-];
+import { siteLabs } from '@/lib/site-labs';
 
 const LabsPage = () => {
   const [filter, setFilter] = useState('All');
 
   const filteredLabs = filter === 'All' 
-    ? MOCK_LABS 
-    : MOCK_LABS.filter(lab => lab.tags.includes(filter) || lab.difficulty === filter);
+    ? siteLabs
+    : siteLabs.filter(lab => lab.tags.includes(filter) || lab.difficulty === filter);
 
   return (
     <main className="min-h-screen bg-aesthetic-white selection:bg-guardsman-red selection:text-white pt-24 pb-20">

@@ -1,11 +1,10 @@
 'use client';
 
-import React, { useState, useRef, useEffect } from 'react';
+import React, { useState, useRef } from 'react';
 import { motion, AnimatePresence, useScroll, useTransform } from 'motion/react';
 import { FlaskConical, Menu, ArrowRight, Instagram, Twitter, Facebook, Sparkles, Users, Calendar, X, ChevronLeft, ChevronRight } from 'lucide-react';
 import Image from 'next/image';
 import Link from 'next/link';
-import { useRouter } from 'next/navigation';
 
 const Navbar = () => {
   const [isMenuOpen, setIsMenuOpen] = useState(false);
@@ -14,7 +13,7 @@ const Navbar = () => {
     { id: '01', label: 'HOME', href: '/' },
     { id: '02', label: 'LABS', href: '/labs' },
     { id: '03', label: 'ABOUT', href: '/about' },
-    { id: '04', label: 'SPONSORS', href: '#' },
+    { id: '04', label: 'SPONSORS', href: '/sponsors' },
     { id: '05', label: 'JOIN', href: '/join' },
     { id: '06', label: 'PORTAL', href: '/portal' },
   ];
@@ -105,18 +104,24 @@ const Navbar = () => {
 
 const Hero = () => {
   const containerRef = useRef(null);
+  const heroTitle = [
+    ['THE', 'MODERN'],
+    ['ELEMENTIST'],
+  ];
   const { scrollYProgress } = useScroll({
     target: containerRef,
     offset: ["start start", "end start"]
   });
 
-  const y = useTransform(scrollYProgress, [0, 1], ["0%", "50%"]);
+  const imageY = useTransform(scrollYProgress, [0, 1], ["0%", "18%"]);
+  const contentY = useTransform(scrollYProgress, [0, 1], ["0%", "32%"]);
+  const titleY = useTransform(scrollYProgress, [0, 1], ["0%", "10%"]);
   const opacity = useTransform(scrollYProgress, [0, 0.8], [1, 0]);
-  const scale = useTransform(scrollYProgress, [0, 1], [1, 1.1]);
+  const scale = useTransform(scrollYProgress, [0, 1], [1, 1.12]);
 
   return (
     <section ref={containerRef} className="relative h-screen flex items-center justify-center overflow-hidden pt-20">
-      <motion.div style={{ scale }} className="absolute inset-0 z-0">
+      <motion.div style={{ y: imageY, scale }} className="absolute inset-0 z-0">
         <Image
           src="https://picsum.photos/seed/cosmetic-lab-vogue/1920/1080"
           alt="Elemental Beauty Hero"
@@ -128,22 +133,74 @@ const Hero = () => {
         <div className="absolute inset-0 bg-gradient-to-t from-rich-black/60 via-transparent to-transparent" />
       </motion.div>
 
-      <motion.div style={{ y, opacity }} className="relative z-10 text-center px-6">
+      <motion.div style={{ y: contentY, opacity }} className="relative z-10 text-center px-6">
         <motion.div
           initial={{ opacity: 0, y: 30 }}
           animate={{ opacity: 1, y: 0 }}
           transition={{ duration: 0.8, ease: "easeOut", delay: 0.2 }}
         >
-          <span className="font-sarina text-guardsman-red text-3xl md:text-5xl mb-4 block">
+          <motion.span
+            initial={{ opacity: 0, y: 18, rotate: -2 }}
+            animate={{ opacity: 1, y: 0, rotate: 0 }}
+            transition={{ duration: 0.7, ease: [0.22, 1, 0.36, 1], delay: 0.18 }}
+            className="font-sarina text-guardsman-red text-3xl md:text-5xl mb-4 block"
+          >
             Science Meets Skincare
-          </span>
-          <h2 className="font-abril text-6xl md:text-9xl text-aesthetic-white leading-none mb-8">
-            THE MODERN <br /> ELEMENTIST
-          </h2>
+          </motion.span>
+          <motion.h2
+            style={{ y: titleY }}
+            initial="hidden"
+            animate="visible"
+            variants={{
+              visible: {
+                transition: {
+                  staggerChildren: 0.14,
+                  delayChildren: 0.24,
+                },
+              },
+            }}
+            className="font-abril text-6xl md:text-9xl text-aesthetic-white leading-none mb-8"
+          >
+            {heroTitle.map((line, lineIndex) => (
+              <span key={`line-${lineIndex}`} className="block overflow-hidden">
+                {line.map((word, wordIndex) => (
+                  <motion.span
+                    key={`${word}-${wordIndex}`}
+                    variants={{
+                      hidden: {
+                        y: '112%',
+                        opacity: 0,
+                        rotate: 3,
+                        filter: 'blur(8px)',
+                      },
+                      visible: {
+                        y: '0%',
+                        opacity: 1,
+                        rotate: 0,
+                        filter: 'blur(0px)',
+                        transition: {
+                          duration: 0.9,
+                          ease: [0.16, 1, 0.3, 1],
+                        },
+                      },
+                    }}
+                    whileHover={{
+                      y: -6,
+                      color: '#d81818',
+                      transition: { duration: 0.22 },
+                    }}
+                    className="inline-block mr-[0.16em] last:mr-0 will-change-transform"
+                  >
+                    {word}
+                  </motion.span>
+                ))}
+              </span>
+            ))}
+          </motion.h2>
           <motion.div className="flex flex-wrap justify-center gap-4">
             <Link href="/join">
               <motion.button
-                whileHover={{ scale: 1.05 }}
+                whileHover={{ scale: 1.05, y: -4 }}
                 whileTap={{ scale: 0.95 }}
                 className="bg-guardsman-red text-aesthetic-white px-10 py-4 font-header text-lg tracking-widest uppercase hover:bg-madder transition-colors shadow-2xl"
               >
@@ -152,7 +209,7 @@ const Hero = () => {
             </Link>
             <Link href="/labs">
               <motion.button
-                whileHover={{ scale: 1.05 }}
+                whileHover={{ scale: 1.05, y: -4 }}
                 whileTap={{ scale: 0.95 }}
                 className="bg-aesthetic-white text-rich-black px-10 py-4 font-header text-lg tracking-widest uppercase hover:bg-pale-powder transition-colors shadow-2xl"
               >
@@ -175,6 +232,7 @@ const FeaturedLabs = () => {
 
   const titleY = useTransform(scrollYProgress, [0, 0.5], [50, 0]);
   const titleOpacity = useTransform(scrollYProgress, [0, 0.5], [0, 1]);
+  const carouselY = useTransform(scrollYProgress, [0, 1], [80, -40]);
 
   const labs = [
     { id: 1, name: "Vitamin C Serum", date: "Feb 15", img: "https://picsum.photos/seed/serum-vogue/600/800", category: "Formulation" },
@@ -206,22 +264,26 @@ const FeaturedLabs = () => {
             <p className="font-sans text-rich-black/60 uppercase tracking-widest text-sm">Innovations from our Elementists</p>
           </div>
           <div className="flex items-center gap-6">
-            <button 
+            <motion.button 
               onClick={prev}
+              whileHover={{ y: -3, scale: 1.05 }}
+              whileTap={{ scale: 0.96 }}
               className="w-12 h-12 border border-rich-black/10 flex items-center justify-center hover:bg-rich-black hover:text-white transition-all"
             >
               <ChevronLeft className="w-6 h-6" />
-            </button>
-            <button 
+            </motion.button>
+            <motion.button 
               onClick={next}
+              whileHover={{ y: -3, scale: 1.05 }}
+              whileTap={{ scale: 0.96 }}
               className="w-12 h-12 border border-rich-black/10 flex items-center justify-center hover:bg-rich-black hover:text-white transition-all"
             >
               <ChevronRight className="w-6 h-6" />
-            </button>
+            </motion.button>
           </div>
         </motion.div>
 
-        <div className="relative flex justify-center items-center h-[650px]">
+        <motion.div style={{ y: carouselY }} className="relative flex justify-center items-center h-[650px]">
           <div className="relative w-full flex justify-center items-center transition-all duration-500">
             {labs.map((lab, idx) => {
               // Calculate relative position to current index
@@ -232,7 +294,9 @@ const FeaturedLabs = () => {
               if (position > 2) position -= labs.length;
 
               const isActive = position === 0;
-              const isVisible = Math.abs(position) <= 2;
+              const depth = Math.abs(position);
+              const isVisible = depth <= 2;
+              const xOffset = position * 320;
 
               if (!isVisible) return null;
 
@@ -240,23 +304,25 @@ const FeaturedLabs = () => {
                 <motion.div
                   key={lab.id}
                   animate={{
-                    scale: isActive ? 1.2 : 0.75,
-                    opacity: isVisible ? (isActive ? 1 : 0.4) : 0,
-                    x: position * 320, // Increased spacing for larger images
-                    zIndex: isActive ? 10 : 5 - Math.abs(position)
+                    scale: isActive ? 1.2 : depth === 1 ? 0.75 : 0.66,
+                    opacity: isVisible ? (isActive ? 1 : depth === 1 ? 0.4 : 0.22) : 0,
+                    x: xOffset,
+                    y: isActive ? 0 : depth * 18,
+                    zIndex: isActive ? 10 : 5 - depth
                   }}
                   transition={{ duration: 0.6, ease: [0.4, 0, 0.2, 1] }}
+                  whileHover={{ y: isActive ? -12 : depth * 18 - 8 }}
                   className="absolute w-56 md:w-80 group cursor-pointer"
                 >
-                  <div className="relative aspect-[3/4] overflow-hidden mb-6 bg-pale-powder shadow-2xl">
+                  <motion.div whileHover={{ scale: 1.03 }} className="relative aspect-[3/4] overflow-hidden mb-6 bg-pale-powder shadow-2xl">
                     <Image
                       src={lab.img}
                       alt={lab.name}
                       fill
-                      className="object-cover"
+                      className={`object-cover transition-all duration-500 ${depth === 2 ? 'brightness-[0.55] saturate-[0.8]' : depth === 1 ? 'brightness-[0.82]' : ''}`}
                       referrerPolicy="no-referrer"
                     />
-                  </div>
+                  </motion.div>
                   <div className={`text-center transition-all duration-500 ${isActive ? 'opacity-100 translate-y-0' : 'opacity-0 translate-y-4'}`}>
                     <p className="font-praise text-guardsman-red text-2xl mb-1">{lab.category}</p>
                     <h4 className="font-header text-2xl text-rich-black leading-tight">{lab.name}</h4>
@@ -266,7 +332,7 @@ const FeaturedLabs = () => {
               );
             })}
           </div>
-        </div>
+        </motion.div>
       </div>
     </section>
   );
@@ -279,19 +345,23 @@ const MissionSection = () => {
     offset: ["start end", "end start"]
   });
 
-  const y = useTransform(scrollYProgress, [0, 1], ["-10%", "10%"]);
+  const imageY = useTransform(scrollYProgress, [0, 1], ["-12%", "14%"]);
+  const copyY = useTransform(scrollYProgress, [0, 1], ["8%", "-8%"]);
 
   return (
     <section ref={sectionRef} className="bg-aurora-black py-24 overflow-hidden">
       <div className="max-w-7xl mx-auto px-6 grid grid-cols-1 lg:grid-cols-2 gap-16 items-center">
         <motion.div
-          style={{ y }}
+          style={{ y: imageY }}
           initial={{ opacity: 0, x: -50 }}
           whileInView={{ opacity: 1, x: 0 }}
           viewport={{ once: true }}
           className="relative"
         >
-          <div className="relative aspect-square w-full max-w-md mx-auto">
+          <motion.div
+            whileHover={{ y: -10, rotate: -1.5 }}
+            className="relative aspect-square w-full max-w-md mx-auto"
+          >
             <Image
               src="https://picsum.photos/seed/mission-vogue/800/800"
               alt="Mission"
@@ -300,10 +370,11 @@ const MissionSection = () => {
               referrerPolicy="no-referrer"
             />
             <div className="absolute -top-8 -left-8 w-full h-full border-2 border-guardsman-red -z-10" />
-          </div>
+          </motion.div>
         </motion.div>
 
         <motion.div
+          style={{ y: copyY }}
           initial={{ opacity: 0, x: 50 }}
           whileInView={{ opacity: 1, x: 0 }}
           viewport={{ once: true }}
@@ -359,7 +430,7 @@ const Footer = () => {
             <ul className="flex flex-col gap-4 font-sans text-sm text-pale-powder/60">
               <li className="hover:text-guardsman-red cursor-pointer transition-colors">Labs & Projects</li>
               <Link href="/about" className="hover:text-guardsman-red cursor-pointer transition-colors">About Us</Link>
-              <li className="hover:text-guardsman-red cursor-pointer transition-colors">Sponsors</li>
+              <Link href="/sponsors" className="hover:text-guardsman-red cursor-pointer transition-colors">Sponsors</Link>
               <li className="hover:text-guardsman-red cursor-pointer transition-colors">Join Club</li>
             </ul>
           </div>
@@ -380,9 +451,15 @@ const Footer = () => {
             © 2024 ELEMENTAL BEAUTY. ALL RIGHTS RESERVED.
           </p>
           <div className="flex gap-6">
-            <Instagram className="w-5 h-5 cursor-pointer hover:text-guardsman-red transition-colors" />
-            <Twitter className="w-5 h-5 cursor-pointer hover:text-guardsman-red transition-colors" />
-            <Facebook className="w-5 h-5 cursor-pointer hover:text-guardsman-red transition-colors" />
+            <motion.div whileHover={{ y: -4, scale: 1.08 }} whileTap={{ scale: 0.96 }}>
+              <Instagram className="w-5 h-5 cursor-pointer hover:text-guardsman-red transition-colors" />
+            </motion.div>
+            <motion.div whileHover={{ y: -4, scale: 1.08 }} whileTap={{ scale: 0.96 }}>
+              <Twitter className="w-5 h-5 cursor-pointer hover:text-guardsman-red transition-colors" />
+            </motion.div>
+            <motion.div whileHover={{ y: -4, scale: 1.08 }} whileTap={{ scale: 0.96 }}>
+              <Facebook className="w-5 h-5 cursor-pointer hover:text-guardsman-red transition-colors" />
+            </motion.div>
           </div>
         </div>
       </div>
@@ -391,6 +468,14 @@ const Footer = () => {
 };
 
 export default function LandingPage() {
+  const statsRef = useRef(null);
+  const { scrollYProgress: statsProgress } = useScroll({
+    target: statsRef,
+    offset: ["start end", "end start"]
+  });
+  const statsYLeft = useTransform(statsProgress, [0, 1], [40, -24]);
+  const statsYRight = useTransform(statsProgress, [0, 1], [-24, 32]);
+
   return (
     <motion.main 
       initial={{ opacity: 0 }}
@@ -402,7 +487,7 @@ export default function LandingPage() {
       <Hero />
       
       {/* Stats Section */}
-      <section className="py-24 bg-aesthetic-white border-b border-rich-black/5">
+      <section ref={statsRef} className="py-24 bg-aesthetic-white border-b border-rich-black/5 overflow-hidden">
         <div className="max-w-7xl mx-auto px-6 grid grid-cols-2 md:grid-cols-4 gap-12 text-center">
           {[
             { label: 'Elementists', value: '150+', icon: Users },
@@ -414,8 +499,11 @@ export default function LandingPage() {
               key={stat.label}
               initial={{ opacity: 0, scale: 0.9 }}
               whileInView={{ opacity: 1, scale: 1 }}
+              whileHover={{ y: -8, scale: 1.04 }}
+              style={{ y: idx % 2 === 0 ? statsYLeft : statsYRight }}
               transition={{ delay: idx * 0.1, duration: 0.5 }}
               viewport={{ once: true, margin: "-100px" }}
+              className="will-change-transform"
             >
               <h3 className="font-header text-4xl text-rich-black mb-2">{stat.value}</h3>
               <p className="font-sans text-xs text-rich-black/40 uppercase tracking-widest">{stat.label}</p>
