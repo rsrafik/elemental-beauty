@@ -240,18 +240,14 @@ function BackCoverPage({}: BackCoverProps) {
   return (
     <div className="relative flex h-full flex-col items-center justify-center overflow-hidden bg-aesthetic-white p-8 text-center">
       <div className="absolute inset-0 bg-[radial-gradient(circle_at_top,rgba(197,0,0,0.12),transparent_42%)]" />
-      <div className="relative">
+      <div className="relative mx-auto flex w-full max-w-[36rem] flex-col items-center text-center">
         <p className="font-imperial text-4xl text-guardsman-red md:text-5xl">Back cover</p>
-        <h2 className="mt-4 font-abril text-4xl uppercase leading-none text-rich-black md:text-5xl">
+        <h2 className="mt-4 max-w-[10ch] text-center font-abril text-4xl uppercase leading-none text-rich-black md:text-5xl">
           The chapter continues.
         </h2>
-        <p className="mt-6 max-w-sm text-sm leading-7 text-rich-black/65">
-          Each page turns through the current board while keeping the site inside one fixed editorial
-          object.
-        </p>
         <Link
           href="/join"
-          className="mt-10 inline-flex items-center gap-3 bg-rich-black px-8 py-3 font-header text-xs uppercase tracking-[0.3em] text-aesthetic-white transition-colors hover:bg-guardsman-red"
+          className="mt-10 inline-flex items-center justify-center gap-3 border border-rich-black/20 bg-aesthetic-white/92 px-8 py-3 text-center font-header text-xs uppercase tracking-[0.3em] text-rich-black transition-colors hover:border-guardsman-red hover:bg-guardsman-red hover:text-aesthetic-white"
         >
           Join The Collective
         </Link>
@@ -426,7 +422,7 @@ function PageSheet({
           <button
             type="button"
             onClick={onBackward}
-            className="absolute left-5 top-1/2 z-20 flex h-11 w-11 -translate-y-1/2 items-center justify-center rounded-full border border-white/30 bg-aesthetic-white/92 text-rich-black transition-all hover:border-aesthetic-white hover:bg-aesthetic-white"
+            className="absolute left-5 top-1/2 z-20 flex h-11 w-11 -translate-y-1/2 items-center justify-center rounded-full border border-rich-black/20 bg-aesthetic-white/92 text-rich-black transition-colors hover:border-guardsman-red hover:bg-guardsman-red hover:text-aesthetic-white"
             aria-label="Flip to previous page"
           >
             <ChevronLeft className="h-4 w-4" />
@@ -584,11 +580,7 @@ export default function AboutPage() {
         className="pointer-events-none fixed bottom-6 left-1/2 z-[200] flex -translate-x-1/2 items-center gap-4 font-mono text-[10px] uppercase tracking-[0.35em] text-rich-black/35"
       >
         <ChevronLeft className="h-3 w-3" />
-        {flippedCount === 0
-          ? 'Front Cover'
-          : flippedCount === totalSheets
-            ? 'Back Cover'
-            : `Board Spread ${String(flippedCount).padStart(2, '0')}`}
+        Flip Through Book
         <ChevronRight className="h-3 w-3" />
       </motion.div>
 
