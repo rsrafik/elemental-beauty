@@ -1,97 +1,129 @@
 'use client';
 
-import React, { useState } from 'react';
-import { motion, AnimatePresence } from 'motion/react';
+import React, { useEffect, useState } from 'react';
+import { AnimatePresence, motion } from 'motion/react';
 import Image from 'next/image';
 import Link from 'next/link';
-import { ChevronLeft, ChevronRight, Menu, X, Instagram, Twitter, Mail, Search } from 'lucide-react';
+import {
+  ArrowRight,
+  ChevronLeft,
+  ChevronRight,
+  Instagram,
+  Menu,
+  Search,
+  Sparkles,
+  X,
+} from 'lucide-react';
 
 const members = [
   {
-    name: "Catherine Chang",
-    role: "President",
-    image: "https://picsum.photos/seed/catherine/800/1000",
-    quote: "If you want to be original, be ready to be copied.",
-    bio: "Catherine revolutionized the way the club approaches cosmetic formulation. With a vision for sustainable beauty and high-performance ingredients, she leads the Elementists into a new era of scientific excellence.",
-    tagline: "THE VISIONARY LEADER",
-    metadata: {
-      left: "ELEMENTAL BEAUTY",
-      right: "EST. 2024"
-    }
+    name: 'Catherine Chang',
+    role: 'President',
+    kicker: 'Chemistry Major',
+    quote: 'Sets the pace for the chapter and keeps the vision sharp.',
+    bio: 'Catherine leads Elemental Beauty with a focus on clear direction, polished programming, and a chapter identity that feels authored instead of improvised.',
+    caption: 'Leadership, programming, and chapter direction.',
+    stamp: 'Issue 01',
+    accent: 'from-[#250000] via-[#8f0e18] to-[#d34040]',
+    instagram: 'https://www.instagram.com/ting._0425/',
   },
   {
-    name: "Azu Nakao",
-    role: "Vice-President",
-    image: "https://picsum.photos/seed/azu/800/1000",
-    quote: "Science is not just a study, it's a lifestyle.",
-    bio: "Azu brings a meticulous eye for detail to every lab session. Her dedication to safety and innovation ensures that every product created under the Elemental banner meets the highest standards of quality.",
-    tagline: "THE TECHNICAL ARCHITECT",
-    metadata: {
-      left: "LABORATORY NOTES",
-      right: "VOL. 02"
-    }
+    name: 'Azu Nakao',
+    role: 'Vice-President',
+    kicker: 'Marketing Major',
+    quote: 'Turns ideas into calendars, meetings, and work that actually lands.',
+    bio: 'Azu keeps operations moving across the board, handling coordination and follow-through so the chapter can execute consistently instead of relying on last-minute momentum.',
+    caption: 'Operations, continuity, and execution.',
+    stamp: 'Issue 02',
+    accent: 'from-[#120d16] via-[#5f1d32] to-[#c47157]',
+    instagram: 'https://www.instagram.com/azuazu301/',
   },
   {
-    name: "Rachel Rafik",
-    role: "Software Developer/ Designer",
-    image: "https://picsum.photos/seed/rachel/800/1000",
-    quote: "Design is where science meets the soul.",
-    bio: "Rachel bridges the gap between digital aesthetics and chemical reality. Her work on the portal and brand identity has transformed how the world sees cosmetic chemistry at our university.",
-    tagline: "THE CREATIVE ENGINEER",
-    metadata: {
-      left: "DIGITAL FRONTIER",
-      right: "PIXEL PERFECT"
-    }
+    name: 'Rachel Rafik',
+    role: 'Software Developer',
+    kicker: 'Computer Science Major',
+    quote: 'Builds the chapter online with the same care as the work happening in person.',
+    bio: 'Rachel develops the site and digital identity for Elemental Beauty, shaping the public-facing experience so the chapter reads as deliberate, modern, and distinct.',
+    caption: 'Web, design system, and digital presence.',
+    stamp: 'Issue 03',
+    accent: 'from-[#09131b] via-[#103447] to-[#c50000]',
+    instagram: 'https://www.instagram.com/shaymarafi/',
   },
   {
-    name: "Anjali Muthyala",
-    role: "Treasurer",
-    image: "https://picsum.photos/seed/anjali/800/1000",
-    quote: "Precision in numbers, precision in formulas.",
-    bio: "Anjali ensures the club's resources are optimized for maximum impact. Her strategic planning allows us to source the finest raw materials and host world-class workshops for our members.",
-    tagline: "THE STRATEGIC MIND",
-    metadata: {
-      left: "FISCAL EXCELLENCE",
-      right: "RESOURCEFUL"
-    }
-  }
+    name: 'Anjali Muthyala',
+    role: 'Treasurer',
+    kicker: 'Business Major',
+    quote: 'Keeps the chapter stable by treating the numbers like infrastructure.',
+    bio: 'Anjali manages dues, budgets, and purchasing with discipline, making sure the chapter can support labs, materials, and growth without losing control of the details.',
+    caption: 'Budgeting, dues, and sustainable growth.',
+    stamp: 'Issue 04',
+    accent: 'from-[#16110f] via-[#5a2d17] to-[#b6551f]',
+    instagram: 'https://www.instagram.com/anjali_571/',
+  },
+] as const;
+
+const menuItems = [
+  { id: '01', label: 'HOME', href: '/' },
+  { id: '02', label: 'LABS', href: '/labs' },
+  { id: '03', label: 'ABOUT', href: '/about' },
+  { id: '04', label: 'JOIN', href: '/join' },
+  { id: '05', label: 'PORTAL', href: '/portal' },
 ];
 
-const Navbar = () => {
+function Navbar() {
   const [isMenuOpen, setIsMenuOpen] = useState(false);
 
-  const menuItems = [
-    { id: '01', label: 'HOME', href: '/' },
-    { id: '02', label: 'LABS', href: '/labs' },
-    { id: '03', label: 'ABOUT', href: '/about' },
-    { id: '04', label: 'SPONSORS', href: '#' },
-    { id: '05', label: 'JOIN', href: '/join' },
-    { id: '06', label: 'PORTAL', href: '/portal' },
-  ];
+  useEffect(() => {
+    const originalOverflow = document.body.style.overflow;
+    document.body.style.overflow = isMenuOpen ? 'hidden' : originalOverflow;
+
+    const handleEscape = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') {
+        setIsMenuOpen(false);
+      }
+    };
+
+    window.addEventListener('keydown', handleEscape);
+
+    return () => {
+      document.body.style.overflow = originalOverflow;
+      window.removeEventListener('keydown', handleEscape);
+    };
+  }, [isMenuOpen]);
 
   return (
     <>
-      <nav className="fixed top-0 left-0 w-full z-[100] bg-aesthetic-white/80 backdrop-blur-md border-b border-rich-black/5">
-        <div className="max-w-7xl mx-auto px-6 h-20 flex items-center justify-between">
+      <nav className="fixed inset-x-0 top-0 z-[320] border-b border-rich-black/5 bg-aesthetic-white/80 backdrop-blur-md">
+        <div className="mx-auto flex h-20 max-w-7xl items-center justify-between px-6">
           <div className="flex items-center gap-8">
-            <button 
+            <button
+              type="button"
               onClick={() => setIsMenuOpen(true)}
-              className="p-2 hover:text-guardsman-red transition-colors"
+              className="p-2 transition-colors hover:text-guardsman-red"
+              aria-label="Open site menu"
             >
-              <Menu className="w-6 h-6 cursor-pointer" />
+              <Menu className="h-6 w-6" />
             </button>
-            <Search className="w-5 h-5 cursor-pointer hidden md:block" />
+            <Search className="hidden h-5 w-5 md:block" />
           </div>
-          
+
           <div className="absolute left-1/2 -translate-x-1/2">
-            <Link href="/" className="font-title text-2xl md:text-3xl tracking-tighter uppercase text-rich-black">
-              ELEMENTAL <span className="text-guardsman-red">BEAUTY</span>
+            <Link href="/" className="font-abril text-2xl uppercase tracking-tight text-rich-black md:text-3xl">
+              Elemental <span className="text-guardsman-red">Beauty</span>
             </Link>
           </div>
 
           <div className="flex items-center gap-8">
-            <Link href="/portal" className="hidden md:block font-header text-sm tracking-widest uppercase cursor-pointer hover:text-guardsman-red transition-colors">Portal</Link>
-            <Link href="/join" className="bg-rich-black text-aesthetic-white px-6 py-2 font-header text-xs tracking-widest uppercase hover:bg-guardsman-red transition-colors">
+            <Link
+              href="/portal"
+              className="hidden font-header text-sm uppercase tracking-widest transition-colors hover:text-guardsman-red md:block"
+            >
+              Portal
+            </Link>
+            <Link
+              href="/join"
+              className="bg-rich-black px-6 py-2 font-header text-xs uppercase tracking-widest text-aesthetic-white transition-colors hover:bg-guardsman-red"
+            >
               Join Us
             </Link>
           </div>
@@ -99,39 +131,40 @@ const Navbar = () => {
       </nav>
 
       <AnimatePresence>
-        {isMenuOpen && (
+        {isMenuOpen ? (
           <motion.div
             initial={{ y: '-100%' }}
             animate={{ y: 0 }}
             exit={{ y: '-100%' }}
-            transition={{ duration: 0.6, ease: [0.22, 1, 0.36, 1] }}
-            className="fixed inset-0 z-[110] bg-rich-black text-aesthetic-white flex flex-col"
+            transition={{ duration: 0.55, ease: [0.22, 1, 0.36, 1] }}
+            className="fixed inset-0 z-[340] flex flex-col bg-rich-black text-aesthetic-white"
           >
-            <div className="flex justify-between items-center p-8">
-              <div className="font-title text-2xl tracking-tighter">E—B</div>
-              <button 
+            <div className="flex items-center justify-between p-8">
+              <div className="font-abril text-2xl tracking-tight">E—B</div>
+              <button
+                type="button"
                 onClick={() => setIsMenuOpen(false)}
-                className="flex items-center gap-2 font-header text-xs tracking-widest uppercase hover:text-guardsman-red transition-colors"
+                className="flex items-center gap-2 font-header text-xs uppercase tracking-widest transition-colors hover:text-guardsman-red"
               >
-                CLOSE <X className="w-4 h-4" />
+                Close <X className="h-4 w-4" />
               </button>
             </div>
 
-            <div className="flex-1 flex flex-col justify-center px-8 md:px-24">
+            <div className="flex flex-1 flex-col justify-center px-8 md:px-24">
               <div className="space-y-4 md:space-y-0">
                 {menuItems.map((item, idx) => (
                   <motion.div
                     key={item.id}
                     initial={{ opacity: 0, x: -20 }}
                     animate={{ opacity: 1, x: 0 }}
-                    transition={{ delay: 0.3 + idx * 0.1 }}
-                    className="group border-b border-white/10 py-6 md:py-10 flex items-baseline gap-8 cursor-pointer"
+                    transition={{ delay: 0.24 + idx * 0.08 }}
+                    className="group flex items-baseline gap-8 border-b border-white/10 py-6 md:py-10"
                   >
-                    <span className="font-sans text-xs text-white/40">{item.id}</span>
-                    <Link 
+                    <span className="font-mono text-xs text-white/40">{item.id}</span>
+                    <Link
                       href={item.href}
                       onClick={() => setIsMenuOpen(false)}
-                      className="font-header text-5xl md:text-8xl tracking-tight hover:text-guardsman-red transition-colors"
+                      className="font-header text-5xl tracking-tight transition-colors hover:text-guardsman-red md:text-8xl"
                     >
                       {item.label}
                     </Link>
@@ -139,302 +172,537 @@ const Navbar = () => {
                 ))}
               </div>
             </div>
-
-            <div className="p-8 flex justify-between items-center border-t border-white/10">
-              <div className="font-sans text-[10px] text-white/40 uppercase tracking-widest">
-                © 2024 ELEMENTAL BEAUTY
-              </div>
-              <div className="flex gap-8 font-header text-[10px] uppercase tracking-widest">
-                <span className="hover:text-guardsman-red cursor-pointer">INSTAGRAM</span>
-                <span className="hover:text-guardsman-red cursor-pointer">TWITTER</span>
-              </div>
-            </div>
           </motion.div>
-        )}
+        ) : null}
       </AnimatePresence>
     </>
   );
-};
+}
 
-const ShatterText = ({ text, colorClass = "text-guardsman-red" }: { text: string, colorClass?: string }) => {
-  // Simple deterministic pseudo-random function
-  const seededRandom = (seed: number) => {
-    const x = Math.sin(seed) * 10000;
-    return x - Math.floor(x);
-  };
-
+function SplitHeadline({ text, className }: { text: string; className?: string }) {
   return (
-    <h1 className={`font-bowlby text-4xl md:text-7xl uppercase tracking-tight ${colorClass} leading-none flex flex-wrap justify-center`}>
-      {text.split('').map((char, idx) => {
-        const seed = idx + text.length;
-        const randomZ = seededRandom(seed) * 600 + 200;
-        const randomRotX = seededRandom(seed + 1) * 360;
-        const randomRotY = seededRandom(seed + 2) * 360;
-        const randomX = (seededRandom(seed + 3) - 0.5) * 100;
-        const randomY = (seededRandom(seed + 4) - 0.5) * 100;
-
-        return (
-          <motion.span
-            key={idx}
-            initial={{ 
-              opacity: 0, 
-              z: randomZ, 
-              rotateX: randomRotX,
-              rotateY: randomRotY,
-              x: randomX,
-              y: randomY
-            }}
-            whileInView={{ 
-              opacity: 1, 
-              z: 0, 
-              rotateX: 0,
-              rotateY: 0,
-              x: 0,
-              y: 0
-            }}
-            transition={{ 
-              duration: 1.5, 
-              delay: idx * 0.02,
-              ease: [0.6, 0.01, -0.05, 0.95]
-            }}
-            className="inline-block"
-            style={{ transformStyle: 'preserve-3d' }}
-          >
-            {char === ' ' ? '\u00A0' : char}
-          </motion.span>
-        );
-      })}
-    </h1>
+    <h2 className={className}>
+      {text.split(' ').map((word, index) => (
+        <span key={`${word}-${index}`} className="block">
+          {word}
+        </span>
+      ))}
+    </h2>
   );
+}
+
+type BookStage = 'frontClosed' | 'open' | 'backClosed';
+type TurningSheet = {
+  direction: 'forward' | 'backward';
+  index: number;
 };
 
-export default function AboutPage() {
-  const [flippedPages, setFlippedPages] = useState<number[]>([]);
-  const totalPages = members.length;
+type FrontCoverProps = {
+  closed?: boolean;
+  onOpen?: () => void;
+  onSelectMember: (index: number) => void;
+};
 
-  const togglePage = (index: number) => {
-    if (flippedPages.includes(index)) {
-      setFlippedPages(flippedPages.filter(p => p < index));
-    } else {
-      setFlippedPages([...flippedPages, index]);
-    }
-  };
-
-  const Page = ({ index, front, back, isFlipped }: { index: number, front: React.ReactNode, back: React.ReactNode, isFlipped: boolean }) => {
-    return (
-      <motion.div
-        className="absolute top-0 right-0 w-1/2 h-full origin-left cursor-pointer"
-        initial={false}
-        animate={{ 
-          rotateY: isFlipped ? -180 : 0,
-          zIndex: isFlipped ? index + 10 : totalPages - index
-        }}
-        transition={{ 
-          duration: 1.2, 
-          ease: [0.645, 0.045, 0.355, 1]
-        }}
-        style={{ transformStyle: 'preserve-3d' }}
-        onClick={() => togglePage(index)}
-      >
-        {/* Front Side */}
-        <div 
-          className="absolute inset-0 bg-white border border-black/10 backface-hidden flex flex-col p-6 md:p-10 shadow-[-10px_0_30px_rgba(0,0,0,0.05)]"
-          style={{ backfaceVisibility: 'hidden' }}
-        >
-          {front}
-          <div className="absolute bottom-4 left-6 font-mono text-[10px] text-black/40">
-            PAGE {index * 2 + 1}
-          </div>
-        </div>
-
-        {/* Back Side */}
-        <div 
-          className="absolute inset-0 bg-white border border-black/10 flex flex-col p-6 md:p-10 shadow-[10px_0_30px_rgba(0,0,0,0.05)]"
-          style={{ 
-            backfaceVisibility: 'hidden',
-            transform: 'rotateY(180deg)'
-          }}
-        >
-          {back}
-          <div className="absolute bottom-4 right-6 font-mono text-[10px] text-black/40">
-            PAGE {index * 2 + 2}
-          </div>
-        </div>
-      </motion.div>
-    );
-  };
-
+function FrontCoverPage({ closed = false, onOpen, onSelectMember }: FrontCoverProps) {
   return (
-    <main className="h-screen bg-pale-powder overflow-hidden flex flex-col selection:bg-guardsman-red selection:text-white">
-      <Navbar />
-      
-      <div className="flex-1 flex items-center justify-center p-4 md:p-12 relative overflow-hidden z-10">
-        <div className="max-w-6xl w-full h-full max-h-[80vh] relative perspective-3000 bg-white shadow-2xl">
-          
-          {/* Static Left Base (Intro) */}
-          <div className="absolute top-0 left-0 w-1/2 h-full bg-white border border-black/10 p-10 flex flex-col justify-between">
-            <div className="border-b-4 border-black pb-4">
-              <div className="flex justify-between items-center text-xs font-mono uppercase tracking-widest mb-4">
-                <div className="border border-black px-2 py-1">ELEMENTAL BEAUTY</div>
-                <div className="font-bowlby text-3xl uppercase">Elementist</div>
-                <div className="border border-black px-2 py-1">EST. 2024</div>
-              </div>
-              <div className="h-1 bg-black w-full mb-1" />
-              <div className="h-[1px] bg-black w-full" />
-            </div>
+    <div className="relative flex h-full flex-col overflow-hidden bg-aesthetic-white p-6 md:p-10">
+      <div className="absolute inset-0 overflow-hidden">
+        <Image
+          src="/images/magazine-background.avif"
+          alt=""
+          fill
+          priority={closed}
+          className="object-cover grayscale contrast-125 brightness-75"
+        />
+      </div>
+      <div className="absolute inset-0 bg-[linear-gradient(180deg,rgba(0,0,0,0.18),rgba(0,0,0,0.28))]" />
 
-            <div className="flex-1 flex flex-col items-center justify-center text-center space-y-8">
-              <motion.div
-                initial={{ opacity: 0, scale: 0.8 }}
-                animate={{ opacity: 1, scale: 1 }}
-                className="font-title text-8xl md:text-[12rem] leading-none tracking-tighter text-rich-black/5"
-              >
-                EB
-              </motion.div>
-              <div className="space-y-2 relative z-10">
-                <h2 className="font-header text-2xl italic">The Modern</h2>
-                <h1 className="font-bowlby text-5xl md:text-7xl uppercase tracking-tight text-guardsman-red">Elementist</h1>
-              </div>
-              <p className="font-mono text-xs tracking-[0.4em] opacity-40">UNIVERSITY COSMETIC CHEMISTRY COLLECTIVE</p>
-            </div>
-
-            <div className="border-t-4 border-black pt-4 flex justify-between items-center font-mono text-[10px] uppercase tracking-widest">
-              <span>Volume 01</span>
-              <span>Issue 04</span>
-              <span>Page 00</span>
-            </div>
-          </div>
-
-          {/* Flipped Pages Stack */}
-          {members.map((member, idx) => (
-            <Page 
-              key={idx}
-              index={idx}
-              isFlipped={flippedPages.includes(idx)}
-              front={
-                <div className="flex-1 flex flex-col">
-                  <div className="flex justify-between items-center mb-8">
-                    <div className="font-title text-xl">EB</div>
-                    <div className="font-mono text-[10px] uppercase tracking-widest">{member.metadata.left}</div>
-                  </div>
-                  
-                  <div className="flex-1 flex flex-col justify-center">
-                    <h2 className="font-header text-sm uppercase tracking-widest mb-2 text-guardsman-red">{member.role}</h2>
-                    <ShatterText text={member.name} colorClass="text-rich-black" />
-                    <div className="h-[1px] bg-black w-full my-6" />
-                    <p className="font-sans text-sm leading-relaxed text-justify first-letter:text-5xl first-letter:font-header first-letter:float-left first-letter:mr-3 first-letter:mt-1">
-                      {member.bio}
-                    </p>
-                  </div>
-
-                  <div className="mt-8 flex justify-between items-center border-t border-black/10 pt-4">
-                    <div className="flex gap-4">
-                      <Instagram className="w-4 h-4" />
-                      <Twitter className="w-4 h-4" />
-                    </div>
-                    <div className="font-header italic text-xs">The Elementist Journal</div>
-                  </div>
-                </div>
-              }
-              back={
-                <div className="flex-1 flex flex-col">
-                  <div className="relative flex-1 bg-pale-powder overflow-hidden grayscale group hover:grayscale-0 transition-all duration-1000">
-                    <motion.div
-                      initial={{ clipPath: 'inset(0 100% 0 0)' }}
-                      whileInView={{ clipPath: 'inset(0 0% 0 0)' }}
-                      transition={{ duration: 1.5, ease: [0.6, 0.01, -0.05, 0.95] }}
-                      className="absolute inset-0"
-                    >
-                      <Image 
-                        src={member.image} 
-                        alt={member.name} 
-                        fill 
-                        className="object-cover scale-110 group-hover:scale-100 transition-transform duration-1000"
-                        referrerPolicy="no-referrer"
-                      />
-                    </motion.div>
-                    <div className="absolute inset-0 bg-gradient-to-t from-black/90 via-black/20 to-transparent flex flex-col justify-end p-8">
-                      <div className="mb-4">
-                        <h4 className="font-header italic text-xl md:text-2xl text-black mb-1">Presenting...</h4>
-                        <ShatterText text={member.name} />
-                      </div>
-                      <motion.p 
-                        initial={{ y: 20, opacity: 0 }}
-                        whileInView={{ y: 0, opacity: 1 }}
-                        transition={{ delay: 0.8 }}
-                        className="text-white font-header italic text-xl leading-tight mb-2"
-                      >
-                        &quot;{member.quote}&quot;
-                      </motion.p>
-                    </div>
-                  </div>
-                  
-                  <div className="mt-6">
-                    <div className="flex items-center gap-4 mb-4">
-                      <div className="h-[1px] bg-black flex-1" />
-                      <span className="font-mono text-[10px] uppercase tracking-widest">Featured Profile</span>
-                      <div className="h-[1px] bg-black flex-1" />
-                    </div>
-                    <motion.h3 
-                      initial={{ letterSpacing: '0px', opacity: 0 }}
-                      whileInView={{ letterSpacing: '2px', opacity: 1 }}
-                      transition={{ duration: 1, delay: 0.5 }}
-                      className="font-bowlby text-2xl md:text-4xl uppercase text-center leading-tight"
-                    >
-                      {member.role}
-                    </motion.h3>
-                  </div>
-                </div>
-              }
-            />
-          ))}
-
-          {/* Back Cover (Static Right Base) */}
-          <div className="absolute top-0 right-0 w-1/2 h-full bg-aesthetic-white border border-black/10 p-10 flex flex-col items-center justify-center text-center z-[-1]">
-             <div className="font-title text-4xl mb-8 opacity-20">ELEMENTAL BEAUTY</div>
-             <div className="space-y-4 max-w-xs">
-                <p className="font-header text-lg italic">&quot;Beauty is the harmony of purpose and form.&quot;</p>
-                <div className="h-[1px] bg-black/10 w-full" />
-                <p className="font-mono text-[10px] uppercase tracking-widest opacity-40">
-                  Thank you for exploring our collective. Join us in the lab to discover your own elemental beauty.
-                </p>
-             </div>
-             <Link href="/join" className="mt-12 bg-rich-black text-white px-8 py-3 font-header text-xs tracking-widest uppercase hover:bg-guardsman-red transition-colors">
-                Join the Collective
-             </Link>
-          </div>
-
+      <div className="relative flex flex-1 items-center">
+        <div className="max-w-[62%]">
+          <p className="font-imperial text-4xl text-rich-black md:text-6xl">
+            2026 edition
+          </p>
+          <h1 className="mt-5 max-w-[6.5ch] font-abril text-6xl uppercase leading-[0.82] tracking-tight text-[#e01212] drop-shadow-[0_3px_18px_rgba(0,0,0,0.45)] md:text-[7.4rem]">
+            The Board Book
+          </h1>
         </div>
       </div>
 
-      {/* Navigation Hint */}
-      <motion.div 
+      <div className="relative flex items-center justify-between border-t border-white/30 pt-4 font-mono text-[10px] uppercase tracking-[0.35em] text-white/90">
+        <span>Volume 01</span>
+        <span>Issue 01</span>
+      </div>
+
+      {closed && onOpen ? (
+        <button
+          type="button"
+          onClick={onOpen}
+          className="absolute right-5 top-1/2 flex h-11 w-11 -translate-y-1/2 items-center justify-center rounded-full border border-rich-black/20 bg-aesthetic-white/90 text-rich-black transition-all hover:border-guardsman-red hover:bg-guardsman-red hover:text-aesthetic-white"
+          aria-label="Open book"
+        >
+          <ChevronRight className="h-4 w-4" />
+        </button>
+      ) : null}
+    </div>
+  );
+}
+
+type BackCoverProps = {
+  closed?: boolean;
+  onClose?: () => void;
+  onOpen?: () => void;
+};
+
+function BackCoverPage({ closed = false, onClose, onOpen }: BackCoverProps) {
+  return (
+    <div className="relative flex h-full flex-col items-center justify-center overflow-hidden bg-aesthetic-white p-8 text-center">
+      <div className="absolute inset-0 bg-[radial-gradient(circle_at_top,rgba(197,0,0,0.12),transparent_42%)]" />
+      <div className="relative">
+        <p className="font-imperial text-4xl text-guardsman-red md:text-5xl">
+          {closed ? 'Closed edition' : 'Back cover'}
+        </p>
+        <h2 className="mt-4 font-abril text-4xl uppercase leading-none text-rich-black md:text-5xl">
+          The chapter continues.
+        </h2>
+        <p className="mt-6 max-w-sm text-sm leading-7 text-rich-black/65">
+          Each page turns through the current board while keeping the site inside one fixed editorial
+          object.
+        </p>
+        <Link
+          href="/join"
+          className="mt-10 inline-flex items-center gap-3 bg-rich-black px-8 py-3 font-header text-xs uppercase tracking-[0.3em] text-aesthetic-white transition-colors hover:bg-guardsman-red"
+        >
+          Join The Collective
+        </Link>
+      </div>
+
+      {onClose ? (
+        <button
+          type="button"
+          onClick={onClose}
+          className="absolute right-5 top-1/2 flex h-11 w-11 -translate-y-1/2 items-center justify-center rounded-full border border-rich-black/20 bg-aesthetic-white/90 text-rich-black transition-all hover:border-guardsman-red hover:bg-guardsman-red hover:text-aesthetic-white"
+          aria-label="Close into back cover"
+        >
+          <ChevronRight className="h-4 w-4" />
+        </button>
+      ) : null}
+
+      {closed && onOpen ? (
+        <button
+          type="button"
+          onClick={onOpen}
+          className="absolute left-5 top-1/2 flex h-11 w-11 -translate-y-1/2 items-center justify-center rounded-full border border-rich-black/20 bg-aesthetic-white/90 text-rich-black transition-all hover:border-guardsman-red hover:bg-guardsman-red hover:text-aesthetic-white"
+          aria-label="Open back cover"
+        >
+          <ChevronLeft className="h-4 w-4" />
+        </button>
+      ) : null}
+    </div>
+  );
+}
+
+type SpreadPageProps = {
+  member: (typeof members)[number];
+  index: number;
+  total: number;
+  onPrevious: () => void;
+  onNext: () => void;
+  previousLabel: string;
+  nextLabel: string;
+};
+
+function ImageProfilePage({
+  member,
+  index,
+  total,
+  onPrevious,
+  previousLabel,
+}: Omit<SpreadPageProps, 'onNext' | 'nextLabel'>) {
+  return (
+    <div className="relative flex h-full flex-col overflow-hidden border border-r-0 border-rich-black/10 bg-aesthetic-white shadow-[-16px_0_40px_rgba(10,10,10,0.08)]">
+      <div className={`absolute inset-0 bg-gradient-to-br ${member.accent}`} />
+      <div className="absolute inset-0 bg-[radial-gradient(circle_at_top_right,rgba(255,255,255,0.18),transparent_30%)]" />
+      <div className="absolute inset-0 opacity-30 [background-image:linear-gradient(rgba(255,255,255,0.16)_1px,transparent_1px),linear-gradient(90deg,rgba(255,255,255,0.16)_1px,transparent_1px)] [background-size:42px_42px]" />
+      <div className="absolute inset-x-[10%] top-[10%] h-[78%] border border-white/14" />
+      <div className="absolute left-[16%] top-[18%] h-[22%] w-[18%] border border-white/16 bg-white/6" />
+      <div className="absolute left-[40%] top-[18%] h-[22%] w-[22%] border border-white/12 bg-black/10" />
+      <div className="absolute left-[16%] top-[46%] h-[28%] w-[46%] border border-white/16 bg-[linear-gradient(135deg,rgba(255,255,255,0.12),rgba(255,255,255,0.02))]" />
+      <div className="absolute right-[14%] top-[18%] h-[56%] w-[18%] border border-white/12 bg-[linear-gradient(180deg,rgba(255,255,255,0.22),rgba(0,0,0,0.08))]" />
+      <div className="absolute right-[18%] top-[24%] h-[12%] w-[10%] rounded-full border border-white/16" />
+      <div className="absolute left-[18%] top-[50%] h-[20%] w-[42%] bg-[linear-gradient(135deg,transparent_0%,transparent_46%,rgba(255,255,255,0.2)_46%,rgba(255,255,255,0.2)_50%,transparent_50%)] opacity-75" />
+
+      <div className="relative flex h-full flex-col p-6 md:p-8">
+        <div className="mt-auto flex items-end justify-between">
+          <div className="font-mono text-[10px] uppercase tracking-[0.35em] text-white/60">
+            Page {String(index * 2 + 3).padStart(2, '0')} / {String(total * 2 + 1).padStart(2, '0')}
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function TextProfilePage({
+  member,
+  index,
+  total,
+  onNext,
+  nextLabel,
+}: Omit<SpreadPageProps, 'onPrevious' | 'previousLabel'>) {
+  return (
+    <div className="relative flex h-full flex-col overflow-hidden border border-rich-black/10 bg-aesthetic-white shadow-[16px_0_40px_rgba(10,10,10,0.08)]">
+      <div className="flex h-full flex-col p-6 md:p-8">
+        <div className="flex items-start justify-between">
+          <div>
+            <p className="font-mono text-[10px] uppercase tracking-[0.35em] text-rich-black/40">{member.stamp}</p>
+            <p className="mt-2 font-header text-sm uppercase tracking-[0.3em] text-guardsman-red">{member.kicker}</p>
+          </div>
+          <div className="font-mono text-[10px] uppercase tracking-[0.35em] text-rich-black/35">Elementist</div>
+        </div>
+
+        <div className="mt-10 flex-1">
+          <SplitHeadline
+            text={member.name}
+            className="font-abril text-4xl uppercase leading-[0.84] tracking-tight text-rich-black md:text-6xl"
+          />
+          <div className="mt-6 h-px w-full bg-rich-black/15" />
+          <p className="mt-6 font-header text-xl italic leading-8 text-rich-black/80 md:text-2xl">{member.quote}</p>
+          <p className="mt-6 max-w-md text-sm leading-7 text-rich-black/68 md:text-base">{member.bio}</p>
+        </div>
+
+        <div className="mt-8 flex items-end justify-between border-t border-rich-black/10 pt-4">
+          <div>
+            <p className="font-mono text-[10px] uppercase tracking-[0.35em] text-rich-black/35">Position</p>
+            <p className="mt-1 font-header text-base uppercase">{member.role}</p>
+            <p className="mt-2 font-mono text-[10px] uppercase tracking-[0.35em] text-rich-black/35">
+              Page {String(index * 2 + 2).padStart(2, '0')} / {String(total * 2 + 1).padStart(2, '0')}
+            </p>
+          </div>
+          <div className="flex items-center gap-3">
+            <a
+              href={member.instagram}
+              target="_blank"
+              rel="noreferrer"
+              aria-label={`${member.name} Instagram`}
+              className="inline-flex h-10 w-10 items-center justify-center rounded-full border border-rich-black/15 text-rich-black/55 transition-all hover:border-guardsman-red hover:bg-guardsman-red hover:text-aesthetic-white"
+            >
+              <Instagram className="h-4 w-4" />
+            </a>
+            <Sparkles className="h-4 w-4 text-rich-black/40" />
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+type PageSheetProps = {
+  index: number;
+  totalSheets: number;
+  isFlipped: boolean;
+  isTurning: boolean;
+  canFlipForward: boolean;
+  canFlipBackward: boolean;
+  front: React.ReactNode;
+  back: React.ReactNode;
+  onForward: () => void;
+  onBackward: () => void;
+  onTurnComplete: () => void;
+};
+
+function PageSheet({
+  index,
+  totalSheets,
+  isFlipped,
+  isTurning,
+  canFlipForward,
+  canFlipBackward,
+  front,
+  back,
+  onForward,
+  onBackward,
+  onTurnComplete,
+}: PageSheetProps) {
+  return (
+    <motion.div
+      initial={false}
+      animate={{
+        rotateY: isFlipped ? -180 : 0,
+        zIndex: isTurning ? totalSheets + 20 : isFlipped ? totalSheets + index : totalSheets - index,
+      }}
+      transition={{ duration: 1.05, ease: [0.645, 0.045, 0.355, 1] }}
+      onAnimationComplete={onTurnComplete}
+      style={{ transformStyle: 'preserve-3d' }}
+      className={`absolute right-0 top-0 h-full w-1/2 origin-left ${
+        canFlipForward || canFlipBackward ? 'pointer-events-auto' : 'pointer-events-none'
+      }`}
+    >
+      <div
+        className="absolute inset-0"
+        style={{ backfaceVisibility: 'hidden', WebkitBackfaceVisibility: 'hidden' }}
+      >
+        {front}
+        {canFlipForward ? (
+          <button
+            type="button"
+            onClick={onForward}
+            className="absolute right-5 top-1/2 z-20 flex h-11 w-11 -translate-y-1/2 items-center justify-center rounded-full border border-rich-black/20 bg-aesthetic-white/92 text-rich-black transition-all hover:border-guardsman-red hover:bg-guardsman-red hover:text-aesthetic-white"
+            aria-label="Flip to next page"
+          >
+            <ChevronRight className="h-4 w-4" />
+          </button>
+        ) : null}
+      </div>
+
+      <div
+        className="absolute inset-0"
+        style={{
+          backfaceVisibility: 'hidden',
+          WebkitBackfaceVisibility: 'hidden',
+          transform: 'rotateY(180deg)',
+        }}
+      >
+        {back}
+        {canFlipBackward ? (
+          <button
+            type="button"
+            onClick={onBackward}
+            className="absolute left-5 top-1/2 z-20 flex h-11 w-11 -translate-y-1/2 items-center justify-center rounded-full border border-white/30 bg-aesthetic-white/92 text-rich-black transition-all hover:border-aesthetic-white hover:bg-aesthetic-white"
+            aria-label="Flip to previous page"
+          >
+            <ChevronLeft className="h-4 w-4" />
+          </button>
+        ) : null}
+      </div>
+    </motion.div>
+  );
+}
+
+export default function AboutPage() {
+  const [bookStage, setBookStage] = useState<BookStage>('frontClosed');
+  const [settledIndex, setSettledIndex] = useState(0);
+  const [turningSheet, setTurningSheet] = useState<TurningSheet | null>(null);
+  const lastSpreadIndex = members.length - 1;
+
+  const openBook = () => {
+    setSettledIndex(0);
+    setTurningSheet(null);
+    setBookStage('open');
+  };
+
+  const openBookToMember = (index: number) => {
+    setSettledIndex(index);
+    setTurningSheet(null);
+    setBookStage('open');
+  };
+
+  const goNext = () => {
+    if (turningSheet) {
+      return;
+    }
+
+    if (settledIndex === lastSpreadIndex) {
+      setBookStage('backClosed');
+      return;
+    }
+
+    setTurningSheet({ direction: 'forward', index: settledIndex + 1 });
+  };
+
+  const goPrevious = () => {
+    if (turningSheet) {
+      return;
+    }
+
+    if (settledIndex === 0) {
+      setBookStage('frontClosed');
+      return;
+    }
+
+    setTurningSheet({ direction: 'backward', index: settledIndex });
+  };
+
+  const closeBackCover = () => {
+    setTurningSheet(null);
+    setBookStage('backClosed');
+  };
+
+  const reopenBackCover = () => {
+    setSettledIndex(lastSpreadIndex);
+    setTurningSheet(null);
+    setBookStage('open');
+  };
+
+  const handleTurnComplete = (index: number) => {
+    if (!turningSheet || turningSheet.index !== index) {
+      return;
+    }
+
+    if (turningSheet.direction === 'forward') {
+      setSettledIndex(index);
+    } else {
+      setSettledIndex(index - 1);
+    }
+
+    setTurningSheet(null);
+  };
+
+  return (
+    <main className="flex h-screen flex-col overflow-hidden bg-pale-powder selection:bg-guardsman-red selection:text-white">
+      <Navbar />
+
+      <div className="relative flex flex-1 items-center justify-center overflow-hidden px-4 pb-4 pt-24 md:px-8 md:pb-8">
+        <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(circle_at_top,rgba(197,0,0,0.1),transparent_46%)]" />
+        <div className="pointer-events-none absolute inset-x-0 bottom-0 h-36 bg-[linear-gradient(180deg,transparent,rgba(10,10,10,0.08))]" />
+
+        <div className="relative h-full max-h-[720px] w-full max-w-6xl">
+          <div className="book-perspective relative h-full w-full rounded-[10px] bg-transparent">
+            <div className="absolute inset-0 rounded-[10px] bg-rich-black/8 blur-3xl" />
+
+            <AnimatePresence mode="wait">
+              {bookStage === 'frontClosed' ? (
+                <motion.div
+                  key="front-closed"
+                  initial={{ opacity: 0, rotateY: -10, x: 48 }}
+                  animate={{ opacity: 1, rotateY: 0, x: 0 }}
+                  exit={{ opacity: 0, rotateY: -145, x: -90, scale: 0.98 }}
+                  transition={{ duration: 0.95, ease: [0.22, 1, 0.36, 1] }}
+                  style={{ transformOrigin: 'left center', transformStyle: 'preserve-3d' }}
+                  className="absolute left-1/2 top-0 h-full w-1/2 -translate-x-1/2 overflow-hidden rounded-[10px] border border-rich-black/10 shadow-[0_35px_80px_rgba(10,10,10,0.18)]"
+                >
+                  <FrontCoverPage closed onOpen={openBook} onSelectMember={openBookToMember} />
+                </motion.div>
+              ) : null}
+            </AnimatePresence>
+
+            <AnimatePresence mode="wait">
+              {bookStage === 'open' ? (
+                <motion.div
+                  key="book-open-shell"
+                  initial={{ opacity: 0, scale: 0.99 }}
+                  animate={{ opacity: 1, scale: 1 }}
+                  exit={{ opacity: 0, scale: 0.99 }}
+                  transition={{ duration: 0.45, ease: [0.22, 1, 0.36, 1] }}
+                  className="absolute inset-0"
+                >
+                  <div className="absolute inset-y-0 left-1/2 hidden w-px bg-rich-black/10 lg:block" />
+                  <div className="absolute inset-y-0 left-1/2 w-14 -translate-x-1/2 bg-[radial-gradient(circle,rgba(0,0,0,0.08),transparent_70%)] blur-xl" />
+
+                  {[
+                    {
+                      front: <FrontCoverPage onSelectMember={openBookToMember} />,
+                      back: (
+                        <ImageProfilePage
+                          member={members[0]}
+                          index={0}
+                          total={members.length}
+                          onPrevious={goPrevious}
+                          previousLabel="Close to front cover"
+                        />
+                      ),
+                    },
+                    ...members.slice(0, -1).map((member, index) => ({
+                      front: (
+                        <TextProfilePage
+                          member={member}
+                          index={index}
+                          total={members.length}
+                          onNext={goNext}
+                          nextLabel="Next member"
+                        />
+                      ),
+                      back: (
+                        <ImageProfilePage
+                          member={members[index + 1]}
+                          index={index + 1}
+                          total={members.length}
+                          onPrevious={goPrevious}
+                          previousLabel="Previous member"
+                        />
+                      ),
+                    })),
+                    {
+                      front: (
+                        <TextProfilePage
+                          member={members[members.length - 1]}
+                          index={members.length - 1}
+                          total={members.length}
+                          onNext={closeBackCover}
+                          nextLabel="Close to back cover"
+                        />
+                      ),
+                      back: <BackCoverPage />,
+                    },
+                  ].map((sheet, index, sheets) => {
+                    const isTurning = turningSheet?.index === index;
+                    const isFlipped =
+                      index <= settledIndex ||
+                      (turningSheet?.direction === 'forward' && index === turningSheet.index);
+                    const renderedFlipped =
+                      turningSheet?.direction === 'backward' && index === turningSheet.index
+                        ? false
+                        : isFlipped;
+                    const canFlipBackward = !turningSheet && index === settledIndex;
+                    const canFlipForward = !turningSheet && index === settledIndex + 1;
+
+                    return (
+                      <PageSheet
+                        key={`sheet-${index}`}
+                        index={index}
+                        totalSheets={sheets.length}
+                        isFlipped={renderedFlipped}
+                        isTurning={Boolean(isTurning)}
+                        canFlipForward={canFlipForward}
+                        canFlipBackward={canFlipBackward}
+                        front={sheet.front}
+                        back={sheet.back}
+                        onForward={index === sheets.length - 1 ? closeBackCover : goNext}
+                        onBackward={goPrevious}
+                        onTurnComplete={() => handleTurnComplete(index)}
+                      />
+                    );
+                  })}
+                </motion.div>
+              ) : null}
+            </AnimatePresence>
+
+            <AnimatePresence mode="wait">
+              {bookStage === 'backClosed' ? (
+                <motion.div
+                  key="back-closed"
+                  initial={{ opacity: 0, rotateY: 145, x: 90, scale: 0.98 }}
+                  animate={{ opacity: 1, rotateY: 0, x: 0 }}
+                  exit={{ opacity: 0, rotateY: 145, x: 90 }}
+                  transition={{ duration: 0.95, ease: [0.22, 1, 0.36, 1] }}
+                  style={{ transformOrigin: 'right center', transformStyle: 'preserve-3d' }}
+                  className="absolute left-1/2 top-0 h-full w-1/2 -translate-x-1/2 overflow-hidden rounded-[10px] border border-rich-black/10 shadow-[0_35px_80px_rgba(10,10,10,0.18)]"
+                >
+                  <BackCoverPage closed onOpen={reopenBackCover} />
+                </motion.div>
+              ) : null}
+            </AnimatePresence>
+          </div>
+        </div>
+      </div>
+
+      <motion.div
         initial={{ opacity: 0 }}
         animate={{ opacity: 1 }}
-        transition={{ delay: 2 }}
-        className="fixed bottom-8 left-1/2 -translate-x-1/2 flex items-center gap-4 font-mono text-[10px] uppercase tracking-widest opacity-40 pointer-events-none"
+        transition={{ delay: 1.2 }}
+        className="pointer-events-none fixed bottom-6 left-1/2 z-[200] flex -translate-x-1/2 items-center gap-4 font-mono text-[10px] uppercase tracking-[0.35em] text-rich-black/35"
       >
-        <ChevronLeft className="w-3 h-3" />
-        Click pages to flip
-        <ChevronRight className="w-3 h-3" />
+        <ChevronLeft className="h-3 w-3" />
+        {bookStage === 'frontClosed'
+          ? 'Open The Book'
+          : bookStage === 'backClosed'
+            ? 'Back Cover Closed'
+            : `Board Spread ${String(settledIndex + 1).padStart(2, '0')}`}
+        <ChevronRight className="h-3 w-3" />
       </motion.div>
 
       <style jsx global>{`
-        .perspective-3000 {
-          perspective: 3000px;
-        }
-        .backface-hidden {
-          backface-visibility: hidden;
-          -webkit-backface-visibility: hidden;
-        }
-        .custom-scrollbar::-webkit-scrollbar {
-          width: 2px;
-        }
-        .custom-scrollbar::-webkit-scrollbar-track {
-          background: transparent;
-        }
-        .custom-scrollbar::-webkit-scrollbar-thumb {
-          background: rgba(0,0,0,0.1);
+        .book-perspective {
+          perspective: 2600px;
         }
       `}</style>
     </main>
