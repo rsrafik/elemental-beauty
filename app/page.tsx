@@ -137,11 +137,11 @@ const Hero = () => {
           src="https://picsum.photos/seed/cosmetic-lab-vogue/1920/1080"
           alt="Elemental Beauty Hero"
           fill
-          className="object-cover brightness-75"
+          className="object-cover brightness-55"
           priority
           referrerPolicy="no-referrer"
         />
-        <div className="absolute inset-0 bg-gradient-to-t from-rich-black/60 via-transparent to-transparent" />
+        <div className="absolute inset-0 bg-gradient-to-t from-rich-black/80 via-rich-black/30 to-rich-black/20" />
       </motion.div>
 
       <motion.div style={{ y: contentY, opacity }} className="relative z-10 text-center px-6">
