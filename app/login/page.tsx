@@ -138,15 +138,6 @@ export default function LoginPage() {
               )}
             </button>
           </form>
-
-          <div className="mt-12 text-center pt-8 border-t border-rich-black/5">
-            <p className="font-header text-[10px] text-rich-black/40 uppercase tracking-widest">
-              Don&apos;t have an account? <Link href="/join" className="text-guardsman-red hover:underline">Join the Chapter</Link>
-            </p>
-            <p className="mt-4 text-[10px] font-header uppercase tracking-[0.25em] text-rich-black/25">
-              Local accounts: `newuser`, `alex`, `azu`, `rrafik`
-            </p>
-          </div>
         </div>
         
         <div className="mt-8 text-center">

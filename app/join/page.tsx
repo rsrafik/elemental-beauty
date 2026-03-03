@@ -1,229 +1,270 @@
 'use client';
 
-import React, { useState } from 'react';
+import React, { useMemo, useState } from 'react';
 import { motion } from 'motion/react';
-import { 
-  Sparkles, 
-  CreditCard, 
-  ChevronRight, 
-  ShieldCheck, 
-  User, 
-  School,
-  ArrowLeft
-} from 'lucide-react';
+import { ArrowLeft, ChevronRight, KeyRound, Sparkles, User } from 'lucide-react';
 import Link from 'next/link';
+import { useRouter } from 'next/navigation';
+import { normalizePurdueUsername, useAccounts } from '@/lib/accounts';
 
-const JoinPage = () => {
-  const [step, setStep] = useState(1);
-  const [formData, setFormData] = useState({
+type JoinFormState = {
+  name: string;
+  username: string;
+  password: string;
+  confirmPassword: string;
+};
+
+export default function JoinPage() {
+  const router = useRouter();
+  const { data, addAccount, signIn } = useAccounts();
+  const [formData, setFormData] = useState<JoinFormState>({
     name: '',
-    email: '',
-    major: '',
-    year: '',
-    interest: '',
+    username: '',
+    password: '',
+    confirmPassword: '',
   });
+  const [error, setError] = useState('');
+  const [showPasswordRequirement, setShowPasswordRequirement] = useState(false);
 
-  const handleInputChange = (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement>) => {
-    setFormData({ ...formData, [e.target.name]: e.target.value });
+  const normalizedUsername = useMemo(
+    () => normalizePurdueUsername(formData.username),
+    [formData.username],
+  );
+
+  const handleInputChange = (event: React.ChangeEvent<HTMLInputElement>) => {
+    const { name, value } = event.target;
+    setFormData((current) => ({
+      ...current,
+      [name]: name === 'username' ? normalizePurdueUsername(value) : value,
+    }));
+    setError('');
   };
 
-  const nextStep = () => setStep(step + 1);
-  const prevStep = () => setStep(step - 1);
+  const handleCreateAccount = () => {
+    if (!formData.name.trim() || !normalizedUsername || !formData.password || !formData.confirmPassword) {
+      setError('Full name, Purdue username, password, and verify password are required.');
+      return;
+    }
 
-  const steps = [
-    { id: 1, title: 'Identity', icon: User },
-    { id: 2, title: 'Academic', icon: School },
-    { id: 3, title: 'Membership', icon: CreditCard },
-  ];
+    if (formData.password.length < 8) {
+      setShowPasswordRequirement(true);
+      setError('Password must be at least 8 characters.');
+      return;
+    }
+
+    if (formData.password !== formData.confirmPassword) {
+      setError('Passwords do not match.');
+      return;
+    }
+
+    const usernameTaken = data.accounts.some((account) => account.username === normalizedUsername);
+    if (usernameTaken) {
+      setError('That Purdue username already exists.');
+      return;
+    }
+
+    const account = {
+      id: `acct-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
+      name: formData.name.trim(),
+      username: normalizedUsername,
+      role: 'user' as const,
+      password: formData.password,
+      profilePhotoDataUrl: '',
+      waiverSigned: false,
+      duesPaid: false,
+      joinedAt: new Date().toISOString().slice(0, 10),
+    };
+
+    addAccount(account);
+    signIn(normalizedUsername, formData.password);
+    router.push('/portal');
+  };
 
   return (
-    <main className="min-h-screen bg-aesthetic-white selection:bg-guardsman-red selection:text-white pt-24 pb-20">
-      <div className="max-w-4xl mx-auto px-6">
-        <div className="text-center mb-16">
-          <Link href="/" className="inline-flex items-center gap-2 text-xs font-header uppercase tracking-widest text-rich-black/40 hover:text-guardsman-red transition-colors mb-8">
-            <ArrowLeft className="w-4 h-4" /> Back to Home
+    <main className="min-h-screen bg-aesthetic-white px-6 pb-20 pt-24 selection:bg-guardsman-red selection:text-white">
+      <div className="mx-auto max-w-5xl">
+        <div className="mb-16 text-center">
+          <Link
+            href="/"
+            className="mb-8 inline-flex items-center gap-2 text-xs font-header uppercase tracking-widest text-rich-black/40 transition-colors hover:text-guardsman-red"
+          >
+            <ArrowLeft className="h-4 w-4" />
+            Back to Home
           </Link>
-          <h1 className="text-5xl md:text-7xl font-header text-rich-black mb-6 leading-tight uppercase">
-            BECOME AN <span className="text-guardsman-red">ELEMENTIST</span>
+          <h1 className="font-header text-5xl uppercase leading-tight text-rich-black md:text-7xl">
+            Join The <span className="text-guardsman-red">Chapter</span>
           </h1>
-          <p className="font-sans text-lg text-rich-black/60 max-w-xl mx-auto leading-relaxed">
-            Join the elite circle of cosmetic chemistry enthusiasts. 
-            Precision, passion, and science.
+          <p className="mx-auto mt-6 max-w-2xl text-lg leading-relaxed text-rich-black/60">
+            Create your Elemental Beauty account with your Purdue username. New signups begin as
+            users and complete waiver and dues later from the membership page.
           </p>
         </div>
 
-        {/* Progress Stepper */}
-        <div className="flex justify-between items-center mb-12 relative">
-          <div className="absolute top-1/2 left-0 w-full h-[1px] bg-rich-black/10 -z-10" />
-          {steps.map((s) => (
-            <div key={s.id} className="flex flex-col items-center gap-2 bg-aesthetic-white px-4">
-              <div className={`w-12 h-12 flex items-center justify-center transition-all duration-500 border ${
-                step >= s.id ? 'bg-rich-black text-aesthetic-white border-rich-black' : 'bg-white text-rich-black/20 border-rich-black/10'
-              }`}>
-                <s.icon className="w-5 h-5" />
-              </div>
-              <span className={`text-[10px] font-header uppercase tracking-widest ${
-                step >= s.id ? 'text-rich-black' : 'text-rich-black/30'
-              }`}>
-                {s.title}
-              </span>
-            </div>
-          ))}
-        </div>
-
-        {/* Form Container */}
-        <div className="bg-white p-8 md:p-16 border border-rich-black/5 shadow-2xl relative overflow-hidden">
-          <form onSubmit={(e) => e.preventDefault()} className="space-y-12">
-            {step === 1 && (
-              <motion.div
-                initial={{ opacity: 0, y: 20 }}
-                animate={{ opacity: 1, y: 0 }}
-                className="space-y-8"
-              >
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
-                  <div className="space-y-2">
-                    <label className="text-[10px] font-header uppercase tracking-widest text-rich-black/50">Full Name</label>
-                    <input 
-                      type="text" 
-                      name="name"
-                      placeholder="JANE DOE"
-                      value={formData.name}
-                      onChange={handleInputChange}
-                      className="w-full bg-pale-powder/30 border-b border-rich-black/10 px-0 py-4 text-sm font-header focus:border-guardsman-red outline-none transition-all placeholder:text-rich-black/20"
-                    />
-                  </div>
-                  <div className="space-y-2">
-                    <label className="text-[10px] font-header uppercase tracking-widest text-rich-black/50">Email Address</label>
-                    <input 
-                      type="email" 
-                      name="email"
-                      placeholder="JANE@UNIVERSITY.EDU"
-                      value={formData.email}
-                      onChange={handleInputChange}
-                      className="w-full bg-pale-powder/30 border-b border-rich-black/10 px-0 py-4 text-sm font-header focus:border-guardsman-red outline-none transition-all placeholder:text-rich-black/20"
-                    />
-                  </div>
-                </div>
-                <div className="space-y-2">
-                  <label className="text-[10px] font-header uppercase tracking-widest text-rich-black/50">Statement of Interest</label>
-                  <textarea 
-                    name="interest"
-                    rows={4}
-                    placeholder="WHY DO YOU SEEK TO JOIN THE ELEMENTISTS?"
-                    value={formData.interest}
-                    onChange={handleInputChange}
-                    className="w-full bg-pale-powder/30 border-b border-rich-black/10 px-0 py-4 text-sm font-header focus:border-guardsman-red outline-none transition-all resize-none placeholder:text-rich-black/20"
-                  />
-                </div>
-              </motion.div>
-            )}
-
-            {step === 2 && (
-              <motion.div
-                initial={{ opacity: 0, y: 20 }}
-                animate={{ opacity: 1, y: 0 }}
-                className="space-y-8"
-              >
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
-                  <div className="space-y-2">
-                    <label className="text-[10px] font-header uppercase tracking-widest text-rich-black/50">Major</label>
-                    <input 
-                      type="text" 
-                      name="major"
-                      placeholder="CHEMISTRY / BIOLOGY"
-                      value={formData.major}
-                      onChange={handleInputChange}
-                      className="w-full bg-pale-powder/30 border-b border-rich-black/10 px-0 py-4 text-sm font-header focus:border-guardsman-red outline-none transition-all placeholder:text-rich-black/20"
-                    />
-                  </div>
-                  <div className="space-y-2">
-                    <label className="text-[10px] font-header uppercase tracking-widest text-rich-black/50">Academic Year</label>
-                    <select 
-                      name="year"
-                      value={formData.year}
-                      onChange={handleInputChange}
-                      className="w-full bg-pale-powder/30 border-b border-rich-black/10 px-0 py-4 text-sm font-header focus:border-guardsman-red outline-none transition-all appearance-none"
-                    >
-                      <option value="">SELECT YEAR</option>
-                      <option value="freshman">FRESHMAN</option>
-                      <option value="sophomore">SOPHOMORE</option>
-                      <option value="junior">JUNIOR</option>
-                      <option value="senior">SENIOR</option>
-                    </select>
-                  </div>
-                </div>
-                
-                <div className="p-8 border border-guardsman-red/20 flex gap-6 items-start bg-guardsman-red/[0.02]">
-                  <ShieldCheck className="w-6 h-6 text-guardsman-red shrink-0" />
-                  <div>
-                    <h4 className="font-header text-sm mb-2 uppercase tracking-widest">Laboratory Protocol</h4>
-                    <p className="font-sans text-xs text-rich-black/60 leading-relaxed">
-                      Membership requires strict adherence to safety standards. 
-                      A digital waiver will be issued upon application approval.
-                    </p>
-                  </div>
-                </div>
-              </motion.div>
-            )}
-
-            {step === 3 && (
-              <motion.div
-                initial={{ opacity: 0, y: 20 }}
-                animate={{ opacity: 1, x: 0 }}
-                className="space-y-12 text-center"
-              >
-                <div className="max-w-sm mx-auto p-12 border border-rich-black shadow-xl">
-                  <CreditCard className="w-12 h-12 text-guardsman-red mx-auto mb-6" />
-                  <h3 className="font-header text-2xl text-rich-black mb-2 uppercase tracking-widest">MEMBERSHIP DUES</h3>
-                  <p className="font-header text-5xl text-rich-black mb-6">$25<span className="text-xs text-rich-black/40 tracking-normal"> / SEMESTER</span></p>
-                  <ul className="text-left space-y-4 mb-10">
-                    {['PREMIUM LAB MATERIALS', 'EXCLUSIVE ARCHIVE ACCESS', 'PRIVATE WORKSHOPS'].map(item => (
-                      <li key={item} className="flex items-center gap-3 text-[10px] font-header uppercase tracking-widest">
-                        <Sparkles className="w-4 h-4 text-guardsman-red" /> {item}
-                      </li>
-                    ))}
-                  </ul>
-                </div>
-
-                <p className="text-[10px] font-header text-rich-black/40 uppercase tracking-[0.2em]">
-                  SECURE APPLICATION PORTAL
+        <motion.div
+          initial={{ opacity: 0, y: 18 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ duration: 0.35 }}
+          className="grid gap-10 lg:grid-cols-[1.05fr_0.95fr]"
+        >
+          <section className="border border-rich-black/5 bg-white p-8 shadow-2xl md:p-14">
+            <div className="flex items-start justify-between gap-6">
+              <div>
+                <p className="text-[10px] font-header uppercase tracking-[0.35em] text-rich-black/35">
+                  Account Signup
                 </p>
-              </motion.div>
-            )}
-
-            <div className="flex justify-between items-center pt-12 border-t border-rich-black/10">
-              {step > 1 ? (
-                <button 
-                  type="button"
-                  onClick={prevStep}
-                  className="text-[10px] font-header uppercase tracking-widest text-rich-black/40 hover:text-rich-black transition-colors"
-                >
-                  Previous
-                </button>
-              ) : <div />}
-
-              {step < 3 ? (
-                <button 
-                  type="button"
-                  onClick={nextStep}
-                  className="bg-rich-black text-aesthetic-white px-10 py-4 font-header text-xs uppercase tracking-widest flex items-center gap-3 hover:bg-guardsman-red transition-all"
-                >
-                  Continue <ChevronRight className="w-4 h-4" />
-                </button>
-              ) : (
-                <button 
-                  type="button"
-                  className="bg-guardsman-red text-aesthetic-white px-12 py-5 font-header text-sm uppercase tracking-widest hover:bg-madder transition-all shadow-xl"
-                >
-                  Submit Application
-                </button>
-              )}
+                <h2 className="mt-3 font-header text-3xl uppercase tracking-wide text-rich-black">
+                  Create Account
+                </h2>
+              </div>
+              <div className="flex h-14 w-14 items-center justify-center bg-rich-black text-white shadow-xl">
+                <User className="h-6 w-6" />
+              </div>
             </div>
-          </form>
-        </div>
+
+            {error ? (
+              <div className="mt-8 border border-guardsman-red/20 bg-guardsman-red/[0.06] px-5 py-4">
+                <p className="text-[10px] font-header font-bold uppercase tracking-[0.28em] text-guardsman-red">
+                  {error}
+                </p>
+              </div>
+            ) : null}
+
+            <form
+              onSubmit={(event) => {
+                event.preventDefault();
+                handleCreateAccount();
+              }}
+              className="mt-8 space-y-8"
+            >
+              <label className="block space-y-2">
+                <span className="text-[10px] font-header uppercase tracking-[0.3em] text-rich-black/35">
+                  Full Name
+                </span>
+                <input
+                  type="text"
+                  name="name"
+                  value={formData.name}
+                  onChange={handleInputChange}
+                  className="w-full border border-rich-black/10 bg-pale-powder/20 px-5 py-4 text-sm font-header uppercase tracking-[0.08em] outline-none transition-colors placeholder:text-rich-black/20 focus:border-guardsman-red"
+                />
+              </label>
+
+              <label className="block space-y-2">
+                <span className="text-[10px] font-header uppercase tracking-[0.3em] text-rich-black/35">
+                  Purdue Username
+                </span>
+                <div className="flex items-center gap-3 border border-rich-black/10 bg-pale-powder/20 px-5 py-4">
+                  <input
+                    type="text"
+                    name="username"
+                    value={formData.username}
+                    onChange={handleInputChange}
+                    className="w-full bg-transparent text-sm font-header uppercase tracking-[0.08em] outline-none placeholder:text-rich-black/20"
+                  />
+                  <span className="text-[10px] font-header uppercase tracking-[0.3em] text-rich-black/30">
+                    @purdue.edu
+                  </span>
+                </div>
+              </label>
+
+              <div className="grid gap-8 md:grid-cols-2">
+                <label className="block space-y-2">
+                  <span className="text-[10px] font-header uppercase tracking-[0.3em] text-rich-black/35">
+                    Password
+                  </span>
+                  <input
+                    type="password"
+                    name="password"
+                    value={formData.password}
+                    onChange={handleInputChange}
+                    className="w-full border border-rich-black/10 bg-pale-powder/20 px-5 py-4 text-sm font-header uppercase tracking-[0.08em] outline-none transition-colors placeholder:text-rich-black/20 focus:border-guardsman-red"
+                  />
+                  <p
+                    className={`text-[10px] font-header uppercase tracking-[0.25em] transition-colors ${
+                      showPasswordRequirement && formData.password.length < 8
+                        ? 'font-bold text-guardsman-red'
+                        : 'text-rich-black/35'
+                    }`}
+                  >
+                    At least 8 characters
+                  </p>
+                </label>
+
+                <label className="block space-y-2">
+                  <span className="text-[10px] font-header uppercase tracking-[0.3em] text-rich-black/35">
+                    Verify Password
+                  </span>
+                  <input
+                    type="password"
+                    name="confirmPassword"
+                    value={formData.confirmPassword}
+                    onChange={handleInputChange}
+                    className="w-full border border-rich-black/10 bg-pale-powder/20 px-5 py-4 text-sm font-header uppercase tracking-[0.08em] outline-none transition-colors placeholder:text-rich-black/20 focus:border-guardsman-red"
+                  />
+                </label>
+              </div>
+
+              <div className="flex items-center justify-between border-t border-rich-black/10 pt-8">
+                <div />
+                <button
+                  type="submit"
+                  className="inline-flex items-center gap-3 bg-guardsman-red px-8 py-4 font-header text-[10px] uppercase tracking-[0.35em] text-white transition-colors hover:bg-madder"
+                >
+                  Create Account
+                  <ChevronRight className="h-4 w-4" />
+                </button>
+              </div>
+            </form>
+          </section>
+
+          <aside className="space-y-8">
+            <div className="border border-rich-black/5 bg-white p-8 shadow-2xl md:p-12">
+              <div className="flex h-14 w-14 items-center justify-center bg-guardsman-red/10 text-guardsman-red">
+                <KeyRound className="h-6 w-6" />
+              </div>
+              <h3 className="mt-8 font-header text-3xl uppercase tracking-wide text-rich-black">
+                Account Preview
+              </h3>
+              <div className="mt-8 space-y-4 border border-guardsman-red/20 bg-guardsman-red/[0.02] p-8">
+                <p className="font-header text-2xl uppercase tracking-wide text-rich-black">
+                  {formData.name.trim() || 'Your Name'}
+                </p>
+                <p className="text-[10px] font-header uppercase tracking-[0.3em] text-rich-black/45">
+                  {(normalizedUsername || 'username') + '@purdue.edu'}
+                </p>
+                <p className="text-[10px] font-header uppercase tracking-[0.3em] text-guardsman-red">
+                  Role: User
+                </p>
+              </div>
+            </div>
+
+            <div className="border border-rich-black/5 bg-white p-8 shadow-2xl md:p-12">
+              <p className="text-[10px] font-header uppercase tracking-[0.35em] text-rich-black/35">
+                Account Rules
+              </p>
+              <div className="mt-8 space-y-4">
+                {[
+                  'Full name is required.',
+                  'Use your Purdue username only.',
+                  'Password must be at least 8 characters.',
+                  'Waiver and dues happen after signup in the portal.',
+                ].map((item) => (
+                  <div key={item} className="flex items-start gap-3">
+                    <Sparkles className="mt-0.5 h-4 w-4 shrink-0 text-guardsman-red" />
+                    <p className="text-sm leading-7 text-rich-black/60">{item}</p>
+                  </div>
+                ))}
+              </div>
+
+              <div className="mt-8 border-t border-rich-black/10 pt-8">
+                <p className="text-[10px] font-header uppercase tracking-[0.3em] text-rich-black/35">
+                  Secure local signup
+                </p>
+              </div>
+            </div>
+          </aside>
+        </motion.div>
       </div>
     </main>
   );
-};
-
-export default JoinPage;
+}

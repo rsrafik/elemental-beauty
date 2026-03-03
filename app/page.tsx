@@ -6,6 +6,17 @@ import { FlaskConical, Menu, ArrowRight, Instagram, Twitter, Facebook, Sparkles,
 import Image from 'next/image';
 import Link from 'next/link';
 
+const DiscordIcon = ({ className = '' }: { className?: string }) => (
+  <svg
+    viewBox="0 0 24 24"
+    fill="currentColor"
+    aria-hidden="true"
+    className={className}
+  >
+    <path d="M20.317 4.369A19.79 19.79 0 0 0 15.885 3c-.191.347-.403.816-.552 1.185a18.27 18.27 0 0 0-5.104 0A12.6 12.6 0 0 0 9.676 3a19.74 19.74 0 0 0-4.433 1.369C2.44 8.612 1.68 12.75 2.06 16.83a19.92 19.92 0 0 0 5.426 2.703c.438-.594.828-1.22 1.163-1.876-.636-.241-1.242-.54-1.812-.885.15-.108.296-.222.437-.34 3.494 1.596 7.282 1.596 10.734 0 .143.118.289.232.438.34-.571.346-1.18.645-1.817.887.335.655.724 1.281 1.163 1.875a19.86 19.86 0 0 0 5.43-2.703c.444-4.73-.76-8.83-3.905-12.462ZM9.57 14.375c-1.05 0-1.914-.97-1.914-2.16 0-1.19.844-2.16 1.914-2.16 1.078 0 1.93.98 1.913 2.16 0 1.19-.844 2.16-1.913 2.16Zm4.86 0c-1.05 0-1.913-.97-1.913-2.16 0-1.19.844-2.16 1.913-2.16 1.078 0 1.93.98 1.913 2.16 0 1.19-.835 2.16-1.913 2.16Z" />
+  </svg>
+);
+
 const Navbar = () => {
   const [isMenuOpen, setIsMenuOpen] = useState(false);
 
@@ -88,7 +99,7 @@ const Navbar = () => {
 
             <div className="p-8 flex justify-between items-center border-t border-white/10">
               <div className="font-sans text-[10px] text-white/40 uppercase tracking-widest">
-                © 2024 ELEMENTAL BEAUTY
+                © 2026 ELEMENTAL BEAUTY
               </div>
               <div className="flex gap-8 font-header text-[10px] uppercase tracking-widest">
                 <span className="hover:text-guardsman-red cursor-pointer">INSTAGRAM</span>
@@ -448,17 +459,30 @@ const Footer = () => {
 
         <div className="pt-8 border-t border-white/10 flex flex-col md:flex-row justify-between items-center gap-8">
           <p className="font-sans text-xs text-pale-powder/40">
-            © 2024 ELEMENTAL BEAUTY. ALL RIGHTS RESERVED.
+            © 2026 ELEMENTAL BEAUTY. ALL RIGHTS RESERVED.
           </p>
           <div className="flex gap-6">
             <motion.div whileHover={{ y: -4, scale: 1.08 }} whileTap={{ scale: 0.96 }}>
-              <Instagram className="w-5 h-5 cursor-pointer hover:text-guardsman-red transition-colors" />
+              <a
+                href="https://www.instagram.com/ccs.purdue/"
+                target="_blank"
+                rel="noreferrer"
+                aria-label="CCS Purdue Instagram"
+                className="block hover:text-guardsman-red transition-colors"
+              >
+                <Instagram className="w-5 h-5 cursor-pointer" />
+              </a>
             </motion.div>
             <motion.div whileHover={{ y: -4, scale: 1.08 }} whileTap={{ scale: 0.96 }}>
-              <Twitter className="w-5 h-5 cursor-pointer hover:text-guardsman-red transition-colors" />
-            </motion.div>
-            <motion.div whileHover={{ y: -4, scale: 1.08 }} whileTap={{ scale: 0.96 }}>
-              <Facebook className="w-5 h-5 cursor-pointer hover:text-guardsman-red transition-colors" />
+              <a
+                href="https://discord.gg/BDAVya9pFm"
+                target="_blank"
+                rel="noreferrer"
+                aria-label="CCS Purdue Discord"
+                className="block hover:text-guardsman-red transition-colors"
+              >
+                <DiscordIcon className="w-5 h-5 cursor-pointer" />
+              </a>
             </motion.div>
           </div>
         </div>
