@@ -196,6 +196,8 @@ type TurningSheet = {
   index: number;
 };
 
+type BookPosition = 'front' | 'open' | 'back';
+
 type FrontCoverProps = {
   onSelectMember: (index: number) => void;
 };
@@ -436,10 +438,14 @@ function PageSheet({
 export default function AboutPage() {
   const [flippedCount, setFlippedCount] = useState(0);
   const [turningSheet, setTurningSheet] = useState<TurningSheet | null>(null);
+  const [queuedTurn, setQueuedTurn] = useState<TurningSheet | null>(null);
+  const [bookPosition, setBookPosition] = useState<BookPosition>('front');
   const totalSheets = members.length + 1;
 
   const openBookToMember = (index: number) => {
     setTurningSheet(null);
+    setQueuedTurn(null);
+    setBookPosition('open');
     setFlippedCount(index + 1);
   };
 
@@ -449,6 +455,12 @@ export default function AboutPage() {
     }
 
     if (flippedCount >= totalSheets) {
+      return;
+    }
+
+    if (flippedCount === 0) {
+      setQueuedTurn({ direction: 'forward', index: 0 });
+      setBookPosition('open');
       return;
     }
 
@@ -464,6 +476,12 @@ export default function AboutPage() {
       return;
     }
 
+    if (flippedCount === totalSheets) {
+      setQueuedTurn({ direction: 'backward', index: totalSheets - 1 });
+      setBookPosition('open');
+      return;
+    }
+
     setTurningSheet({ direction: 'backward', index: flippedCount - 1 });
   };
 
@@ -473,12 +491,29 @@ export default function AboutPage() {
     }
 
     if (turningSheet.direction === 'forward') {
-      setFlippedCount(index + 1);
+      const nextCount = index + 1;
+      setFlippedCount(nextCount);
+      if (nextCount === totalSheets) {
+        setBookPosition('back');
+      }
     } else {
-      setFlippedCount(index);
+      const nextCount = index;
+      setFlippedCount(nextCount);
+      if (nextCount === 0) {
+        setBookPosition('front');
+      }
     }
 
     setTurningSheet(null);
+  };
+
+  const handleBookPositionComplete = () => {
+    if (!queuedTurn || turningSheet || bookPosition !== 'open') {
+      return;
+    }
+
+    setTurningSheet(queuedTurn);
+    setQueuedTurn(null);
   };
 
   return (
@@ -490,7 +525,15 @@ export default function AboutPage() {
         <div className="pointer-events-none absolute inset-x-0 bottom-0 h-36 bg-[linear-gradient(180deg,transparent,rgba(10,10,10,0.08))]" />
 
         <div className="relative h-full max-h-[720px] w-full max-w-6xl">
-          <div className="book-perspective relative h-full w-full rounded-[10px] bg-transparent">
+          <motion.div
+            initial={false}
+            animate={{
+              x: bookPosition === 'front' ? '-25%' : bookPosition === 'back' ? '25%' : '0%',
+            }}
+            transition={{ duration: 0.55, ease: [0.22, 1, 0.36, 1] }}
+            onAnimationComplete={handleBookPositionComplete}
+            className="book-perspective relative h-full w-full rounded-[10px] bg-transparent"
+          >
             <div className="absolute inset-0">
               <div className="absolute inset-y-0 left-1/2 hidden w-px bg-rich-black/10 lg:block" />
 
@@ -569,7 +612,7 @@ export default function AboutPage() {
                     );
                   })}
             </div>
-          </div>
+          </motion.div>
         </div>
       </div>
 
