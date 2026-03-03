@@ -1,0 +1,32 @@
+@import "tailwindcss";
+
+@theme {
+  --color-guardsman-red: #C50000;
+  --color-rich-black: #0A0A0A;
+  --color-aesthetic-white: #F5F5F5;
+  --color-aurora-black: #111111;
+  --color-madder: #A50021;
+  --color-pale-powder: #E4E3E0;
+
+  --font-sans: var(--font-sans);
+  --font-header: var(--font-header);
+  --font-title: var(--font-sans);
+  --font-mono: var(--font-mono);
+  --font-accent: var(--font-header);
+  --font-caption: var(--font-sans);
+  --font-script: var(--font-script);
+  --font-sarina: var(--font-sarina);
+  --font-praise: var(--font-praise);
+  --font-italianno: var(--font-italianno);
+  --font-imperial: var(--font-imperial);
+  --font-abril: var(--font-abril);
+}
+
+@layer base {
+  body {
+    @apply font-sans;
+  }
+  h1, h2, h3, h4, h5, h6 {
+    @apply font-header;
+  }
+}
