@@ -2,7 +2,7 @@
 
 import React, { useState, useRef, useEffect } from 'react';
 import { motion, AnimatePresence, useScroll, useTransform } from 'motion/react';
-import { FlaskConical, Menu, Search, ArrowRight, Instagram, Twitter, Facebook, Sparkles, Users, Calendar, X, ChevronLeft, ChevronRight } from 'lucide-react';
+import { FlaskConical, Menu, ArrowRight, Instagram, Twitter, Facebook, Sparkles, Users, Calendar, X, ChevronLeft, ChevronRight } from 'lucide-react';
 import Image from 'next/image';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
@@ -28,7 +28,6 @@ const Navbar = () => {
               className="w-6 h-6 cursor-pointer hover:text-guardsman-red transition-colors" 
               onClick={() => setIsMenuOpen(true)}
             />
-            <Search className="w-5 h-5 cursor-pointer hidden md:block" />
           </div>
           
           <div className="absolute left-1/2 -translate-x-1/2">
@@ -162,16 +161,6 @@ const Hero = () => {
             </Link>
           </motion.div>
         </motion.div>
-      </motion.div>
-
-      <motion.div 
-        style={{ y: useTransform(scrollYProgress, [0, 1], ["0%", "100%"]) }}
-        className="absolute bottom-10 left-10 hidden lg:block"
-      >
-        <div className="font-imperial text-aesthetic-white text-3xl max-w-none leading-tight">
-          <p className="whitespace-nowrap">&quot;Chemistry is the study of change.</p>
-          <p className="whitespace-nowrap">Skincare is the art of transformation.&quot;</p>
-        </div>
       </motion.div>
     </section>
   );

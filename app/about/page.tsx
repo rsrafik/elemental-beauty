@@ -10,7 +10,6 @@ import {
   ChevronRight,
   Instagram,
   Menu,
-  Search,
   Sparkles,
   X,
 } from 'lucide-react';
@@ -104,7 +103,6 @@ function Navbar() {
             >
               <Menu className="h-6 w-6" />
             </button>
-            <Search className="hidden h-5 w-5 md:block" />
           </div>
 
           <div className="absolute left-1/2 -translate-x-1/2">
