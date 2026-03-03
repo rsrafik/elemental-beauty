@@ -40,19 +40,31 @@ export default function SponsorsPage() {
               We do not have sponsors published yet. This page is ready for future brand partners,
               studio collaborators, and chapter supporters once those relationships are confirmed.
             </p>
-            <div className="mt-10 flex flex-wrap gap-4">
-              <Link
-                href="/join"
-                className="inline-flex items-center gap-3 bg-rich-black px-8 py-3 font-header text-xs uppercase tracking-[0.3em] text-aesthetic-white transition-colors hover:bg-guardsman-red"
-              >
-                Join The Chapter
-              </Link>
-              <Link
-                href="/about"
-                className="inline-flex items-center gap-3 border border-rich-black/15 px-8 py-3 font-header text-xs uppercase tracking-[0.3em] text-rich-black transition-colors hover:border-guardsman-red hover:bg-guardsman-red hover:text-aesthetic-white"
-              >
-                Meet The Board
-              </Link>
+            <div className="mt-10">
+              <div className="inline-flex flex-col items-start">
+                <div className="flex flex-wrap gap-4">
+                  <Link
+                    href="/join"
+                    className="inline-flex items-center gap-3 bg-rich-black px-8 py-3 font-header text-xs uppercase tracking-[0.3em] text-aesthetic-white transition-colors hover:bg-guardsman-red"
+                  >
+                    Join The Chapter
+                  </Link>
+                  <Link
+                    href="/about"
+                    className="inline-flex items-center gap-3 border border-rich-black/15 px-8 py-3 font-header text-xs uppercase tracking-[0.3em] text-rich-black transition-colors hover:border-guardsman-red hover:bg-guardsman-red hover:text-aesthetic-white"
+                  >
+                    Meet The Board
+                  </Link>
+                </div>
+                <div className="mt-4 w-full">
+                  <button
+                    type="button"
+                    className="inline-flex w-full items-center justify-center bg-guardsman-red px-8 py-3 font-header text-xs uppercase tracking-[0.3em] text-aesthetic-white transition-colors hover:bg-rich-black"
+                  >
+                    Become A Sponsor
+                  </button>
+                </div>
+              </div>
             </div>
           </div>
 

@@ -2,25 +2,34 @@
 
 import React, { useState } from 'react';
 import { motion } from 'motion/react';
-import { FlaskConical, ArrowRight, Lock, Mail, Eye, EyeOff } from 'lucide-react';
+import { ArrowRight, Lock, UserRound, Eye, EyeOff } from 'lucide-react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
+import { normalizePurdueUsername, useAccounts } from '@/lib/accounts';
 
 export default function LoginPage() {
   const [showPassword, setShowPassword] = useState(false);
-  const [email, setEmail] = useState('');
+  const [username, setUsername] = useState('');
   const [password, setPassword] = useState('');
   const [isLoading, setIsLoading] = useState(false);
+  const [error, setError] = useState('');
+  const { signIn } = useAccounts();
   const router = useRouter();
 
   const handleLogin = (e: React.FormEvent) => {
     e.preventDefault();
+    setError('');
     setIsLoading(true);
-    // Simulate login
+
     setTimeout(() => {
-      // If it's an admin email, maybe go to dashboard, but user said portal is for regular users
-      // Let's just go to /portal for now
-      router.push('/portal');
+      const account = signIn(username, password);
+      if (!account) {
+        setIsLoading(false);
+        setError('Username or password did not match a local account.');
+        return;
+      }
+
+      router.push(account.role === 'officer' || account.role === 'admin' ? '/dashboard' : '/portal');
     }, 1500);
   };
 
@@ -42,8 +51,13 @@ export default function LoginPage() {
           <div className="absolute top-0 right-0 w-24 h-24 bg-guardsman-red/5 -mr-12 -mt-12 rotate-45" />
           
           <div className="text-center mb-12">
-            <Link href="/" className="inline-flex items-center justify-center w-16 h-16 bg-rich-black mb-8 group hover:rotate-12 transition-transform">
-              <FlaskConical className="w-8 h-8 text-white" />
+            <Link href="/" className="inline-flex flex-col items-center justify-center mb-8 leading-none transition-opacity hover:opacity-75">
+              <span className="font-abril text-4xl uppercase tracking-tight text-rich-black md:text-5xl">
+                Elemental
+              </span>
+              <span className="font-abril text-4xl uppercase tracking-tight text-guardsman-red md:text-5xl">
+                Beauty
+              </span>
             </Link>
             <h1 className="font-header text-3xl text-rich-black uppercase tracking-widest mb-2">Welcome Back</h1>
             <p className="font-sans text-xs text-rich-black/40 uppercase tracking-[0.2em]">Enter your credentials to access the portal</p>
@@ -53,18 +67,21 @@ export default function LoginPage() {
             <div className="space-y-6">
               <div className="relative group">
                 <label className="absolute -top-2.5 left-4 bg-white px-2 text-[10px] font-header text-rich-black/40 uppercase tracking-widest transition-colors group-focus-within:text-guardsman-red">
-                  Email Address
+                  Purdue Username
                 </label>
                 <div className="flex items-center border border-rich-black/10 px-4 py-4 focus-within:border-guardsman-red transition-colors">
-                  <Mail className="w-4 h-4 text-rich-black/20 mr-4" />
-                  <input 
-                    type="email" 
+                  <UserRound className="w-4 h-4 text-rich-black/20 mr-4" />
+                  <input
+                    type="text"
                     required
-                    value={email}
-                    onChange={(e) => setEmail(e.target.value)}
+                    value={username}
+                    onChange={(e) => setUsername(normalizePurdueUsername(e.target.value))}
                     className="bg-transparent border-none w-full outline-none font-header text-xs uppercase tracking-widest text-rich-black"
-                    placeholder="ELEMENTIST@EB.COM"
+                    placeholder="CAREY123"
                   />
+                  <span className="text-[10px] font-header uppercase tracking-widest text-rich-black/25">
+                    @purdue.edu
+                  </span>
                 </div>
               </div>
 
@@ -93,6 +110,12 @@ export default function LoginPage() {
               </div>
             </div>
 
+            {error ? (
+              <p className="text-center font-header text-[10px] uppercase tracking-[0.25em] text-guardsman-red">
+                {error}
+              </p>
+            ) : null}
+
             <div className="flex items-center justify-between">
               <label className="flex items-center gap-2 cursor-pointer group">
                 <input type="checkbox" className="w-4 h-4 border-rich-black/10 rounded-none checked:bg-guardsman-red focus:ring-0 transition-colors" />
@@ -119,6 +142,9 @@ export default function LoginPage() {
           <div className="mt-12 text-center pt-8 border-t border-rich-black/5">
             <p className="font-header text-[10px] text-rich-black/40 uppercase tracking-widest">
               Don&apos;t have an account? <Link href="/join" className="text-guardsman-red hover:underline">Join the Chapter</Link>
+            </p>
+            <p className="mt-4 text-[10px] font-header uppercase tracking-[0.25em] text-rich-black/25">
+              Local accounts: `newuser`, `alex`, `azu`, `rrafik`
             </p>
           </div>
         </div>

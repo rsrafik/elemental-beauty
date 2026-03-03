@@ -2,6 +2,7 @@ import type { Metadata } from 'next';
 import { Inter, Playfair_Display, JetBrains_Mono, Petit_Formal_Script, Sarina, Praise, Italianno, Imperial_Script, Abril_Fatface } from 'next/font/google';
 import { AnimatePresence } from 'motion/react';
 import './globals.css';
+import GlobalBrandLink from './global-brand-link';
 
 const inter = Inter({
   subsets: ['latin'],
@@ -63,6 +64,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
   return (
     <html lang="en" className={`${inter.variable} ${playfair.variable} ${jetbrainsMono.variable} ${petitFormalScript.variable} ${sarina.variable} ${praise.variable} ${italianno.variable} ${imperialScript.variable} ${abrilFatface.variable}`}>
       <body suppressHydrationWarning className="bg-aesthetic-white text-rich-black antialiased">
+        <GlobalBrandLink />
         <AnimatePresence mode="wait">
           {children}
         </AnimatePresence>

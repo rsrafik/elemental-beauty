@@ -31,10 +31,11 @@ import {
   AdminDashboardData,
   AdminEvent,
   AdminLab,
-  AdminMember,
   useAdminDashboardData,
 } from '@/lib/admin-dashboard';
+import { Account, AccountRole, formatPurdueEmail, normalizePurdueUsername, useAccounts } from '@/lib/accounts';
 import { BoardBookData, BoardBookMember, defaultBoardBookData, useBoardBookData } from '@/lib/board-book';
+import { renderMarkdownToHtml } from '@/lib/markdown';
 
 const DEFAULT_BOARD_PLACEHOLDER = 'from-[#efebe8] via-[#f8f4f1] to-[#e4dcda]';
 
@@ -76,16 +77,27 @@ function readImageFile(file: File) {
   });
 }
 
-function createAdminMember(): AdminMember {
+function readTextFile(file: File) {
+  return new Promise<string>((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => resolve(typeof reader.result === 'string' ? reader.result : '');
+    reader.onerror = () => reject(new Error('Unable to read markdown file.'));
+    reader.readAsText(file);
+  });
+}
+
+function createAccount(): Account {
   const token = Date.now().toString().slice(-5);
   return {
-    id: `member-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
+    id: `acct-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
     name: 'New Member',
-    email: `member${token}@example.com`,
-    role: 'Member',
-    dues: 'Unpaid',
-    waiver: 'Pending',
-    joinDate: new Date().toISOString().slice(0, 10),
+    username: `member${token}`,
+    role: 'member',
+    password: 'boilerup',
+    profilePhotoDataUrl: '',
+    waiverSigned: false,
+    duesPaid: false,
+    joinedAt: new Date().toISOString().slice(0, 10),
   };
 }
 
@@ -96,6 +108,7 @@ function createAdminLab(): AdminLab {
     date: new Date().toISOString().slice(0, 10),
     status: 'Draft',
     visibility: 'Public',
+    markdown: '# New Lab Draft\n\nAdd your markdown here.\n',
   };
 }
 
@@ -121,29 +134,214 @@ function BoardBookPlaceholder({ className = '' }: { className?: string }) {
   );
 }
 
-const Sidebar = ({ activeTab, setActiveTab }: { activeTab: string; setActiveTab: (tab: string) => void }) => {
-  const menuItems = [
-    { id: 'overview', label: 'Overview', icon: Users },
-    { id: 'members', label: 'Members', icon: User },
-    { id: 'board', label: 'Board Book', icon: FileText },
-    { id: 'labs', label: 'Labs & Projects', icon: FlaskConical },
-    { id: 'events', label: 'Events', icon: Calendar },
-    { id: 'settings', label: 'Settings', icon: Settings },
-  ];
+function AccountAvatar({
+  name,
+  photo,
+  sizeClass,
+  textClass,
+}: {
+  name: string;
+  photo: string;
+  sizeClass: string;
+  textClass: string;
+}) {
+  if (photo) {
+    // eslint-disable-next-line @next/next/no-img-element
+    return <img src={photo} alt={name} className={`${sizeClass} object-cover`} />;
+  }
+
+  return (
+    <div className={`flex items-center justify-center bg-rich-black text-white ${sizeClass}`}>
+      <span className={textClass}>{name[0] ?? '?'}</span>
+    </div>
+  );
+}
+
+function AccountEditor({
+  isOpen,
+  name,
+  username,
+  password,
+  profilePhotoDataUrl,
+  onClose,
+  onSave,
+}: {
+  isOpen: boolean;
+  name: string;
+  username: string;
+  password: string;
+  profilePhotoDataUrl: string;
+  onClose: () => void;
+  onSave: (updates: { name: string; username: string; password: string; profilePhotoDataUrl: string }) => void;
+}) {
+  const [draftName, setDraftName] = useState(name);
+  const [draftUsername, setDraftUsername] = useState(username);
+  const [draftPassword, setDraftPassword] = useState(password);
+  const [draftPhoto, setDraftPhoto] = useState(profilePhotoDataUrl);
+
+  useEffect(() => {
+    if (!isOpen) {
+      return;
+    }
+
+    setDraftName(name);
+    setDraftUsername(username);
+    setDraftPassword(password);
+    setDraftPhoto(profilePhotoDataUrl);
+  }, [isOpen, name, password, profilePhotoDataUrl, username]);
+
+  const handlePhotoUpload = async (event: React.ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0];
+    if (!file) {
+      return;
+    }
+
+    try {
+      setDraftPhoto(await readImageFile(file));
+    } finally {
+      event.target.value = '';
+    }
+  };
+
+  return (
+    <AnimatePresence>
+      {isOpen ? (
+        <motion.div
+          initial={{ opacity: 0 }}
+          animate={{ opacity: 1 }}
+          exit={{ opacity: 0 }}
+          className="fixed inset-0 z-[120] flex items-center justify-center bg-rich-black/45 p-6"
+        >
+          <motion.div
+            initial={{ opacity: 0, y: 20 }}
+            animate={{ opacity: 1, y: 0 }}
+            exit={{ opacity: 0, y: 20 }}
+            className="w-full max-w-xl border border-rich-black/10 bg-white p-8 shadow-2xl"
+          >
+            <div className="flex items-start justify-between gap-6">
+              <div>
+                <p className="text-[10px] font-header uppercase tracking-[0.35em] text-rich-black/35">Account</p>
+                <h3 className="mt-3 font-header text-2xl uppercase tracking-wide">Edit Profile</h3>
+              </div>
+              <button
+                type="button"
+                onClick={onClose}
+                className="font-header text-[10px] uppercase tracking-[0.3em] text-rich-black/45 transition-colors hover:text-guardsman-red"
+              >
+                Close
+              </button>
+            </div>
+
+            <div className="mt-8 space-y-5">
+              <div className="flex items-center gap-5">
+                <div className="h-20 w-20 overflow-hidden rounded-full border border-rich-black/10">
+                  <AccountAvatar
+                    name={draftName}
+                    photo={draftPhoto}
+                    sizeClass="h-full w-full"
+                    textClass="font-header text-2xl uppercase"
+                  />
+                </div>
+                <label
+                  htmlFor="dashboard-account-photo"
+                  className="inline-flex cursor-pointer items-center gap-3 border border-rich-black/10 px-4 py-3 font-header text-[10px] uppercase tracking-[0.3em] transition-colors hover:border-guardsman-red hover:bg-guardsman-red hover:text-white"
+                >
+                  Change Photo
+                </label>
+                <input
+                  id="dashboard-account-photo"
+                  type="file"
+                  accept="image/*"
+                  onChange={handlePhotoUpload}
+                  className="hidden"
+                />
+              </div>
+
+              <label className="block space-y-2">
+                <span className="text-[10px] font-header uppercase tracking-[0.3em] text-rich-black/35">Display Name</span>
+                <input
+                  value={draftName}
+                  onChange={(event) => setDraftName(event.target.value)}
+                  className="w-full border border-rich-black/10 bg-pale-powder/20 px-4 py-3 text-sm outline-none focus:border-guardsman-red"
+                />
+              </label>
+              <label className="block space-y-2">
+                <span className="text-[10px] font-header uppercase tracking-[0.3em] text-rich-black/35">Purdue Username</span>
+                <div className="flex items-center border border-rich-black/10 bg-pale-powder/20 px-4 py-3">
+                  <input
+                    value={draftUsername}
+                    onChange={(event) => setDraftUsername(normalizePurdueUsername(event.target.value))}
+                    className="w-full bg-transparent text-sm outline-none"
+                  />
+                  <span className="text-[10px] font-header uppercase tracking-[0.3em] text-rich-black/30">@purdue.edu</span>
+                </div>
+              </label>
+              <label className="block space-y-2">
+                <span className="text-[10px] font-header uppercase tracking-[0.3em] text-rich-black/35">Password</span>
+                <input
+                  value={draftPassword}
+                  onChange={(event) => setDraftPassword(event.target.value)}
+                  className="w-full border border-rich-black/10 bg-pale-powder/20 px-4 py-3 text-sm outline-none focus:border-guardsman-red"
+                />
+              </label>
+            </div>
+
+            <div className="mt-8 flex gap-4">
+              <button
+                type="button"
+                onClick={() => {
+                  onSave({
+                    name: draftName.trim() || name,
+                    username: draftUsername,
+                    password: draftPassword,
+                    profilePhotoDataUrl: draftPhoto,
+                  });
+                  onClose();
+                }}
+                className="bg-rich-black px-6 py-3 font-header text-[10px] uppercase tracking-[0.35em] text-white transition-colors hover:bg-guardsman-red"
+              >
+                Save Account
+              </button>
+            </div>
+          </motion.div>
+        </motion.div>
+      ) : null}
+    </AnimatePresence>
+  );
+}
+
+const Sidebar = ({
+  activeTab,
+  setActiveTab,
+  availableTabs,
+  onOpenAccount,
+  onLogout,
+}: {
+  activeTab: string;
+  setActiveTab: (tab: string) => void;
+  availableTabs: Array<{ id: string; label: string; icon: React.ComponentType<{ className?: string }> }>;
+  onOpenAccount: () => void;
+  onLogout: () => void;
+}) => {
 
   return (
     <aside className="sticky top-0 flex h-screen w-64 flex-col border-r border-rich-black/5 bg-white p-8">
-      <Link href="/" prefetch={false} className="group mb-16 flex items-center gap-2">
+      <Link href="/" prefetch={false} className="group mb-16 flex items-center gap-3">
         <div className="flex h-8 w-8 items-center justify-center bg-guardsman-red transition-transform group-hover:rotate-12">
           <FlaskConical className="h-5 w-5 text-white" />
         </div>
-        <span className="font-title text-xl uppercase tracking-tighter text-rich-black">
-          ELEMENTAL <span className="text-guardsman-red">PORTAL</span>
-        </span>
+        <div className="flex flex-col leading-none">
+          <span className="font-abril text-[1.55rem] uppercase tracking-tight text-rich-black">
+            Elemental
+          </span>
+          <span className="font-abril text-[1.55rem] uppercase tracking-tight text-guardsman-red">
+            Portal
+          </span>
+        </div>
       </Link>
 
       <nav className="flex-1 space-y-4">
-        {menuItems.map((item) => (
+        {availableTabs.map((item) => (
           <button
             key={item.id}
             type="button"
@@ -160,28 +358,40 @@ const Sidebar = ({ activeTab, setActiveTab }: { activeTab: string; setActiveTab:
         ))}
       </nav>
 
-      <Link
-        href="/login"
+      <button
+        type="button"
+        onClick={onOpenAccount}
+        className="mb-3 flex items-center gap-4 border border-transparent px-4 py-3 font-header text-[10px] uppercase tracking-widest text-rich-black/45 transition-all hover:border-rich-black/10 hover:bg-pale-powder/20 hover:text-rich-black"
+      >
+        <User className="h-4 w-4" />
+        Edit Account
+      </button>
+
+      <button
+        type="button"
+        onClick={onLogout}
         className="mt-auto flex items-center gap-4 border border-transparent px-4 py-3 font-header text-[10px] uppercase tracking-widest text-guardsman-red transition-all hover:border-guardsman-red/10 hover:bg-guardsman-red/5"
       >
         <LogOut className="h-4 w-4" />
         Logout
-      </Link>
+      </button>
     </aside>
   );
 };
 
 const Header = ({
   title,
-  adminName,
-  adminRole,
+  accountName,
+  accountRole,
+  profilePhotoDataUrl,
   notifications,
   notificationsOpen,
   onToggleNotifications,
 }: {
   title: string;
-  adminName: string;
-  adminRole: string;
+  accountName: string;
+  accountRole: string;
+  profilePhotoDataUrl: string;
   notifications: AdminDashboardData['notifications'];
   notificationsOpen: boolean;
   onToggleNotifications: () => void;
@@ -226,11 +436,16 @@ const Header = ({
 
         <div className="flex items-center gap-4 border-l border-rich-black/10 pl-8">
           <div className="hidden text-right sm:block">
-            <p className="text-[10px] font-header uppercase tracking-widest text-rich-black">{adminName}</p>
-            <p className="text-[8px] font-header uppercase tracking-widest text-guardsman-red">{adminRole}</p>
+            <p className="text-[10px] font-header uppercase tracking-widest text-rich-black">{accountName}</p>
+            <p className="text-[8px] font-header uppercase tracking-widest text-guardsman-red">{accountRole}</p>
           </div>
-          <div className="flex h-10 w-10 items-center justify-center bg-rich-black shadow-xl">
-            <User className="h-6 w-6 text-white" />
+          <div className="h-10 w-10 overflow-hidden bg-rich-black shadow-xl">
+            <AccountAvatar
+              name={accountName}
+              photo={profilePhotoDataUrl}
+              sizeClass="h-full w-full"
+              textClass="font-header text-sm uppercase"
+            />
           </div>
         </div>
       </div>
@@ -240,16 +455,20 @@ const Header = ({
 
 const OverviewTab = ({
   data,
+  accounts,
+  canAccessSettings,
   onSelectTab,
 }: {
   data: AdminDashboardData;
+  accounts: Account[];
+  canAccessSettings: boolean;
   onSelectTab: (tab: string) => void;
 }) => {
   const stats = [
-    { label: 'Total Members', value: String(data.members.length), change: `${data.members.filter((member) => member.dues === 'Paid').length} paid`, icon: Users, color: 'bg-guardsman-red' },
+    { label: 'Total Members', value: String(accounts.length), change: `${accounts.filter((member) => member.duesPaid).length} paid`, icon: Users, color: 'bg-guardsman-red' },
     { label: 'Active Labs', value: String(data.labs.length), change: `${data.labs.filter((lab) => lab.status === 'Published').length} published`, icon: FlaskConical, color: 'bg-rich-black' },
     { label: 'Upcoming Events', value: String(data.events.filter((event) => event.status === 'Scheduled').length), change: 'schedule live', icon: Calendar, color: 'bg-aurora-black' },
-    { label: 'Revenue', value: `${data.members.filter((member) => member.dues === 'Paid').length * 25}`, change: data.settings.memberDuesLabel, icon: DollarSign, color: 'bg-madder' },
+    { label: 'Revenue', value: `${accounts.filter((member) => member.duesPaid).length * 25}`, change: data.settings.memberDuesLabel, icon: DollarSign, color: 'bg-madder' },
   ];
 
   return (
@@ -259,7 +478,19 @@ const OverviewTab = ({
           <button
             key={stat.label}
             type="button"
-            onClick={() => onSelectTab(stat.label === 'Total Members' ? 'members' : stat.label === 'Active Labs' ? 'labs' : stat.label === 'Upcoming Events' ? 'events' : 'settings')}
+            onClick={() =>
+              onSelectTab(
+                stat.label === 'Total Members'
+                  ? 'members'
+                  : stat.label === 'Active Labs'
+                    ? 'labs'
+                    : stat.label === 'Upcoming Events'
+                      ? 'events'
+                      : canAccessSettings
+                        ? 'settings'
+                        : 'overview',
+              )
+            }
             className="border border-rich-black/5 bg-white p-8 text-left shadow-xl transition-transform hover:-translate-y-1"
           >
             <div className="mb-6 flex items-start justify-between">
@@ -289,7 +520,7 @@ const OverviewTab = ({
             </button>
           </div>
           <div className="space-y-6">
-            {data.members.slice(0, 3).map((member) => (
+            {accounts.slice(0, 3).map((member) => (
               <button
                 key={member.id}
                 type="button"
@@ -297,12 +528,17 @@ const OverviewTab = ({
                 className="flex w-full items-center justify-between border border-transparent bg-pale-powder/20 p-6 text-left transition-all hover:border-rich-black/10"
               >
                 <div className="flex items-center gap-6">
-                  <div className="flex h-10 w-10 items-center justify-center bg-rich-black font-header text-xs text-white">
-                    {member.name[0]}
+                  <div className="h-10 w-10 overflow-hidden bg-rich-black">
+                    <AccountAvatar
+                      name={member.name}
+                      photo={member.profilePhotoDataUrl}
+                      sizeClass="h-full w-full"
+                      textClass="font-header text-xs uppercase"
+                    />
                   </div>
                   <div>
                     <p className="text-xs font-header uppercase tracking-widest text-rich-black">{member.name}</p>
-                    <p className="text-[10px] font-sans text-rich-black/40">{member.email}</p>
+                    <p className="text-[10px] font-sans text-rich-black/40">{formatPurdueEmail(member.username)}</p>
                   </div>
                 </div>
                 <ChevronRight className="h-4 w-4 text-rich-black/20" />
@@ -357,41 +593,82 @@ const OverviewTab = ({
 
 const MembersTab = ({
   members,
-  onSaveMembers,
+  currentRole,
+  onUpdateMember,
+  onAddMember,
+  onRemoveMember,
 }: {
-  members: AdminMember[];
-  onSaveMembers: (members: AdminMember[]) => void;
+  members: Account[];
+  currentRole: AccountRole;
+  onUpdateMember: (accountId: string, updates: Partial<Account>) => void;
+  onAddMember: (account: Account) => void;
+  onRemoveMember: (accountId: string) => void;
 }) => {
   const [search, setSearch] = useState('');
-  const [filter, setFilter] = useState<'All' | 'Paid' | 'Unpaid'>('All');
-  const [selectedMemberId, setSelectedMemberId] = useState(members[0]?.id ?? '');
-  const [memberDraft, setMemberDraft] = useState<AdminMember>(members[0] ?? createAdminMember());
+  const [statusFilter, setStatusFilter] = useState<'All' | 'Paid' | 'Unpaid'>('All');
+  const [roleFilter, setRoleFilter] = useState<'All' | 'Officer'>('All');
+  const visibleMembers = currentRole === 'admin' ? members : members.filter((member) => member.role !== 'admin');
+  const [selectedMemberId, setSelectedMemberId] = useState(visibleMembers[0]?.id ?? '');
+  const [memberDraft, setMemberDraft] = useState<Account>(visibleMembers[0] ?? createAccount());
+  const canManageMembers = currentRole === 'admin';
+  const selectedMember = visibleMembers.find((member) => member.id === selectedMemberId) ?? visibleMembers[0] ?? null;
+  const isAdminAccount = selectedMember?.role === 'admin';
+  const duesRequired = memberDraft.role === 'user' || memberDraft.role === 'admin';
+
+  useEffect(() => {
+    const selectedMember = visibleMembers.find((member) => member.id === selectedMemberId) ?? visibleMembers[0];
+    if (!selectedMember) {
+      return;
+    }
+
+    setSelectedMemberId(selectedMember.id);
+    setMemberDraft(selectedMember);
+  }, [selectedMemberId, visibleMembers]);
 
   const filteredMembers = useMemo(() => {
-    return members.filter((member) => {
+    return visibleMembers.filter((member) => {
       const matchesSearch =
         member.name.toLowerCase().includes(search.toLowerCase()) ||
-        member.email.toLowerCase().includes(search.toLowerCase()) ||
+        formatPurdueEmail(member.username).toLowerCase().includes(search.toLowerCase()) ||
         member.role.toLowerCase().includes(search.toLowerCase());
-      const matchesFilter = filter === 'All' || member.dues === filter;
-      return matchesSearch && matchesFilter;
+      const matchesStatus = statusFilter === 'All' || (statusFilter === 'Paid' ? member.duesPaid : !member.duesPaid);
+      const matchesRole = roleFilter === 'All' || member.role === 'officer';
+      return matchesSearch && matchesStatus && matchesRole;
     });
-  }, [filter, members, search]);
+  }, [roleFilter, search, statusFilter, visibleMembers]);
 
   const saveMember = () => {
-    onSaveMembers(members.map((member) => (member.id === memberDraft.id ? memberDraft : member)));
+    const nextDraft: Partial<Account> = { ...memberDraft };
+
+    if (currentRole !== 'admin') {
+      if (selectedMember?.role === 'admin') {
+        nextDraft.role = 'admin';
+      } else if (nextDraft.role === 'admin') {
+        nextDraft.role = selectedMember?.role === 'officer' ? 'officer' : 'member';
+      }
+    }
+
+    onUpdateMember(memberDraft.id, nextDraft);
   };
 
   const addMember = () => {
-    const nextMember = createAdminMember();
-    onSaveMembers([nextMember, ...members]);
+    if (!canManageMembers) {
+      return;
+    }
+
+    const nextMember = createAccount();
+    onAddMember(nextMember);
     setSelectedMemberId(nextMember.id);
     setMemberDraft(nextMember);
   };
 
   const removeMember = (memberId: string) => {
-    const nextMembers = members.filter((member) => member.id !== memberId);
-    onSaveMembers(nextMembers);
+    if (!canManageMembers) {
+      return;
+    }
+
+    const nextMembers = visibleMembers.filter((member) => member.id !== memberId);
+    onRemoveMember(memberId);
     const fallback = nextMembers[0];
     if (fallback) {
       setSelectedMemberId(fallback.id);
@@ -416,24 +693,37 @@ const MembersTab = ({
             </div>
             <button
               type="button"
-              onClick={() => setFilter((current) => (current === 'All' ? 'Paid' : current === 'Paid' ? 'Unpaid' : 'All'))}
+              onClick={() =>
+                setStatusFilter((current) => (current === 'All' ? 'Paid' : current === 'Paid' ? 'Unpaid' : 'All'))
+              }
               className="bg-pale-powder/30 p-3 transition-all hover:bg-rich-black hover:text-white"
             >
               <Filter className="h-5 w-5" />
             </button>
+            {canManageMembers ? (
+              <button
+                type="button"
+                onClick={() => setRoleFilter((current) => (current === 'All' ? 'Officer' : 'All'))}
+                className="border border-rich-black/10 px-4 py-3 font-header text-[10px] uppercase tracking-[0.3em] transition-colors hover:border-guardsman-red hover:bg-guardsman-red hover:text-white"
+              >
+                {roleFilter === 'All' ? 'Officer Filter Off' : 'Officer Filter On'}
+              </button>
+            ) : null}
           </div>
-          <button
-            type="button"
-            onClick={addMember}
-            className="flex w-full items-center justify-center gap-3 bg-guardsman-red px-10 py-3 font-header text-[10px] uppercase tracking-widest text-white shadow-xl transition-all hover:bg-madder sm:w-auto"
-          >
-            <Plus className="h-4 w-4" />
-            Add Member
-          </button>
+          {canManageMembers ? (
+            <button
+              type="button"
+              onClick={addMember}
+              className="flex w-full items-center justify-center gap-3 bg-guardsman-red px-10 py-3 font-header text-[10px] uppercase tracking-widest text-white shadow-xl transition-all hover:bg-madder sm:w-auto"
+            >
+              <Plus className="h-4 w-4" />
+              Add Member
+            </button>
+          ) : null}
         </div>
 
         <div className="border-b border-rich-black/5 px-10 py-4 text-[10px] font-header uppercase tracking-[0.3em] text-rich-black/35">
-          Current filter: {filter}
+          Current filter: {statusFilter}{canManageMembers ? ` / ${roleFilter}` : ''}
         </div>
 
         <div className="overflow-x-auto">
@@ -463,11 +753,16 @@ const MembersTab = ({
                   <td className="px-10 py-6">
                     <div className="flex items-center gap-4">
                       <div className="flex h-10 w-10 items-center justify-center bg-rich-black text-xs font-header text-white">
-                        {member.name[0] ?? '?'}
+                        <AccountAvatar
+                          name={member.name}
+                          photo={member.profilePhotoDataUrl}
+                          sizeClass="h-full w-full"
+                          textClass="font-header text-xs uppercase"
+                        />
                       </div>
                       <div>
                         <p className="text-xs font-header uppercase tracking-widest text-rich-black">{member.name}</p>
-                        <p className="text-[10px] font-sans text-rich-black/40">{member.email}</p>
+                        <p className="text-[10px] font-sans text-rich-black/40">{formatPurdueEmail(member.username)}</p>
                       </div>
                     </div>
                   </td>
@@ -478,22 +773,26 @@ const MembersTab = ({
                   </td>
                   <td className="px-10 py-6">
                     <div className="flex items-center gap-3">
-                      {member.dues === 'Paid' ? (
+                      {member.duesPaid ? (
                         <CheckCircle2 className="h-4 w-4 text-green-500" />
                       ) : (
                         <XCircle className="h-4 w-4 text-guardsman-red" />
                       )}
-                      <span className="text-[10px] font-header uppercase tracking-widest">{member.dues}</span>
+                      <span className="text-[10px] font-header uppercase tracking-widest">
+                        {member.duesPaid ? 'Paid' : 'Unpaid'}
+                      </span>
                     </div>
                   </td>
                   <td className="px-10 py-6">
                     <div className="flex items-center gap-3">
-                      <FileText className={`h-4 w-4 ${member.waiver === 'Signed' ? 'text-guardsman-red' : 'text-rich-black/20'}`} />
-                      <span className="text-[10px] font-header uppercase tracking-widest">{member.waiver}</span>
+                      <FileText className={`h-4 w-4 ${member.waiverSigned ? 'text-guardsman-red' : 'text-rich-black/20'}`} />
+                      <span className="text-[10px] font-header uppercase tracking-widest">
+                        {member.waiverSigned ? 'Signed' : 'Pending'}
+                      </span>
                     </div>
                   </td>
                   <td className="px-10 py-6 text-[10px] font-header uppercase tracking-widest text-rich-black/40">
-                    {member.joinDate}
+                    {member.joinedAt}
                   </td>
                   <td className="px-10 py-6 text-right">
                     <button
@@ -529,43 +828,104 @@ const MembersTab = ({
             />
           </label>
           <label className="block space-y-2">
-            <span className="text-[10px] font-header uppercase tracking-[0.3em] text-rich-black/35">Email</span>
-            <input
-              value={memberDraft.email}
-              onChange={(event) => setMemberDraft((current) => ({ ...current, email: event.target.value }))}
-              className="w-full border border-rich-black/10 bg-pale-powder/20 px-4 py-3 text-sm outline-none focus:border-guardsman-red"
-            />
+            <span className="text-[10px] font-header uppercase tracking-[0.3em] text-rich-black/35">Purdue Username</span>
+            <div className="flex items-center border border-rich-black/10 bg-pale-powder/20 px-4 py-3">
+              <input
+                value={memberDraft.username}
+                onChange={(event) =>
+                  setMemberDraft((current) => ({ ...current, username: normalizePurdueUsername(event.target.value) }))
+                }
+                className="w-full bg-transparent text-sm outline-none"
+              />
+              <span className="text-[10px] font-header uppercase tracking-[0.3em] text-rich-black/30">@purdue.edu</span>
+            </div>
           </label>
           <label className="block space-y-2">
             <span className="text-[10px] font-header uppercase tracking-[0.3em] text-rich-black/35">Role</span>
-            <input
+            <select
               value={memberDraft.role}
-              onChange={(event) => setMemberDraft((current) => ({ ...current, role: event.target.value }))}
+              onChange={(event) =>
+                setMemberDraft((current) => ({ ...current, role: event.target.value as AccountRole }))
+              }
+              disabled={currentRole !== 'admin' && isAdminAccount}
+              className="w-full border border-rich-black/10 bg-pale-powder/20 px-4 py-3 text-sm outline-none focus:border-guardsman-red disabled:cursor-not-allowed disabled:opacity-50"
+            >
+              <option value="user">User</option>
+              <option value="member">Member</option>
+              <option value="officer">Officer</option>
+              {currentRole === 'admin' ? <option value="admin">Admin</option> : null}
+            </select>
+          </label>
+          <label className="block space-y-2">
+            <span className="text-[10px] font-header uppercase tracking-[0.3em] text-rich-black/35">Password</span>
+            <input
+              value={memberDraft.password}
+              onChange={(event) => setMemberDraft((current) => ({ ...current, password: event.target.value }))}
               className="w-full border border-rich-black/10 bg-pale-powder/20 px-4 py-3 text-sm outline-none focus:border-guardsman-red"
             />
           </label>
+          <div className="space-y-2">
+            <span className="text-[10px] font-header uppercase tracking-[0.3em] text-rich-black/35">Profile Photo</span>
+            <div className="flex items-center gap-4">
+              <div className="h-14 w-14 overflow-hidden rounded-full border border-rich-black/10">
+                <AccountAvatar
+                  name={memberDraft.name}
+                  photo={memberDraft.profilePhotoDataUrl}
+                  sizeClass="h-full w-full"
+                  textClass="font-header text-base uppercase"
+                />
+              </div>
+              <label
+                htmlFor="dashboard-member-photo"
+                className="inline-flex cursor-pointer items-center gap-3 border border-rich-black/10 px-4 py-3 font-header text-[10px] uppercase tracking-[0.3em] transition-colors hover:border-guardsman-red hover:bg-guardsman-red hover:text-white"
+              >
+                <ImagePlus className="h-4 w-4" />
+                Change Photo
+              </label>
+              <input
+                id="dashboard-member-photo"
+                type="file"
+                accept="image/*"
+                onChange={async (event) => {
+                  const file = event.target.files?.[0];
+                  if (!file) {
+                    return;
+                  }
+
+                  try {
+                    const profilePhotoDataUrl = await readImageFile(file);
+                    setMemberDraft((current) => ({ ...current, profilePhotoDataUrl }));
+                  } finally {
+                    event.target.value = '';
+                  }
+                }}
+                className="hidden"
+              />
+            </div>
+          </div>
           <div className="grid gap-4 md:grid-cols-2">
             <button
               type="button"
-              onClick={() => setMemberDraft((current) => ({ ...current, dues: current.dues === 'Paid' ? 'Unpaid' : 'Paid' }))}
-              className="border border-rich-black/10 px-4 py-3 text-[10px] font-header uppercase tracking-[0.3em] transition-colors hover:border-guardsman-red hover:bg-guardsman-red hover:text-white"
+              disabled={!duesRequired}
+              onClick={() => setMemberDraft((current) => ({ ...current, duesPaid: !current.duesPaid }))}
+              className="border border-rich-black/10 px-4 py-3 text-[10px] font-header uppercase tracking-[0.3em] transition-colors hover:border-guardsman-red hover:bg-guardsman-red hover:text-white disabled:cursor-not-allowed disabled:border-rich-black/10 disabled:bg-pale-powder/30 disabled:text-rich-black/35"
             >
-              Dues: {memberDraft.dues}
+              Dues: {duesRequired ? (memberDraft.duesPaid ? 'Paid' : 'Unpaid') : 'Not Required'}
             </button>
             <button
               type="button"
-              onClick={() => setMemberDraft((current) => ({ ...current, waiver: current.waiver === 'Signed' ? 'Pending' : 'Signed' }))}
+              onClick={() => setMemberDraft((current) => ({ ...current, waiverSigned: !current.waiverSigned }))}
               className="border border-rich-black/10 px-4 py-3 text-[10px] font-header uppercase tracking-[0.3em] transition-colors hover:border-guardsman-red hover:bg-guardsman-red hover:text-white"
             >
-              Waiver: {memberDraft.waiver}
+              Waiver: {memberDraft.waiverSigned ? 'Signed' : 'Pending'}
             </button>
           </div>
           <label className="block space-y-2">
             <span className="text-[10px] font-header uppercase tracking-[0.3em] text-rich-black/35">Join Date</span>
             <input
               type="date"
-              value={memberDraft.joinDate}
-              onChange={(event) => setMemberDraft((current) => ({ ...current, joinDate: event.target.value }))}
+              value={memberDraft.joinedAt}
+              onChange={(event) => setMemberDraft((current) => ({ ...current, joinedAt: event.target.value }))}
               className="w-full border border-rich-black/10 bg-pale-powder/20 px-4 py-3 text-sm outline-none focus:border-guardsman-red"
             />
           </label>
@@ -580,14 +940,16 @@ const MembersTab = ({
             <Save className="h-4 w-4" />
             Save Member
           </button>
-          <button
-            type="button"
-            onClick={() => removeMember(memberDraft.id)}
-            className="inline-flex items-center gap-3 border border-rich-black/10 px-6 py-3 font-header text-[10px] uppercase tracking-[0.35em] transition-colors hover:border-guardsman-red hover:bg-guardsman-red hover:text-white"
-          >
-            <Trash2 className="h-4 w-4" />
-            Remove Member
-          </button>
+          {canManageMembers ? (
+            <button
+              type="button"
+              onClick={() => removeMember(memberDraft.id)}
+              className="inline-flex items-center gap-3 border border-rich-black/10 px-6 py-3 font-header text-[10px] uppercase tracking-[0.35em] transition-colors hover:border-guardsman-red hover:bg-guardsman-red hover:text-white"
+            >
+              <Trash2 className="h-4 w-4" />
+              Remove Member
+            </button>
+          ) : null}
         </div>
       </div>
     </div>
@@ -992,9 +1354,27 @@ const LabsTab = ({
   const [labDraft, setLabDraft] = useState<AdminLab>(labs[0] ?? createAdminLab());
 
   const filteredLabs = labs.filter((lab) => filter === 'All' || lab.status === filter);
+  const markdownPreview = useMemo(() => renderMarkdownToHtml(labDraft.markdown), [labDraft.markdown]);
 
   const saveLab = () => {
     onSaveLabs(labs.map((lab) => (lab.id === labDraft.id ? labDraft : lab)));
+  };
+
+  const handleMarkdownUpload = async (event: React.ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0];
+    if (!file) {
+      return;
+    }
+
+    try {
+      const markdown = await readTextFile(file);
+      setLabDraft((current) => ({
+        ...current,
+        markdown,
+      }));
+    } finally {
+      event.target.value = '';
+    }
   };
 
   const addLab = () => {
@@ -1110,6 +1490,31 @@ const LabsTab = ({
               className="w-full border border-rich-black/10 bg-pale-powder/20 px-4 py-3 text-sm outline-none focus:border-guardsman-red"
             />
           </label>
+          <div className="space-y-2">
+            <span className="text-[10px] font-header uppercase tracking-[0.3em] text-rich-black/35">Markdown Source</span>
+            <textarea
+              value={labDraft.markdown}
+              onChange={(event) => setLabDraft((current) => ({ ...current, markdown: event.target.value }))}
+              rows={12}
+              className="w-full resize-y border border-rich-black/10 bg-pale-powder/20 px-4 py-3 font-mono text-sm outline-none focus:border-guardsman-red"
+            />
+          </div>
+          <div className="flex flex-wrap gap-3">
+            <label
+              htmlFor="lab-markdown-upload"
+              className="inline-flex cursor-pointer items-center gap-3 border border-rich-black/10 px-4 py-3 font-header text-[10px] uppercase tracking-[0.3em] transition-colors hover:border-guardsman-red hover:bg-guardsman-red hover:text-white"
+            >
+              <FileText className="h-4 w-4" />
+              Upload Markdown
+            </label>
+            <input
+              id="lab-markdown-upload"
+              type="file"
+              accept=".md,.markdown,text/markdown,text/plain"
+              onChange={handleMarkdownUpload}
+              className="hidden"
+            />
+          </div>
           <div className="grid gap-4 md:grid-cols-2">
             <button
               type="button"
@@ -1133,6 +1538,12 @@ const LabsTab = ({
             <Eye className="h-4 w-4" />
             Open Public Destination
           </Link>
+          <div className="space-y-2">
+            <span className="text-[10px] font-header uppercase tracking-[0.3em] text-rich-black/35">Markdown Preview</span>
+            <div className="prose prose-sm max-w-none border border-rich-black/10 bg-white p-5 text-rich-black/75 prose-headings:font-header prose-headings:uppercase prose-headings:tracking-wide prose-a:text-guardsman-red prose-blockquote:border-l-2 prose-blockquote:border-guardsman-red prose-blockquote:pl-4 prose-code:rounded prose-code:bg-rich-black/5 prose-code:px-1 prose-code:py-0.5 prose-li:my-1">
+              <div dangerouslySetInnerHTML={{ __html: markdownPreview }} />
+            </div>
+          </div>
         </div>
 
         <div className="mt-8 flex flex-wrap gap-4">
@@ -1469,21 +1880,58 @@ const SettingsTab = ({
 
 export default function DashboardPage() {
   const { data, isReady, setData } = useAdminDashboardData();
+  const { currentAccount, data: accountData, updateAccount, addAccount, removeAccount, signOut } = useAccounts();
   const [activeTab, setActiveTab] = useState('overview');
   const [isLoaded, setIsLoaded] = useState(false);
   const [notificationsOpen, setNotificationsOpen] = useState(false);
+  const [isAccountEditorOpen, setIsAccountEditorOpen] = useState(false);
   const router = useRouter();
 
   useEffect(() => {
-    const isAdmin = true;
-    if (!isAdmin) {
-      router.push('/login');
-    } else {
-      setTimeout(() => setIsLoaded(true), 0);
+    if (!isReady) {
+      return;
     }
-  }, [router]);
 
-  if (!isLoaded || !isReady) {
+    if (!currentAccount) {
+      router.push('/login');
+      return;
+    }
+
+    if (currentAccount.role !== 'officer' && currentAccount.role !== 'admin') {
+      router.push('/portal');
+      return;
+    }
+
+    setTimeout(() => setIsLoaded(true), 0);
+  }, [currentAccount, isReady, router]);
+
+  const availableTabs = useMemo(() => {
+    if (!currentAccount) {
+      return [];
+    }
+
+    const baseTabs = [
+      { id: 'overview', label: 'Overview', icon: Users },
+      { id: 'members', label: 'Members', icon: User },
+      { id: 'labs', label: 'Labs & Projects', icon: FlaskConical },
+      { id: 'events', label: 'Events', icon: Calendar },
+    ];
+
+    if (currentAccount.role === 'admin') {
+      return [
+        ...baseTabs.slice(0, 2),
+        { id: 'board', label: 'Board Book', icon: FileText },
+        ...baseTabs.slice(2),
+        { id: 'settings', label: 'Settings', icon: Settings },
+      ];
+    }
+
+    return baseTabs;
+  }, [currentAccount]);
+
+  const resolvedTab = availableTabs.some((tab) => tab.id === activeTab) ? activeTab : 'overview';
+
+  if (!isLoaded || !isReady || !currentAccount) {
     return null;
   }
 
@@ -1494,13 +1942,6 @@ export default function DashboardPage() {
     labs: 'Labs & Projects',
     events: 'Events',
     settings: 'Settings',
-  };
-
-  const updateMembers = (members: AdminMember[]) => {
-    setData({
-      ...data,
-      members,
-    });
   };
 
   const updateLabs = (labs: AdminLab[]) => {
@@ -1525,40 +1966,94 @@ export default function DashboardPage() {
   };
 
   const renderContent = () => {
-    switch (activeTab) {
+    switch (resolvedTab) {
       case 'overview':
-        return <OverviewTab data={data} onSelectTab={setActiveTab} />;
+        return (
+          <OverviewTab
+            data={data}
+            accounts={accountData.accounts}
+            canAccessSettings={currentAccount.role === 'admin'}
+            onSelectTab={setActiveTab}
+          />
+        );
       case 'members':
-        return <MembersTab members={data.members} onSaveMembers={updateMembers} />;
+        return (
+          <MembersTab
+            members={accountData.accounts}
+            currentRole={currentAccount.role}
+            onUpdateMember={updateAccount}
+            onAddMember={addAccount}
+            onRemoveMember={removeAccount}
+          />
+        );
       case 'board':
+        if (currentAccount.role !== 'admin') {
+          return (
+            <OverviewTab
+              data={data}
+              accounts={accountData.accounts}
+              canAccessSettings={false}
+              onSelectTab={setActiveTab}
+            />
+          );
+        }
         return <BoardBookTab />;
       case 'labs':
         return <LabsTab labs={data.labs} onSaveLabs={updateLabs} />;
       case 'events':
         return <EventsTab events={data.events} onSaveEvents={updateEvents} />;
       case 'settings':
+        if (currentAccount.role !== 'admin') {
+          return (
+            <OverviewTab
+              data={data}
+              accounts={accountData.accounts}
+              canAccessSettings={false}
+              onSelectTab={setActiveTab}
+            />
+          );
+        }
         return <SettingsTab data={data} onSaveSettings={updateSettings} onSelectTab={setActiveTab} />;
       default:
-        return null;
+        return (
+          <OverviewTab
+            data={data}
+            accounts={accountData.accounts}
+            canAccessSettings={currentAccount.role === 'admin'}
+            onSelectTab={setActiveTab}
+          />
+        );
     }
+  };
+
+  const handleLogout = () => {
+    signOut();
+    router.push('/login');
   };
 
   return (
     <div className="flex min-h-screen bg-aesthetic-white selection:bg-guardsman-red selection:text-white">
-      <Sidebar activeTab={activeTab} setActiveTab={setActiveTab} />
+      <Sidebar
+        activeTab={resolvedTab}
+        setActiveTab={setActiveTab}
+        availableTabs={availableTabs}
+        onOpenAccount={() => setIsAccountEditorOpen(true)}
+        onLogout={handleLogout}
+      />
 
       <main className="flex-1 overflow-y-auto">
         <Header
-          title={titleMap[activeTab] ?? 'Dashboard'}
-          adminName={data.settings.adminName}
-          adminRole={data.settings.adminRole}
+          title={titleMap[resolvedTab] ?? 'Dashboard'}
+          accountName={currentAccount.name}
+          accountRole={currentAccount.role}
+          profilePhotoDataUrl={currentAccount.profilePhotoDataUrl}
           notifications={data.notifications}
           notificationsOpen={notificationsOpen}
           onToggleNotifications={() => setNotificationsOpen((current) => !current)}
         />
         <div className="mx-auto max-w-7xl p-12">
           <motion.div
-            key={activeTab}
+            key={resolvedTab}
             initial={{ opacity: 0, y: 10 }}
             animate={{ opacity: 1, y: 0 }}
             transition={{ duration: 0.3 }}
@@ -1567,6 +2062,16 @@ export default function DashboardPage() {
           </motion.div>
         </div>
       </main>
+
+      <AccountEditor
+        isOpen={isAccountEditorOpen}
+        name={currentAccount.name}
+        username={currentAccount.username}
+        password={currentAccount.password}
+        profilePhotoDataUrl={currentAccount.profilePhotoDataUrl}
+        onClose={() => setIsAccountEditorOpen(false)}
+        onSave={(updates) => updateAccount(currentAccount.id, updates)}
+      />
     </div>
   );
 }

@@ -24,6 +24,7 @@ export type AdminLab = {
   date: string;
   status: 'Published' | 'Draft';
   visibility: 'Public' | 'Members Only';
+  markdown: string;
 };
 
 export type AdminEvent = {
@@ -66,9 +67,30 @@ export const defaultAdminDashboardData: AdminDashboardData = {
     { id: '5', name: 'Ethan Hunt', email: 'ethan@example.com', role: 'Member', dues: 'Unpaid', waiver: 'Signed', joinDate: '2024-02-10' },
   ],
   labs: [
-    { id: '1', title: 'Vitamin C Serum', date: '2024-02-15', status: 'Published', visibility: 'Public' },
-    { id: '2', title: 'Hydrating Mist', date: '2024-01-28', status: 'Published', visibility: 'Members Only' },
-    { id: '3', title: 'Mineral Sunscreen', date: '2023-12-12', status: 'Draft', visibility: 'Public' },
+    {
+      id: '1',
+      title: 'Vitamin C Serum',
+      date: '2024-02-15',
+      status: 'Published',
+      visibility: 'Public',
+      markdown: '# Vitamin C Serum\n\nA stable, high-potency serum study focused on oxidation control and texture.\n\n## Focus Areas\n- Stability testing\n- Texture refinement\n- Antioxidant support',
+    },
+    {
+      id: '2',
+      title: 'Hydrating Mist',
+      date: '2024-01-28',
+      status: 'Published',
+      visibility: 'Members Only',
+      markdown: '# Hydrating Mist\n\nA lightweight mist lab centered on hydration delivery and clean finish.\n\n## Focus Areas\n- Humectant balance\n- Botanical ratios\n- Packaging behavior',
+    },
+    {
+      id: '3',
+      title: 'Mineral Sunscreen',
+      date: '2023-12-12',
+      status: 'Draft',
+      visibility: 'Public',
+      markdown: '# Mineral Sunscreen\n\nAdvanced mineral sunscreen draft centered on dispersion and finish behavior.\n\n## Focus Areas\n- Dispersion\n- Cast reduction\n- Finish optimization',
+    },
   ],
   events: [
     { id: '1', title: 'Formulation Lab Night', date: '2026-03-08', location: 'Chemistry Building 210', status: 'Scheduled' },
@@ -129,6 +151,7 @@ function sanitizeLab(value: unknown, fallback: AdminLab, index: number): AdminLa
     date: sanitizeString(record.date, fallback.date),
     status: record.status === 'Draft' ? 'Draft' : 'Published',
     visibility: record.visibility === 'Members Only' ? 'Members Only' : 'Public',
+    markdown: sanitizeString(record.markdown, fallback.markdown),
   };
 }
 
