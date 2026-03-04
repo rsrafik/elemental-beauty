@@ -5,6 +5,7 @@ import { motion, AnimatePresence, useScroll, useTransform } from 'motion/react';
 import { FlaskConical, Menu, ArrowRight, Instagram, Twitter, Facebook, Sparkles, Users, Calendar, X, ChevronLeft, ChevronRight } from 'lucide-react';
 import Image from 'next/image';
 import Link from 'next/link';
+import { useAccounts } from '@/lib/accounts';
 
 const DiscordIcon = ({ className = '' }: { className?: string }) => (
   <svg
@@ -19,6 +20,9 @@ const DiscordIcon = ({ className = '' }: { className?: string }) => (
 
 const Navbar = () => {
   const [isMenuOpen, setIsMenuOpen] = useState(false);
+  const { currentAccount } = useAccounts();
+  const portalDestination =
+    currentAccount?.role === 'admin' || currentAccount?.role === 'officer' ? '/dashboard' : '/portal';
 
   const menuItems = [
     { id: '01', label: 'HOME', href: '/' },
@@ -26,7 +30,7 @@ const Navbar = () => {
     { id: '03', label: 'ABOUT', href: '/about' },
     { id: '04', label: 'SPONSORS', href: '/sponsors' },
     { id: '05', label: 'JOIN', href: '/join' },
-    { id: '06', label: 'PORTAL', href: '/portal' },
+    { id: '06', label: 'PORTAL', href: portalDestination },
   ];
 
   return (
@@ -47,7 +51,7 @@ const Navbar = () => {
           </div>
 
           <div className="flex items-center gap-8">
-            <Link href="/portal" className="hidden md:block font-header text-sm tracking-widest uppercase cursor-pointer hover:text-guardsman-red transition-colors">Portal</Link>
+            <Link href={portalDestination} className="hidden md:block font-header text-sm tracking-widest uppercase cursor-pointer hover:text-guardsman-red transition-colors">Portal</Link>
             <Link href="/join" className="bg-rich-black text-aesthetic-white px-6 py-2 font-header text-xs tracking-widest uppercase hover:bg-guardsman-red transition-colors">
               Join Us
             </Link>
@@ -74,7 +78,7 @@ const Navbar = () => {
               </button>
             </div>
 
-            <div className="flex-1 flex flex-col justify-center px-8 md:px-24">
+            <div className="flex-1 flex flex-col justify-start px-8 pt-6 md:px-24 md:pt-2">
               <div className="space-y-4 md:space-y-0">
                 {menuItems.map((item, idx) => (
                   <motion.div
@@ -82,15 +86,22 @@ const Navbar = () => {
                     initial={{ opacity: 0, x: -20 }}
                     animate={{ opacity: 1, x: 0 }}
                     transition={{ delay: 0.3 + idx * 0.1 }}
-                    className="group border-b border-white/10 py-6 md:py-10 flex items-baseline gap-8 cursor-pointer"
+                    className="group border-b border-white/10 py-5 md:py-8 flex items-baseline gap-8 cursor-pointer"
                   >
-                    <span className="font-sans text-xs text-white/40">{item.id}</span>
+                    <span className="font-sans text-xs text-white/40 transition-all duration-300 group-hover:text-white/70 group-hover:-translate-y-1">
+                      {item.id}
+                    </span>
                     <Link 
                       href={item.href}
                       onClick={() => setIsMenuOpen(false)}
-                      className="font-header text-5xl md:text-8xl tracking-tight hover:text-guardsman-red transition-colors"
+                      className="relative inline-block overflow-hidden font-header text-5xl md:text-8xl tracking-tight leading-[0.92]"
                     >
-                      {item.label}
+                      <span className="block transition-transform duration-500 ease-[cubic-bezier(0.22,1,0.36,1)] group-hover:-translate-y-full">
+                        {item.label}
+                      </span>
+                      <span className="absolute left-0 top-full block text-guardsman-red transition-transform duration-500 ease-[cubic-bezier(0.22,1,0.36,1)] group-hover:-translate-y-full">
+                        {item.label}
+                      </span>
                     </Link>
                   </motion.div>
                 ))}

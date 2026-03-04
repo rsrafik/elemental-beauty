@@ -78,7 +78,7 @@ export const defaultBoardBookData: BoardBookData = {
       id: 'anjali-muthyala',
       name: 'Anjali Muthyala',
       role: 'Treasurer',
-      kicker: 'Business Major',
+      kicker: 'Finance + Business Analytics and Information Management Major',
       quote: 'Keeps the chapter stable by treating the numbers like infrastructure.',
       bio: 'Anjali manages dues, budgets, and purchasing with discipline, making sure the chapter can support labs, materials, and growth without losing control of the details.',
       caption: 'Budgeting, dues, and sustainable growth.',

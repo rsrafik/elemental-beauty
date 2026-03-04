@@ -680,7 +680,7 @@ const MembersTab = ({
     <div className="grid gap-10 xl:grid-cols-[1.2fr_0.8fr]">
       <div className="overflow-hidden border border-rich-black/5 bg-white shadow-2xl">
         <div className="flex flex-col items-center justify-between gap-6 border-b border-rich-black/5 p-10 sm:flex-row">
-          <div className="flex w-full items-center gap-6 sm:w-auto">
+          <div className="flex w-full items-center gap-6">
             <div className="relative flex-1 sm:w-80">
               <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-rich-black/20" />
               <input
@@ -700,25 +700,25 @@ const MembersTab = ({
             >
               <Filter className="h-5 w-5" />
             </button>
-            {canManageMembers ? (
+          </div>
+          {canManageMembers ? (
+            <div className="flex w-full shrink-0 flex-col gap-3 sm:w-[220px]">
               <button
                 type="button"
                 onClick={() => setRoleFilter((current) => (current === 'All' ? 'Officer' : 'All'))}
-                className="border border-rich-black/10 px-4 py-3 font-header text-[10px] uppercase tracking-[0.3em] transition-colors hover:border-guardsman-red hover:bg-guardsman-red hover:text-white"
+                className="w-full border border-rich-black/10 px-4 py-3 font-header text-[10px] uppercase tracking-[0.3em] transition-colors hover:border-guardsman-red hover:bg-guardsman-red hover:text-white"
               >
                 {roleFilter === 'All' ? 'Officer Filter Off' : 'Officer Filter On'}
               </button>
-            ) : null}
-          </div>
-          {canManageMembers ? (
-            <button
-              type="button"
-              onClick={addMember}
-              className="flex w-full items-center justify-center gap-3 bg-guardsman-red px-10 py-3 font-header text-[10px] uppercase tracking-widest text-white shadow-xl transition-all hover:bg-madder sm:w-auto"
-            >
-              <Plus className="h-4 w-4" />
-              Add Member
-            </button>
+              <button
+                type="button"
+                onClick={addMember}
+                className="flex w-full items-center justify-center gap-3 bg-guardsman-red px-8 py-3 font-header text-[10px] uppercase tracking-widest text-white shadow-xl transition-all hover:bg-madder"
+              >
+                <Plus className="h-4 w-4" />
+                Add Member
+              </button>
+            </div>
           ) : null}
         </div>
 
