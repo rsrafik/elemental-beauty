@@ -245,116 +245,44 @@ const Hero = () => {
   );
 };
 
+const carouselItems = [
+  { img: "https://images.unsplash.com/photo-1758314896569-b3639ee707c4?q=80&w=715&auto=format&fit=crop&ixlib=rb-4.1.0&ixid=M3wxMjA3fDB8MHxwaG90by1wYWdlfHx8fGVufDB8fHx8fA%3D%3D", label: "Vitamin C Serum", category: "Formulation", date: "Feb 15" },
+  { img: "https://plus.unsplash.com/premium_photo-1671649240322-2124cd07eaae?q=80&w=627&auto=format&fit=crop&ixlib=rb-4.1.0&ixid=M3wxMjA3fDB8MHxwaG90by1wYWdlfHx8fGVufDB8fHx8fA%3D%3D", label: "Hydrating Mist", category: "Botanical", date: "Jan 28" },
+  { img: "https://plus.unsplash.com/premium_photo-1673029925648-af80569efc46?q=80&w=687&auto=format&fit=crop&ixlib=rb-4.1.0&ixid=M3wxMjA3fDB8MHxwaG90by1wYWdlfHx8fGVufDB8fHx8fA%3D%3D", label: "Mineral Sunscreen", category: "Protection", date: "Dec 12" },
+  { img: "https://plus.unsplash.com/premium_photo-1666533099824-abd0ed813f2a?q=80&w=687&auto=format&fit=crop&ixlib=rb-4.1.0&ixid=M3wxMjA3fDB8MHxwaG90by1wYWdlfHx8fGVufDB8fHx8fA%3D%3D", label: "Gentle Cleanser", category: "Cleansing", date: "Nov 05" },
+  { img: "https://plus.unsplash.com/premium_photo-1671105035554-7f8c2a587201?q=80&w=627&auto=format&fit=crop&ixlib=rb-4.1.0&ixid=M3wxMjA3fDB8MHxwaG90by1wYWdlfHx8fGVufDB8fHx8fA%3D%3D", label: "Retinol Night", category: "Anti-Aging", date: "Oct 20" },
+];
+
 const FeaturedLabs = () => {
-  const sectionRef = useRef(null);
-  const { scrollYProgress } = useScroll({
-    target: sectionRef,
-    offset: ["start end", "end start"]
-  });
-
-  const titleY = useTransform(scrollYProgress, [0, 0.5], [50, 0]);
-  const titleOpacity = useTransform(scrollYProgress, [0, 0.5], [0, 1]);
-  const carouselY = useTransform(scrollYProgress, [0, 1], [80, -40]);
-
-  const labs = [
-    { id: 1, name: "Vitamin C Serum", date: "Feb 15", img: "https://picsum.photos/seed/serum-vogue/600/800", category: "Formulation" },
-    { id: 2, name: "Hydrating Mist", date: "Jan 28", img: "https://picsum.photos/seed/mist-vogue/600/800", category: "Botanical" },
-    { id: 3, name: "Mineral Sunscreen", date: "Dec 12", img: "https://picsum.photos/seed/sun-vogue/600/800", category: "Protection" },
-    { id: 4, name: "Gentle Cleanser", date: "Nov 05", img: "https://picsum.photos/seed/clean-vogue/600/800", category: "Cleansing" },
-    { id: 5, name: "Retinol Night", date: "Oct 20", img: "https://picsum.photos/seed/retinol-vogue/600/800", category: "Anti-Aging" },
-  ];
-
-  const [currentIndex, setCurrentIndex] = useState(2); // Start with the middle one
-
-  const next = () => {
-    setCurrentIndex((prev) => (prev + 1) % labs.length);
-  };
-
-  const prev = () => {
-    setCurrentIndex((prev) => (prev - 1 + labs.length) % labs.length);
-  };
+  // Duplicate items to fill the track for seamless infinite loop
+  const duplicatedItems = [...carouselItems, ...carouselItems, ...carouselItems];
+  const totalItems = duplicatedItems.length;
 
   return (
-    <section ref={sectionRef} className="py-24 bg-aesthetic-white overflow-hidden">
-      <div className="max-w-7xl mx-auto px-6">
-        <motion.div 
-          style={{ y: titleY, opacity: titleOpacity }}
-          className="flex flex-col md:flex-row justify-between items-end mb-16 gap-4"
-        >
-          <div>
-            <h3 className="font-header text-5xl text-rich-black mb-2 uppercase">LATEST LABS</h3>
-            <p className="font-sans text-rich-black/60 uppercase tracking-widest text-sm">Innovations from our Elementists</p>
+    <section className="loop-images relative h-[70svh] w-full bg-white overflow-hidden flex items-center justify-center flex-col">
+      <div
+        className="carousel-track"
+        style={{ '--left': '-300rem', '--time': '60s', '--total': totalItems } as React.CSSProperties}
+      >
+        {duplicatedItems.map((item, i) => (
+          <div
+            key={i}
+            className="carousel-item"
+            style={{ '--i': i + 1 } as React.CSSProperties}
+          >
+            <div className="carousel-item-inner">
+              {item.label && (
+                <div className="carousel-label">
+                  <span className="carousel-label-category">{item.category}</span>
+                  <span className="carousel-label-name">{item.label}</span>
+                  <span className="carousel-label-date">{item.date}</span>
+                </div>
+              )}
+              {/* eslint-disable-next-line @next/next/no-img-element */}
+              <img src={item.img} alt={item.label || 'image'} />
+            </div>
           </div>
-          <div className="flex items-center gap-6">
-            <motion.button 
-              onClick={prev}
-              whileHover={{ y: -3, scale: 1.05 }}
-              whileTap={{ scale: 0.96 }}
-              className="w-12 h-12 border border-rich-black/10 flex items-center justify-center hover:bg-rich-black hover:text-white transition-all"
-            >
-              <ChevronLeft className="w-6 h-6" />
-            </motion.button>
-            <motion.button 
-              onClick={next}
-              whileHover={{ y: -3, scale: 1.05 }}
-              whileTap={{ scale: 0.96 }}
-              className="w-12 h-12 border border-rich-black/10 flex items-center justify-center hover:bg-rich-black hover:text-white transition-all"
-            >
-              <ChevronRight className="w-6 h-6" />
-            </motion.button>
-          </div>
-        </motion.div>
-
-        <motion.div style={{ y: carouselY }} className="relative flex justify-center items-center h-[650px]">
-          <div className="relative w-full flex justify-center items-center transition-all duration-500">
-            {labs.map((lab, idx) => {
-              // Calculate relative position to current index
-              let position = idx - currentIndex;
-              
-              // Handle wrapping for circular effect
-              if (position < -2) position += labs.length;
-              if (position > 2) position -= labs.length;
-
-              const isActive = position === 0;
-              const depth = Math.abs(position);
-              const isVisible = depth <= 2;
-              const xOffset = position * 320;
-
-              if (!isVisible) return null;
-
-              return (
-                <motion.div
-                  key={lab.id}
-                  animate={{
-                    scale: isActive ? 1.2 : depth === 1 ? 0.75 : 0.66,
-                    opacity: isVisible ? (isActive ? 1 : depth === 1 ? 0.4 : 0.22) : 0,
-                    x: xOffset,
-                    y: isActive ? 0 : depth * 18,
-                    zIndex: isActive ? 10 : 5 - depth
-                  }}
-                  transition={{ duration: 0.6, ease: [0.4, 0, 0.2, 1] }}
-                  whileHover={{ y: isActive ? -12 : depth * 18 - 8 }}
-                  className="absolute w-56 md:w-80 group cursor-pointer"
-                >
-                  <motion.div whileHover={{ scale: 1.03 }} className="relative aspect-[3/4] overflow-hidden mb-6 bg-pale-powder shadow-2xl">
-                    <Image
-                      src={lab.img}
-                      alt={lab.name}
-                      fill
-                      className={`object-cover transition-all duration-500 ${depth === 2 ? 'brightness-[0.55] saturate-[0.8]' : depth === 1 ? 'brightness-[0.82]' : ''}`}
-                      referrerPolicy="no-referrer"
-                    />
-                  </motion.div>
-                  <div className={`text-center transition-all duration-500 ${isActive ? 'opacity-100 translate-y-0' : 'opacity-0 translate-y-4'}`}>
-                    <p className="font-praise text-guardsman-red text-2xl mb-1">{lab.category}</p>
-                    <h4 className="font-header text-2xl text-rich-black leading-tight">{lab.name}</h4>
-                    <p className="font-sans text-rich-black/40 uppercase text-xs tracking-widest">{lab.date}</p>
-                  </div>
-                </motion.div>
-              );
-            })}
-          </div>
-        </motion.div>
+        ))}
       </div>
     </section>
   );
@@ -371,8 +299,10 @@ const MissionSection = () => {
   const copyY = useTransform(scrollYProgress, [0, 1], ["8%", "-8%"]);
 
   return (
-    <section ref={sectionRef} className="bg-aurora-black py-24 overflow-hidden">
-      <div className="max-w-7xl mx-auto px-6 grid grid-cols-1 lg:grid-cols-2 gap-16 items-center">
+    <section ref={sectionRef} className="bg-white pt-64 pb-64 overflow-hidden">
+      <div className="max-w-6xl mx-auto px-6">
+        <div className="relative rounded-3xl border border-white/60 bg-white/40 backdrop-blur-xl shadow-[0_8px_60px_-12px_rgba(0,0,0,0.08),inset_0_1px_0_rgba(255,255,255,0.9),inset_0_-1px_0_rgba(0,0,0,0.05)] p-12 md:p-16 lg:p-20 overflow-hidden before:absolute before:inset-0 before:rounded-3xl before:bg-gradient-to-br before:from-white/80 before:via-white/30 before:to-white/60 before:pointer-events-none">
+          <div className="relative z-10 grid grid-cols-1 lg:grid-cols-2 gap-16 items-center">
         <motion.div
           style={{ y: imageY }}
           initial={{ opacity: 0, x: -50 }}
@@ -400,12 +330,12 @@ const MissionSection = () => {
           initial={{ opacity: 0, x: 50 }}
           whileInView={{ opacity: 1, x: 0 }}
           viewport={{ once: true }}
-          className="text-aesthetic-white"
+          className="text-rich-black"
         >
           <h2 className="font-title text-5xl md:text-7xl mb-6 leading-tight">
             POWER <br /> <span className="text-guardsman-red">IN PRECISION</span>
           </h2>
-          <p className="font-sans text-lg text-pale-powder/80 mb-8 leading-relaxed">
+          <p className="font-sans text-lg text-rich-black/70 mb-8 leading-relaxed">
             Elemental Beauty is a community of cosmetic chemistry enthusiasts. 
             We bridge the gap between textbook chemistry and real-world application. 
             As Elementists, we study the interactions of emulsifiers, the stability of 
@@ -414,13 +344,15 @@ const MissionSection = () => {
           <div className="flex flex-col gap-4">
             <div className="flex items-center gap-4">
               <div className="w-12 h-[1px] bg-guardsman-red" />
-              <span className="font-accent text-2xl">The Elementist Manifesto</span>
+              <span className="font-accent text-2xl text-rich-black">The Elementist Manifesto</span>
             </div>
             <p className="font-italianno text-3xl text-guardsman-red italic">
               &quot;A scientist should be two things: curious and bold.&quot;
             </p>
           </div>
         </motion.div>
+          </div>
+        </div>
       </div>
     </section>
   );
