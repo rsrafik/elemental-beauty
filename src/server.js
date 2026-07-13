@@ -1,4 +1,5 @@
 import express from 'express'
+import rateLimit from 'express-rate-limit'
 import path, { dirname } from 'path'
 import { fileURLToPath } from 'url'
 import authRoutes from './routes/authRoutes.js'
@@ -12,8 +13,32 @@ import authMiddleware from './middleware/authMiddleware.js'
 import requireRole from './middleware/requireRole.js'
 import { sweepAbsences } from './sweepAbsences.js'
 
+// Refuse to boot misconfigured — a missing secret must crash here, loudly,
+// not surface later as broken tokens or leaked reset codes.
+for (const key of ['DATABASE_URL', 'JWT_SECRET', 'QR_SECRET']) {
+    if (!process.env[key]) {
+        console.error(`Missing required environment variable: ${key}`)
+        process.exit(1)
+    }
+}
+if (process.env.NODE_ENV === 'production' && !process.env.RESEND_API_KEY) {
+    console.error('RESEND_API_KEY is required in production (email verification + password resets)')
+    process.exit(1)
+}
+
 const app = express()
 const PORT = process.env.PORT || 5003
+
+// Hosting platforms terminate HTTPS at a proxy in front of the app; trust it
+// so the rate limiter sees real client IPs instead of the proxy's.
+if (process.env.NODE_ENV === 'production') { app.set('trust proxy', 1) }
+
+// Auth endpoints are the brute-force / bcrypt-exhaustion target — cap them.
+const authLimiter = rateLimit({
+    windowMs: 15 * 60 * 1000,
+    limit: 30,                 // per IP per window, across all /auth endpoints
+    message: { message: 'Too many attempts — try again in 15 minutes' }
+})
 
 // Get file path from URL of current module
 const __filename = fileURLToPath(import.meta.url)
@@ -34,7 +59,7 @@ app.get('/', (req, res) => {
 })
 
 // Routes
-app.use('/auth', authRoutes)
+app.use('/auth', authLimiter, authRoutes)
 app.use('/members', authMiddleware, requireRole('member'), memberRoutes)
 app.use('/labs', authMiddleware, requireRole('member'), labRoutes)
 app.use('/events', authMiddleware, requireRole('member'), eventRoutes)

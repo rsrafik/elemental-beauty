@@ -28,8 +28,17 @@ Content-Type: application/json
     "password": "test1234"
 }
 
-### Verify email (token required, membership not)
+### Verify email with the emailed token (no login needed — in dev the token
+### comes back in the register response / server console)
 POST {{base}}/auth/verify-email
+Content-Type: application/json
+
+{
+    "verificationToken": "PASTE_VERIFICATION_TOKEN_HERE"
+}
+
+### Re-send the verification email (logged-in users whose token expired)
+POST {{base}}/auth/resend-verification
 Authorization: Bearer {{token}}
 
 ### Sign waiver (second flip creates the members row)
