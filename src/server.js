@@ -25,12 +25,12 @@ app.get('/', (req, res) => {
 
 // Routes
 app.use('/auth', authRoutes)
-app.use('/members', authMiddleware, memberRoutes)
-app.use('/labs', authMiddleware, labRoutes)
-app.use('/events', authMiddleware, eventRoutes)
-app.use('/grants', authMiddleware, requireRole('treasurer', 'admin'), grantRoutes)
-app.use('/reimbursements', authMiddleware, reimbursementRoutes)
-app.use('/transactions', authMiddleware, requireRole('treasurer', 'admin'), transactionRoutes)
+app.use('/members', authMiddleware, requireRole('member'), memberRoutes)
+app.use('/labs', authMiddleware, requireRole('member'), labRoutes)
+app.use('/events', authMiddleware, requireRole('member'), eventRoutes)
+app.use('/reimbursements', authMiddleware, requireRole('officer'), reimbursementRoutes)
+app.use('/transactions', authMiddleware, requireRole('officer'), transactionRoutes)
+app.use('/grants', authMiddleware, requireRole('treasurer'), grantRoutes)
 
 app.listen(PORT, () => {
     console.log(`Server has started on port: $(PORT)`)
