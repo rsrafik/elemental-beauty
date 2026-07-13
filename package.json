@@ -1,0 +1,34 @@
+{
+  "name": "elemental-beauty",
+  "version": "1.0.0",
+  "description": "",
+  "main": "src/server.js",
+  "scripts": {
+    "dev": "node --watch --env-file=.env ./src/server.js",
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/rsrafik/elemental-beauty.git"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "type": "module",
+  "bugs": {
+    "url": "https://github.com/rsrafik/elemental-beauty/issues"
+  },
+  "homepage": "https://github.com/rsrafik/elemental-beauty#readme",
+  "dependencies": {
+    "@prisma/client": "^7.8.0",
+    "bcryptjs": "^3.0.3",
+    "express": "^5.2.1",
+    "jsonwebtoken": "^9.0.3",
+    "pg": "^8.22.0",
+    "prisma": "^7.8.0",
+    "qrcode": "^1.5.4"
+  },
+  "devDependencies": {
+    "dotenv": "^17.4.2"
+  }
+}

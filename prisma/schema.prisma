@@ -1,0 +1,245 @@
+// This is your Prisma schema file,
+// learn more about it in the docs: https://pris.ly/d/prisma-schema
+
+// Get a free hosted Postgres database in seconds: `npx create-db`
+
+generator client {
+  provider = "prisma-client"
+  output   = "../src/generated/prisma"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+// ---------- Enums ----------
+
+enum MemberRole {
+  member
+  officer
+  treasurer
+  admin
+
+  @@map("member_role")
+}
+
+enum AttendanceStatus {
+  rsvped
+  attended
+  absent
+
+  @@map("attendance_status")
+}
+
+enum TransactionType {
+  income
+  expense
+
+  @@map("transaction_type")
+}
+
+enum ReimbursementStatus {
+  pending
+  approved
+  denied
+
+  @@map("reimbursement_status")
+}
+
+enum FinanceCategory {
+  membership_dues
+  sponsorship
+  grant_funding
+  fundraising
+  supplies
+  venue
+  equipment
+  marketing
+  travel
+  event_costs
+  other
+
+  @@map("finance_category")
+}
+
+// ---------- Users / Members ----------
+
+model User {
+  userId        Int      @id @default(autoincrement()) @map("user_id")
+  username      String   @unique
+  passwordHash  String   @map("password_hash")
+  email         String   @unique
+  emailVerified Boolean  @default(false) @map("email_verified")
+  waiverSigned  Boolean  @default(false) @map("waiver_signed")
+  createdAt     DateTime @default(now()) @map("created_at") @db.Timestamptz()
+
+  member Member?
+
+  @@map("users")
+}
+
+model Member {
+  userId         Int        @id @map("user_id")
+  role           MemberRole @default(member)
+  instagram      String?
+  profilePicture String?    @map("profile_picture")
+  points         Int        @default(0)
+  dateJoined     DateTime   @default(dbgenerated("CURRENT_DATE")) @map("date_joined") @db.Date
+
+  user           User            @relation(fields: [userId], references: [userId], onDelete: Cascade)
+  labs           MemberLab[]
+  events         MemberEvent[]
+  reimbursements Reimbursement[]
+
+  @@map("members")
+}
+
+// ---------- Labs ----------
+
+model Lab {
+  labId        Int      @id @default(autoincrement()) @map("lab_id")
+  title        String
+  date         DateTime @db.Date
+  description  String?
+  image        String?
+  ingredients  String?
+  equipment    String?
+  safetyNote   String?  @map("safety_note")
+  instructions String?
+
+  lessons       LabLesson[]
+  quizQuestions LabQuizQuestion[]
+  members       MemberLab[]
+
+  @@map("labs")
+}
+
+model LabLesson {
+  lessonId    Int     @id @default(autoincrement()) @map("lesson_id")
+  labId       Int     @map("lab_id")
+  title       String
+  explanation String?
+
+  lab Lab @relation(fields: [labId], references: [labId], onDelete: Cascade)
+
+  @@index([labId])
+  @@map("lab_lessons")
+}
+
+model LabQuizQuestion {
+  questionId Int    @id @default(autoincrement()) @map("question_id")
+  labId      Int    @map("lab_id")
+  question   String
+
+  lab     Lab                @relation(fields: [labId], references: [labId], onDelete: Cascade)
+  options QuizAnswerOption[]
+
+  @@index([labId])
+  @@map("lab_quiz_questions")
+}
+
+model QuizAnswerOption {
+  optionId   Int     @id @default(autoincrement()) @map("option_id")
+  questionId Int     @map("question_id")
+  answerText String  @map("answer_text")
+  isCorrect  Boolean @default(false) @map("is_correct")
+
+  question LabQuizQuestion @relation(fields: [questionId], references: [questionId], onDelete: Cascade)
+
+  @@index([questionId])
+  @@map("quiz_answer_options")
+}
+
+// ---------- Events ----------
+
+model Event {
+  eventId     Int      @id @default(autoincrement()) @map("event_id")
+  title       String
+  description String?
+  date        DateTime @db.Date
+  image       String?
+
+  members MemberEvent[]
+
+  @@map("events")
+}
+
+// ---------- Junctions ----------
+
+model MemberLab {
+  memberId         Int              @map("member_id")
+  labId            Int              @map("lab_id")
+  attendanceStatus AttendanceStatus @default(rsvped) @map("attendance_status")
+  quizPassed       Boolean?         @map("quiz_passed")
+
+  member Member @relation(fields: [memberId], references: [userId], onDelete: Cascade)
+  lab    Lab    @relation(fields: [labId], references: [labId], onDelete: Cascade)
+
+  @@id([memberId, labId])
+  @@index([labId])
+  @@map("member_lab")
+}
+
+model MemberEvent {
+  memberId         Int              @map("member_id")
+  eventId          Int              @map("event_id")
+  attendanceStatus AttendanceStatus @default(rsvped) @map("attendance_status")
+
+  member Member @relation(fields: [memberId], references: [userId], onDelete: Cascade)
+  event  Event  @relation(fields: [eventId], references: [eventId], onDelete: Cascade)
+
+  @@id([memberId, eventId])
+  @@index([eventId])
+  @@map("member_event")
+}
+
+// ---------- Finances ----------
+
+model Grant {
+  grantId        Int       @id @default(autoincrement()) @map("grant_id")
+  source         String
+  amountGranted  Decimal   @map("amount_granted") @db.Decimal(10, 2)
+  dateGranted    DateTime  @map("date_granted") @db.Date
+  expirationDate DateTime? @map("expiration_date") @db.Date
+
+  transactions Transaction[]
+
+  @@map("grants")
+}
+
+model Reimbursement {
+  reimbursementId   Int                 @id @default(autoincrement()) @map("reimbursement_id")
+  memberId          Int?                @map("member_id")
+  explanation       String
+  amountRequested   Decimal             @map("amount_requested") @db.Decimal(10, 2)
+  category          FinanceCategory
+  status            ReimbursementStatus @default(pending)
+  denialExplanation String?             @map("denial_explanation")
+  receipt           String?
+  date              DateTime            @default(dbgenerated("CURRENT_DATE")) @db.Date
+
+  member      Member?      @relation(fields: [memberId], references: [userId], onDelete: SetNull)
+  transaction Transaction?
+
+  @@index([memberId])
+  @@index([status])
+  @@map("reimbursements")
+}
+
+model Transaction {
+  transactionId   Int             @id @default(autoincrement()) @map("transaction_id")
+  type            TransactionType
+  source          String
+  amount          Decimal         @db.Decimal(10, 2)
+  category        FinanceCategory
+  date            DateTime        @default(dbgenerated("CURRENT_DATE")) @db.Date
+  grantId         Int?            @map("grant_id")
+  reimbursementId Int?            @unique @map("reimbursement_id")
+
+  grant         Grant?         @relation(fields: [grantId], references: [grantId], onDelete: Restrict)
+  reimbursement Reimbursement? @relation(fields: [reimbursementId], references: [reimbursementId], onDelete: Restrict)
+
+  @@index([date])
+  @@index([grantId])
+  @@map("transactions")
+}
