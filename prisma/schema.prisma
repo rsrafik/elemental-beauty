@@ -32,6 +32,13 @@ enum AttendanceStatus {
   @@map("attendance_status")
 }
 
+enum EventType {
+  official
+  social
+
+  @@map("event_type")
+}
+
 enum TransactionType {
   income
   expense
@@ -155,11 +162,13 @@ model QuizAnswerOption {
 // ---------- Events ----------
 
 model Event {
-  eventId     Int      @id @default(autoincrement()) @map("event_id")
+  eventId     Int       @id @default(autoincrement()) @map("event_id")
   title       String
+  type        EventType @default(social)
   description String?
-  date        DateTime @db.Date
+  date        DateTime  @db.Date
   image       String?
+  capacity    Int?      // null = unlimited seats
 
   members MemberEvent[]
 

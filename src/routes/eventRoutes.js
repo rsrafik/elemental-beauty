@@ -2,15 +2,27 @@ import express from 'express'
 import jwt from 'jsonwebtoken'
 import prisma from '../prismaClient.js'
 import requireRole from '../middleware/requireRole.js'
+import { eventPoints } from '../points.js'
 
 const router = express.Router()
 
-router.get('/', async (req, res) => {
-    const { when } = req.query
+const EVENT_TYPES = ['official', 'social']
 
-    let where = {}
-    if (when === 'upcoming') { where = { date: { gte: new Date() } } }
-    if (when === 'past') { where = { date: { lt: new Date() } } }
+// ---- member-visible reads ----
+
+// ?when=upcoming|past and ?type=official|social both optional, combinable
+router.get('/', async (req, res) => {
+    const { when, type } = req.query
+
+    const where = {}
+    if (when === 'upcoming') { where.date = { gte: new Date() } }
+    if (when === 'past') { where.date = { lt: new Date() } }
+    if (type !== undefined) {
+        if (!EVENT_TYPES.includes(type)) {
+            return res.status(400).json({ message: 'type must be official or social' })
+        }
+        where.type = type
+    }
 
     try {
         const events = await prisma.event.findMany({
@@ -42,19 +54,25 @@ router.get('/:id', async (req, res) => {
 // ---- officer+ event management ----
 
 router.post('/', requireRole('officer'), async (req, res) => {
-    const { title, description, date, image } = req.body
+    const { title, type, description, date, image, capacity } = req.body
 
     if (!title || !date) {
         return res.status(400).json({ message: 'title and date are required' })
+    }
+    if (!EVENT_TYPES.includes(type)) {
+        return res.status(400).json({ message: 'type must be official or social' })
     }
     const eventDate = new Date(date)
     if (isNaN(eventDate.getTime())) {
         return res.status(400).json({ message: 'date must be a valid date (YYYY-MM-DD)' })
     }
+    if (capacity !== undefined && capacity !== null && (!Number.isInteger(capacity) || capacity < 1)) {
+        return res.status(400).json({ message: 'capacity must be a positive integer (or omitted for unlimited)' })
+    }
 
     try {
         const event = await prisma.event.create({
-            data: { title, description, date: eventDate, image }
+            data: { title, type, description, date: eventDate, image, capacity }
         })
         res.status(201).json(event)
     } catch (err) {
@@ -67,20 +85,29 @@ router.put('/:id', requireRole('officer'), async (req, res) => {
     const eventId = parseInt(req.params.id)
     if (isNaN(eventId)) { return res.status(400).json({ message: 'Invalid event id' }) }
 
-    const { title, description, date, image } = req.body
-
-    // Only include fields the client actually sent, so a partial update
-    // doesn't null out the columns that were left off.
+    // partial update: only touch fields the client actually sent
     const data = {}
-    if (title !== undefined) { data.title = title }
-    if (description !== undefined) { data.description = description }
-    if (image !== undefined) { data.image = image }
-    if (date !== undefined) {
-        const eventDate = new Date(date)
+    if (req.body.title !== undefined) { data.title = req.body.title }
+    if (req.body.description !== undefined) { data.description = req.body.description }
+    if (req.body.image !== undefined) { data.image = req.body.image }
+    if (req.body.type !== undefined) {
+        if (!EVENT_TYPES.includes(req.body.type)) {
+            return res.status(400).json({ message: 'type must be official or social' })
+        }
+        data.type = req.body.type
+    }
+    if (req.body.date !== undefined) {
+        const eventDate = new Date(req.body.date)
         if (isNaN(eventDate.getTime())) {
             return res.status(400).json({ message: 'date must be a valid date (YYYY-MM-DD)' })
         }
         data.date = eventDate
+    }
+    if (req.body.capacity !== undefined) {
+        if (req.body.capacity !== null && (!Number.isInteger(req.body.capacity) || req.body.capacity < 1)) {
+            return res.status(400).json({ message: 'capacity must be a positive integer or null' })
+        }
+        data.capacity = req.body.capacity
     }
 
     try {
@@ -110,26 +137,66 @@ router.delete('/:id', requireRole('officer'), async (req, res) => {
 
 // ---- member actions ----
 
+// RSVP. Capped events (capacity set) behave exactly like labs: when full,
+// the member joins the online waitlist and is auto-promoted if a seat opens.
+// Uncapped events (capacity null) always RSVP directly.
 router.post('/:eventId/rsvp', async (req, res) => {
     const eventId = parseInt(req.params.eventId)
     if (isNaN(eventId)) { return res.status(400).json({ message: 'Invalid event id' }) }
 
     try {
-        // upsert = RSVPing twice is a harmless no-op instead of a crash
-        const rsvp = await prisma.memberEvent.upsert({
-            where: { memberId_eventId: { memberId: req.userId, eventId } },
-            update: {},
-            create: { memberId: req.userId, eventId }   // status defaults to 'rsvped'
+        const event = await prisma.event.findUnique({ where: { eventId } })
+        if (!event) { return res.status(404).json({ message: 'Event not found' }) }
+
+        const existing = await prisma.memberEvent.findUnique({
+            where: { memberId_eventId: { memberId: req.userId, eventId } }
         })
-        res.status(201).json(rsvp)
+        if (existing) {
+            if (existing.attendanceStatus === 'waitlisted') {
+                return res.status(202).json({ code: 'ALREADY_WAITLISTED', message: 'You are already on the waitlist' })
+            }
+            return res.json({ code: 'ALREADY_RSVPED', message: 'You are already RSVP\'d', rsvp: existing })
+        }
+
+        const result = await prisma.$transaction(async (tx) => {
+            if (event.capacity !== null) {
+                const seatsTaken = await tx.memberEvent.count({
+                    where: { eventId, attendanceStatus: { in: ['rsvped', 'attended'] } }
+                })
+                if (seatsTaken >= event.capacity) {
+                    const rsvp = await tx.memberEvent.create({
+                        data: {
+                            memberId: req.userId,
+                            eventId,
+                            attendanceStatus: 'waitlisted',
+                            waitlistedAt: new Date()
+                        }
+                    })
+                    return { code: 'WAITLISTED', rsvp }
+                }
+            }
+            const rsvp = await tx.memberEvent.create({
+                data: { memberId: req.userId, eventId }   // status defaults to 'rsvped'
+            })
+            return { code: 'RSVPED', rsvp }
+        })
+
+        if (result.code === 'WAITLISTED') {
+            return res.status(202).json({
+                code: 'WAITLISTED',
+                message: 'Event is full — you are on the waitlist and will be auto-RSVP\'d if a seat opens',
+                rsvp: result.rsvp
+            })
+        }
+        res.status(201).json({ code: 'RSVPED', message: 'RSVP confirmed', rsvp: result.rsvp })
     } catch (err) {
-        if (err.code === 'P2003') { return res.status(404).json({ message: 'Event not found' }) }
         console.error(err.message)
         res.sendStatus(500)
     }
 })
 
-// Un-RSVP. Events are uncapped, so no promotion logic — just remove the row.
+// Un-RSVP. If a confirmed seat frees up on a capped event, the oldest
+// waitlisted member is auto-promoted in the same transaction.
 router.delete('/:eventId/rsvp', async (req, res) => {
     const eventId = parseInt(req.params.eventId)
     if (isNaN(eventId)) { return res.status(400).json({ message: 'Invalid event id' }) }
@@ -143,17 +210,39 @@ router.delete('/:eventId/rsvp', async (req, res) => {
             return res.status(409).json({ message: 'You are already checked in and cannot un-RSVP' })
         }
 
-        await prisma.memberEvent.delete({
-            where: { memberId_eventId: { memberId: req.userId, eventId } }
+        const promoted = await prisma.$transaction(async (tx) => {
+            await tx.memberEvent.delete({
+                where: { memberId_eventId: { memberId: req.userId, eventId } }
+            })
+
+            // leaving the waitlist frees no seat — only a confirmed RSVP does
+            if (existing.attendanceStatus !== 'rsvped') { return null }
+
+            const next = await tx.memberEvent.findFirst({
+                where: { eventId, attendanceStatus: 'waitlisted' },
+                orderBy: { waitlistedAt: 'asc' }
+            })
+            if (!next) { return null }
+
+            return tx.memberEvent.update({
+                where: { memberId_eventId: { memberId: next.memberId, eventId } },
+                data: { attendanceStatus: 'rsvped', waitlistedAt: null }
+            })
         })
-        res.json({ message: 'RSVP cancelled' })
+
+        res.json({
+            message: 'RSVP cancelled',
+            promotedFromWaitlist: promoted ? promoted.memberId : null
+        })
     } catch (err) {
         console.error(err.message)
         res.sendStatus(500)
     }
 })
 
-// Officer scans a member's QR at the door. Body: { qrToken }
+// Officer scans a member's QR. RSVP'd → checked in (+points: official 5,
+// social 3, awarded exactly once at the transition to attended). Not RSVP'd
+// → waitlisted with a distinct code. Body: { qrToken }
 router.post('/:eventId/checkin', requireRole('officer'), async (req, res) => {
     const eventId = parseInt(req.params.eventId)
     if (isNaN(eventId)) { return res.status(400).json({ message: 'Invalid event id' }) }
@@ -163,18 +252,21 @@ router.post('/:eventId/checkin', requireRole('officer'), async (req, res) => {
 
     let decoded
     try {
-        decoded = jwt.verify(qrToken, process.env.QR_SECRET)
+        decoded = jwt.verify(qrToken, process.env.QR_SECRET)   // NOT JWT_SECRET
     } catch {
         return res.status(400).json({ message: 'Invalid QR code' })
     }
 
     try {
+        const event = await prisma.event.findUnique({ where: { eventId } })
+        if (!event) { return res.status(404).json({ message: 'Event not found' }) }
+
         const existing = await prisma.memberEvent.findUnique({
             where: { memberId_eventId: { memberId: decoded.id, eventId } }
         })
 
         if (!existing) {
-            // walk-in with no RSVP → waitlist, timestamped for oldest-first admission
+            // walk-in with no RSVP → waitlist (no points — waitlisting never earns)
             const waitlisted = await prisma.memberEvent.create({
                 data: {
                     memberId: decoded.id,
@@ -197,12 +289,18 @@ router.post('/:eventId/checkin', requireRole('officer'), async (req, res) => {
             return res.status(202).json({ code: 'ALREADY_WAITLISTED', message: 'Still on the waitlist' })
         }
 
-        // rsvped → check them in
-        const attendance = await prisma.memberEvent.update({
-            where: { memberId_eventId: { memberId: decoded.id, eventId } },
-            data: { attendanceStatus: 'attended' }
-        })
-        res.json({ code: 'CHECKED_IN', message: 'Checked in', attendance })
+        // rsvped → attended, points awarded atomically with the transition
+        const [attendance] = await prisma.$transaction([
+            prisma.memberEvent.update({
+                where: { memberId_eventId: { memberId: decoded.id, eventId } },
+                data: { attendanceStatus: 'attended' }
+            }),
+            prisma.member.update({
+                where: { userId: decoded.id },
+                data: { points: { increment: eventPoints(event.type) } }
+            })
+        ])
+        res.json({ code: 'CHECKED_IN', message: `Checked in (+${eventPoints(event.type)} points)`, attendance })
     } catch (err) {
         if (err.code === 'P2003') { return res.status(404).json({ message: 'Event or member not found' }) }
         console.error(err.message)
@@ -210,18 +308,55 @@ router.post('/:eventId/checkin', requireRole('officer'), async (req, res) => {
     }
 })
 
-// Events have no seat cap, so the button admits the entire waitlist.
-// (Labs cap admission at capacity — see labRoutes.)
+// The button: admit waitlisted members oldest-first. Capped events fill up
+// to capacity; uncapped events admit everyone. Each admission earns points.
 router.post('/:eventId/admit-waitlist', requireRole('officer'), async (req, res) => {
     const eventId = parseInt(req.params.eventId)
     if (isNaN(eventId)) { return res.status(400).json({ message: 'Invalid event id' }) }
 
     try {
-        const result = await prisma.memberEvent.updateMany({
+        const event = await prisma.event.findUnique({ where: { eventId } })
+        if (!event) { return res.status(404).json({ message: 'Event not found' }) }
+
+        let seatsLeft = null   // null = unlimited
+        if (event.capacity !== null) {
+            const attendedCount = await prisma.memberEvent.count({
+                where: { eventId, attendanceStatus: 'attended' }
+            })
+            seatsLeft = event.capacity - attendedCount
+            if (seatsLeft <= 0) {
+                return res.json({ admitted: [], seatsLeft: 0, message: 'Event is already at capacity' })
+            }
+        }
+
+        const toAdmit = await prisma.memberEvent.findMany({
             where: { eventId, attendanceStatus: 'waitlisted' },
-            data: { attendanceStatus: 'attended' }
+            orderBy: { waitlistedAt: 'asc' },
+            ...(seatsLeft !== null ? { take: seatsLeft } : {})
         })
-        res.json({ admitted: result.count })
+
+        const memberIds = toAdmit.map(w => w.memberId)
+        await prisma.$transaction([
+            prisma.memberEvent.updateMany({
+                where: { eventId, memberId: { in: memberIds } },
+                data: { attendanceStatus: 'attended' }
+            }),
+            prisma.member.updateMany({
+                where: { userId: { in: memberIds } },
+                data: { points: { increment: eventPoints(event.type) } }
+            })
+        ])
+
+        const stillWaitlisted = await prisma.memberEvent.count({
+            where: { eventId, attendanceStatus: 'waitlisted' }
+        })
+
+        res.json({
+            admitted: memberIds,
+            pointsEach: eventPoints(event.type),
+            seatsLeft: seatsLeft === null ? null : seatsLeft - memberIds.length,
+            stillWaitlisted
+        })
     } catch (err) {
         console.error(err.message)
         res.sendStatus(500)

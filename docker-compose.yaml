@@ -1,0 +1,16 @@
+services:
+  db:
+    image: postgres:16-alpine
+    container_name: elemental-db
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+      POSTGRES_DB: elemental
+    ports:
+      - "5432:5432"
+    volumes:
+      # named volume: data survives docker compose down / restarts
+      - postgres-data:/var/lib/postgresql/data
+
+volumes:
+  postgres-data:

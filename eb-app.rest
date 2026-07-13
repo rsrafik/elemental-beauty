@@ -1,0 +1,317 @@
+### Elemental Beauty — API test file (REST Client extension)
+### After login/register, copy the token into @token below.
+### Roles: member < officer < treasurer < admin
+### First admin (one-time, from terminal):
+###   docker exec -it elemental-db psql -U postgres -d elemental -c "UPDATE members SET role = 'admin' WHERE user_id = 1;"
+
+@base = http://localhost:5003
+@token = PASTE_TOKEN_HERE
+
+### ---------- auth (public) ----------
+
+### Register a new user
+POST {{base}}/auth/register
+Content-Type: application/json
+
+{
+    "username": "rachel",
+    "email": "rachel@example.com",
+    "password": "test1234"
+}
+
+### Login
+POST {{base}}/auth/login
+Content-Type: application/json
+
+{
+    "username": "rachel",
+    "password": "test1234"
+}
+
+### Verify email (token required, membership not)
+POST {{base}}/auth/verify-email
+Authorization: Bearer {{token}}
+
+### Sign waiver (second flip creates the members row)
+POST {{base}}/auth/waiver
+Authorization: Bearer {{token}}
+
+### Forgot password (dev mode returns the resetToken; later it gets emailed)
+POST {{base}}/auth/forgot-password
+Content-Type: application/json
+
+{
+    "email": "rachel@example.com"
+}
+
+### Reset password (token is single-use and expires in 15 min)
+POST {{base}}/auth/reset-password
+Content-Type: application/json
+
+{
+    "resetToken": "PASTE_RESET_TOKEN_HERE",
+    "newPassword": "mynewpassword"
+}
+
+### ---------- members (member+) ----------
+
+### Roster
+GET {{base}}/members
+Authorization: Bearer {{token}}
+
+### My profile
+GET {{base}}/members/me
+Authorization: Bearer {{token}}
+
+### My QR code (PNG)
+GET {{base}}/members/me/qr
+Authorization: Bearer {{token}}
+
+### Update my profile
+PUT {{base}}/members/me
+Authorization: Bearer {{token}}
+Content-Type: application/json
+
+{
+    "instagram": "@rachel.makes.balms"
+}
+
+### Award social-media points (officer+): instagram_repost +1, instagram_follow +2, discord_join +2
+### (attendance points are automatic at check-in/admission and can't be granted here)
+POST {{base}}/members/2/points
+Authorization: Bearer {{token}}
+Content-Type: application/json
+
+{
+    "action": "instagram_follow"
+}
+
+### Change a member's role (admin only)
+PUT {{base}}/members/2/role
+Authorization: Bearer {{token}}
+Content-Type: application/json
+
+{
+    "role": "officer"
+}
+
+### Delete my account
+DELETE {{base}}/members/me
+Authorization: Bearer {{token}}
+
+### ---------- labs (member+; writes officer+) ----------
+
+### List labs (?when=upcoming or ?when=past)
+GET {{base}}/labs?when=upcoming
+Authorization: Bearer {{token}}
+
+### Lab detail (preview until quiz passed; full for officer+)
+GET {{base}}/labs/1
+Authorization: Bearer {{token}}
+
+### Create lab (officer+)
+POST {{base}}/labs
+Authorization: Bearer {{token}}
+Content-Type: application/json
+
+{
+    "title": "Lip Balm Formulation",
+    "date": "2026-09-15",
+    "description": "Intro to anhydrous balms",
+    "ingredients": "Beeswax, shea butter, jojoba oil",
+    "capacity": 20
+}
+
+### Update lab (officer+)
+PUT {{base}}/labs/1
+Authorization: Bearer {{token}}
+Content-Type: application/json
+
+{
+    "safetyNote": "Hot wax — heat gloves required"
+}
+
+### Add a lesson (officer+)
+POST {{base}}/labs/1/lessons
+Authorization: Bearer {{token}}
+Content-Type: application/json
+
+{
+    "title": "Why anhydrous products resist microbes",
+    "explanation": "No water activity means no microbial growth..."
+}
+
+### Add a quiz question with options (officer+)
+POST {{base}}/labs/1/quiz
+Authorization: Bearer {{token}}
+Content-Type: application/json
+
+{
+    "question": "Which ingredient hardens the balm?",
+    "options": [
+        { "answerText": "Beeswax", "isCorrect": true },
+        { "answerText": "Jojoba oil", "isCorrect": false },
+        { "answerText": "Fragrance", "isCorrect": false }
+    ]
+}
+
+### RSVP (auto-waitlists when the lab is full)
+POST {{base}}/labs/1/rsvp
+Authorization: Bearer {{token}}
+
+### Un-RSVP (auto-promotes the oldest waitlisted member)
+DELETE {{base}}/labs/1/rsvp
+Authorization: Bearer {{token}}
+
+### Check in a scanned member (officer+; qrToken comes from the member's QR)
+POST {{base}}/labs/1/checkin
+Authorization: Bearer {{token}}
+Content-Type: application/json
+
+{
+    "qrToken": "PASTE_SCANNED_QR_TOKEN_HERE"
+}
+
+### Admit waitlist into no-show seats, oldest first (officer+)
+POST {{base}}/labs/1/admit-waitlist
+Authorization: Bearer {{token}}
+
+### Submit quiz answers — { questionId: [optionIds] }; 100% required to pass
+POST {{base}}/labs/1/quiz/submit
+Authorization: Bearer {{token}}
+Content-Type: application/json
+
+{
+    "answers": {
+        "1": [1]
+    }
+}
+
+### ---------- events (member+; writes officer+) ----------
+
+### List events (?when=upcoming|past, ?type=official|social — combinable)
+GET {{base}}/events?when=upcoming&type=social
+Authorization: Bearer {{token}}
+
+### Create event (officer+). type is required: official (+5 pts) or social (+3 pts).
+### capacity is optional — omit for unlimited; set it to get lab-style waitlisting.
+POST {{base}}/events
+Authorization: Bearer {{token}}
+Content-Type: application/json
+
+{
+    "title": "Fall Kickoff Social",
+    "type": "social",
+    "date": "2026-08-30",
+    "description": "Meet the club!",
+    "capacity": 50
+}
+
+### RSVP / un-RSVP
+POST {{base}}/events/1/rsvp
+Authorization: Bearer {{token}}
+
+###
+DELETE {{base}}/events/1/rsvp
+Authorization: Bearer {{token}}
+
+### Check in (officer+)
+POST {{base}}/events/1/checkin
+Authorization: Bearer {{token}}
+Content-Type: application/json
+
+{
+    "qrToken": "PASTE_SCANNED_QR_TOKEN_HERE"
+}
+
+### Admit entire event waitlist (officer+)
+POST {{base}}/events/1/admit-waitlist
+Authorization: Bearer {{token}}
+
+### ---------- reimbursements (officer+; decisions treasurer+) ----------
+
+### Submit a request (always created pending)
+POST {{base}}/reimbursements
+Authorization: Bearer {{token}}
+Content-Type: application/json
+
+{
+    "explanation": "Beeswax and shea butter",
+    "amountRequested": 42.50,
+    "category": "supplies"
+}
+
+### My history
+GET {{base}}/reimbursements/mine
+Authorization: Bearer {{token}}
+
+### Review queue (treasurer+)
+GET {{base}}/reimbursements?status=pending
+Authorization: Bearer {{token}}
+
+### Approve (treasurer+) — the DB trigger auto-creates the ledger expense
+PUT {{base}}/reimbursements/1/status
+Authorization: Bearer {{token}}
+Content-Type: application/json
+
+{
+    "status": "approved"
+}
+
+### Deny (treasurer+) — denialExplanation required
+PUT {{base}}/reimbursements/2/status
+Authorization: Bearer {{token}}
+Content-Type: application/json
+
+{
+    "status": "denied",
+    "denialExplanation": "No receipt attached"
+}
+
+### ---------- transactions (officer+ reads; treasurer+ writes) ----------
+
+### Ledger (?type=&category=&from=&to=)
+GET {{base}}/transactions
+Authorization: Bearer {{token}}
+
+### Analytics summary
+GET {{base}}/transactions/summary
+Authorization: Bearer {{token}}
+
+### CSV export
+GET {{base}}/transactions/export
+Authorization: Bearer {{token}}
+
+### Record a manual entry (treasurer+)
+POST {{base}}/transactions
+Authorization: Bearer {{token}}
+Content-Type: application/json
+
+{
+    "type": "income",
+    "source": "Fall membership dues",
+    "amount": 300,
+    "category": "membership_dues"
+}
+
+### ---------- grants (treasurer+) ----------
+
+### Create
+POST {{base}}/grants
+Authorization: Bearer {{token}}
+Content-Type: application/json
+
+{
+    "source": "Purdue Student Org Grant",
+    "amountGranted": 500,
+    "dateGranted": "2026-08-01",
+    "expirationDate": "2027-05-01"
+}
+
+### List
+GET {{base}}/grants
+Authorization: Bearer {{token}}
+
+### Detail — includes derived amountSpent and remaining
+GET {{base}}/grants/1
+Authorization: Bearer {{token}}

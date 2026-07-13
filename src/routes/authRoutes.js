@@ -111,4 +111,75 @@ router.post('/waiver', authMiddleware, async (req, res) => {
     }
 })
 
+// Request a password reset. The reset token is signed with JWT_SECRET plus the
+// user's CURRENT password hash — so it dies the moment the password changes
+// (single-use) with no extra database table needed. When an email service is
+// added, the token gets emailed as a link; until then, dev mode returns it in
+// the response so the flow is testable.
+router.post('/forgot-password', async (req, res) => {
+    const { email } = req.body
+    if (!email) { return res.status(400).json({ message: 'email is required' }) }
+
+    try {
+        const user = await prisma.user.findUnique({ where: { email } })
+
+        // Identical response whether or not the email exists — no enumeration
+        const response = { message: 'If that email is registered, a reset link has been sent' }
+
+        if (user) {
+            const resetToken = jwt.sign(
+                { id: user.userId, purpose: 'password-reset' },
+                process.env.JWT_SECRET + user.passwordHash,
+                { expiresIn: '15m' }
+            )
+            // TODO: email this as a link once an email service exists
+            console.log(`Password reset token for ${email}: ${resetToken}`)
+            if (process.env.NODE_ENV !== 'production') {
+                response.resetToken = resetToken   // dev convenience ONLY
+            }
+        }
+
+        res.json(response)
+    } catch (err) {
+        console.error(err.message)
+        res.sendStatus(500)
+    }
+})
+
+router.post('/reset-password', async (req, res) => {
+    const { resetToken, newPassword } = req.body
+    if (!resetToken || !newPassword) {
+        return res.status(400).json({ message: 'resetToken and newPassword are required' })
+    }
+
+    try {
+        // decode (unverified) just to learn WHO this claims to be...
+        const unverified = jwt.decode(resetToken)
+        if (!unverified?.id || unverified.purpose !== 'password-reset') {
+            return res.status(400).json({ message: 'Invalid or expired reset token' })
+        }
+
+        const user = await prisma.user.findUnique({ where: { userId: unverified.id } })
+        if (!user) { return res.status(400).json({ message: 'Invalid or expired reset token' }) }
+
+        // ...then verify for real against that user's per-token secret
+        try {
+            jwt.verify(resetToken, process.env.JWT_SECRET + user.passwordHash)
+        } catch {
+            return res.status(400).json({ message: 'Invalid or expired reset token' })
+        }
+
+        const passwordHash = await bcrypt.hash(newPassword, 8)
+        await prisma.user.update({
+            where: { userId: user.userId },
+            data: { passwordHash }
+        })
+
+        res.json({ message: 'Password reset — you can now log in with your new password' })
+    } catch (err) {
+        console.error(err.message)
+        res.sendStatus(500)
+    }
+})
+
 export default router

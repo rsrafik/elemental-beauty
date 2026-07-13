@@ -2,6 +2,7 @@ import express from 'express'
 import jwt from 'jsonwebtoken'
 import prisma from '../prismaClient.js'
 import requireRole from '../middleware/requireRole.js'
+import { POINTS } from '../points.js'
 
 const router = express.Router()
 const RANK_OFFICER = ['officer', 'treasurer', 'admin']
@@ -364,12 +365,19 @@ router.post('/:labId/checkin', requireRole('officer'), async (req, res) => {
             return res.status(202).json({ code: 'ALREADY_WAITLISTED', message: 'Still on the waitlist' })
         }
 
-        // rsvped → they have a reserved seat, check them in
-        const attendance = await prisma.memberLab.update({
-            where: { memberId_labId: { memberId: decoded.id, labId } },
-            data: { attendanceStatus: 'attended' }
-        })
-        res.json({ code: 'CHECKED_IN', message: 'Checked in', attendance })
+        // rsvped → attended; lab points awarded atomically with the transition
+        // (only this transition earns — rescans hit the guards above)
+        const [attendance] = await prisma.$transaction([
+            prisma.memberLab.update({
+                where: { memberId_labId: { memberId: decoded.id, labId } },
+                data: { attendanceStatus: 'attended' }
+            }),
+            prisma.member.update({
+                where: { userId: decoded.id },
+                data: { points: { increment: POINTS.lab } }
+            })
+        ])
+        res.json({ code: 'CHECKED_IN', message: `Checked in (+${POINTS.lab} points)`, attendance })
     } catch (err) {
         if (err.code === 'P2003') { return res.status(404).json({ message: 'Lab or member not found' }) }
         console.error(err.message)
@@ -402,18 +410,27 @@ router.post('/:labId/admit-waitlist', requireRole('officer'), async (req, res) =
             take: seatsLeft                              // never over capacity
         })
 
-        await prisma.memberLab.updateMany({
-            where: { labId, memberId: { in: toAdmit.map(w => w.memberId) } },
-            data: { attendanceStatus: 'attended' }
-        })
+        const memberIds = toAdmit.map(w => w.memberId)
+        await prisma.$transaction([
+            prisma.memberLab.updateMany({
+                where: { labId, memberId: { in: memberIds } },
+                data: { attendanceStatus: 'attended' }
+            }),
+            // admitted = attended, so they earn lab points like anyone else
+            prisma.member.updateMany({
+                where: { userId: { in: memberIds } },
+                data: { points: { increment: POINTS.lab } }
+            })
+        ])
 
         const stillWaitlisted = await prisma.memberLab.count({
             where: { labId, attendanceStatus: 'waitlisted' }
         })
 
         res.json({
-            admitted: toAdmit.map(w => w.memberId),
-            seatsLeft: seatsLeft - toAdmit.length,
+            admitted: memberIds,
+            pointsEach: POINTS.lab,
+            seatsLeft: seatsLeft - memberIds.length,
             stillWaitlisted
         })
     } catch (err) {

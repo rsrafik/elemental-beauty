@@ -3,6 +3,7 @@ import jwt from 'jsonwebtoken'
 import QRCode from 'qrcode'
 import prisma from '../prismaClient.js'
 import requireRole from '../middleware/requireRole.js'
+import { POINTS, MANUAL_ACTIONS } from '../points.js'
 
 const router = express.Router()
 
@@ -79,6 +80,32 @@ router.put('/me', async (req, res) => {
         res.json(me)
     } catch (err) {
         if (err.code === 'P2025') { return res.status(404).json({ message: 'Member profile not found' }) }
+        console.error(err.message)
+        res.sendStatus(500)
+    }
+})
+
+// Officer+: award points for social-media actions. The action name picks the
+// value server-side — clients never send a point amount, so the values in
+// points.js are the only amounts that can ever be granted. Attendance points
+// are NOT awardable here; they happen automatically at check-in/admission.
+router.post('/:id/points', requireRole('officer'), async (req, res) => {
+    const targetId = parseInt(req.params.id)
+    if (isNaN(targetId)) { return res.status(400).json({ message: 'Invalid member id' }) }
+
+    const { action } = req.body
+    if (!MANUAL_ACTIONS.includes(action)) {
+        return res.status(400).json({ message: `action must be one of: ${MANUAL_ACTIONS.join(', ')}` })
+    }
+
+    try {
+        const updated = await prisma.member.update({
+            where: { userId: targetId },
+            data: { points: { increment: POINTS[action] } }
+        })
+        res.json({ message: `+${POINTS[action]} points for ${action}`, points: updated.points })
+    } catch (err) {
+        if (err.code === 'P2025') { return res.status(404).json({ message: 'Member not found' }) }
         console.error(err.message)
         res.sendStatus(500)
     }
