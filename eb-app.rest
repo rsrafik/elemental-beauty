@@ -4,7 +4,7 @@
 ### First admin (one-time, from terminal):
 ###   docker exec -it elemental-db psql -U postgres -d elemental -c "UPDATE members SET role = 'admin' WHERE user_id = 1;"
 
-@base = http://localhost:5003
+@base = http://localhost:5003/api
 @token = PASTE_TOKEN_HERE
 
 ### ---------- auth (public) ----------

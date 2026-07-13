@@ -47,25 +47,20 @@ const __dirname = dirname(__filename)
 // Middleware
 app.use(express.json())
 
-// Serves HTML from /public directory
-// Tells express to serve all files from public folder as static assets
-app.use(express.static(path.join(__dirname, '../public')))
+// Serve the built Next.js frontend (copied into public/ by `npm run build:frontend`).
+// extensions: ['html'] lets /labs resolve to public/labs.html — Next's static
+// export emits one HTML file per page.
+app.use(express.static(path.join(__dirname, '../public'), { extensions: ['html'] }))
 
-// Serving up HTML file from /public directory
-// (public/ is a sibling of src/, hence '../public' — will 404 until an
-// index.html exists there; the dashboard frontend is a later step)
-app.get('/', (req, res) => {
-    res.sendFile(path.join(__dirname, '../public', 'index.html'))
-})
-
-// Routes
-app.use('/auth', authLimiter, authRoutes)
-app.use('/members', authMiddleware, requireRole('member'), memberRoutes)
-app.use('/labs', authMiddleware, requireRole('member'), labRoutes)
-app.use('/events', authMiddleware, requireRole('member'), eventRoutes)
-app.use('/reimbursements', authMiddleware, requireRole('officer'), reimbursementRoutes)
-app.use('/transactions', authMiddleware, requireRole('officer'), transactionRoutes)
-app.use('/grants', authMiddleware, requireRole('treasurer'), grantRoutes)
+// API routes — all under /api so they can never collide with frontend pages
+// (frontend /labs is a page; /api/labs is the API).
+app.use('/api/auth', authLimiter, authRoutes)
+app.use('/api/members', authMiddleware, requireRole('member'), memberRoutes)
+app.use('/api/labs', authMiddleware, requireRole('member'), labRoutes)
+app.use('/api/events', authMiddleware, requireRole('member'), eventRoutes)
+app.use('/api/reimbursements', authMiddleware, requireRole('officer'), reimbursementRoutes)
+app.use('/api/transactions', authMiddleware, requireRole('officer'), transactionRoutes)
+app.use('/api/grants', authMiddleware, requireRole('treasurer'), grantRoutes)
 
 // Mark RSVP'd no-shows absent once a lab/event's day has passed —
 // on boot, then hourly.
