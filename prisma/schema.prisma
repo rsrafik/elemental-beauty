@@ -27,6 +27,7 @@ enum AttendanceStatus {
   rsvped
   attended
   absent
+  waitlisted
 
   @@map("attendance_status")
 }
@@ -100,6 +101,7 @@ model Lab {
   labId        Int      @id @default(autoincrement()) @map("lab_id")
   title        String
   date         DateTime @db.Date
+  capacity     Int      @default(20)
   description  String?
   image        String?
   ingredients  String?
@@ -171,6 +173,7 @@ model MemberLab {
   labId            Int              @map("lab_id")
   attendanceStatus AttendanceStatus @default(rsvped) @map("attendance_status")
   quizPassed       Boolean?         @map("quiz_passed")
+  waitlistedAt     DateTime?        @map("waitlisted_at") @db.Timestamptz()
 
   member Member @relation(fields: [memberId], references: [userId], onDelete: Cascade)
   lab    Lab    @relation(fields: [labId], references: [labId], onDelete: Cascade)
@@ -184,6 +187,7 @@ model MemberEvent {
   memberId         Int              @map("member_id")
   eventId          Int              @map("event_id")
   attendanceStatus AttendanceStatus @default(rsvped) @map("attendance_status")
+  waitlistedAt     DateTime?        @map("waitlisted_at") @db.Timestamptz()
 
   member Member @relation(fields: [memberId], references: [userId], onDelete: Cascade)
   event  Event  @relation(fields: [eventId], references: [eventId], onDelete: Cascade)
