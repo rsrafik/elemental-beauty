@@ -1,6 +1,6 @@
 # Elemental Beauty
 
-**Cosmetic Science & Formulation Club — Purdue University**
+**Cosmetic Science & Formulation Club @ Purdue University**
 
 ## Overview
 
@@ -40,9 +40,15 @@ Our events pair formulation fundamentals with hands-on execution: **soap-making 
 
 ## Frontend
 
-The club's core internal frontend is the **Treasurer Dashboard**, a purpose-built tool for managing club finances end-to-end. It handles full **CRUD operations** for financial records, a **reimbursement approval and rejection workflow** for member requests, and **CSV export** for record-keeping and reporting.
-
-Additional frontend surfaces, like a public club site, member portal, or event sign-ups, can be documented here as they're built out.
+The frontend is a **Next.js** application (built on **React 19** and **Tailwind CSS 4**) that serves as the club's full member and officer platform, not just a finance tool. It's organized into several pages:
+ 
+**Public and account pages** cover the essentials: an **about-us** page, **login**, **account** management, and **password reset/verification** flows for members.
+ 
+**Members** provides a directory and management view for club membership, while **dashboard** acts as the landing page after login, giving members and officers a home base for the platform.
+ 
+**Events** and **labs** each have both a listing page and a dedicated **view** page for individual entries, letting members browse upcoming events or formulation labs and drill into details for a specific one.
+ 
+**Finances** houses the **Treasurer Dashboard** — the tool officers use to manage club money day-to-day, with full **CRUD operations** on financial records, a **reimbursement approval and rejection workflow**, and **CSV export** for record-keeping and reporting.
 
 ## Backend
 
