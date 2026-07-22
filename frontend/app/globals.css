@@ -8,8 +8,16 @@
 @theme inline {
   --color-background: var(--background);
   --color-foreground: var(--foreground);
+  --color-cream: #FAF0DC;
+  --color-dark-red: #992716;
+  --color-mustard: #F1C667;
+  --color-salmon: #E18476;
+
   --font-sans: var(--font-geist-sans);
   --font-mono: var(--font-geist-mono);
+  --font-cause: var(--font-cause);
+  --font-bumbel: var(--font-bumbel);
+  --font-beachday: var(--font-beachday);
 }
 
 @media (prefers-color-scheme: dark) {
@@ -17,6 +25,17 @@
     --background: #0a0a0a;
     --foreground: #ededed;
   }
+}
+
+/* Reusable gradient-text utility: apply `title-gradient` to any element to
+   paint its TEXT with this 3-color gradient. Bundles the gradient fill +
+   the clip-to-text + transparent color so you don't repeat that chain. */
+@utility title-gradient {
+  background-image: linear-gradient(to right, #E08377, #F79360, #F0C767);
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+  filter: drop-shadow(-4px 4px 2 rgba(0,0,0,0.9));
 }
 
 body {
