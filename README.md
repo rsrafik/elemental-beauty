@@ -1,7 +1,8 @@
 # Elemental Beauty
 
 **Cosmetic Science & Formulation Club @ Purdue University**
-[**BoilerLink_**]([https://instagram.com/elementist_](https://boilerlink.purdue.edu/organization/httpsboilerlink_purdue_eduorganization_https))
+
+[**Club BoilerLink**](https://boilerlink.purdue.edu/organization/httpsboilerlink_purdue_eduorganization_https)
 
 ## Overview
 
