@@ -26,7 +26,7 @@ Our events pair formulation fundamentals with hands-on execution: **soap-making 
 |---|---|
 | Catherine Chang | President, Co-Founder|
 | Azu Nakao | Vice President, Co-Founder|
-| Rachel Rafik | Software Developer, Designer, Co-Founder|
+| Rachel Rafik | Software Developer, Designer, Social Media Manager, Co-Founder|
 | Michelle Cheng | Treasurer |
 | Aiden Tang | Formula Lead |
 | Vaanathy Periyar | Formula Lead |
