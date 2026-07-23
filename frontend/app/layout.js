@@ -28,6 +28,16 @@ const beachday = localFont({
   variable: "--font-beachday",
 });
 
+const ettamelody = localFont({
+  src: "./fonts/ITEttaMelody.woff2",
+  variable: "--font-ettamelody",
+});
+
+const starbim = localFont({
+  src: "./fonts/Starbim.woff2",
+  variable: "--font-starbim",
+});
+
 export const metadata = {
   title: "Elemental Beauty",
   description: "Purdue's cosmetic science club",
@@ -41,8 +51,10 @@ export default function RootLayout({ children }) {
         ${geistSans.variable} 
         ${geistMono.variable} 
         ${cause.variable}
-        ${bumbel.variable} 
-        ${beachday.variable} 
+        ${bumbel.variable}
+        ${beachday.variable}
+        ${ettamelody.variable}
+        ${starbim.variable}
         h-full antialiased`}
     >
       <body className="min-h-full flex flex-col">{children}</body>

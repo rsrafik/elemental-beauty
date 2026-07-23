@@ -12,12 +12,22 @@
   --color-dark-red: #992716;
   --color-mustard: #F1C667;
   --color-salmon: #E18476;
+  --color-pink: #FFA99C;
+  --color-peach: #F39065;
+  --color-peach-light: #FACBA7;
+  --color-terracotta: #D45B48;
+  --color-sage: #E4F3D3;
+  --color-sage-dark: #C1F098;
+  --color-green: #87D444;
+  --color-green-dark: #2E6102;
 
   --font-sans: var(--font-geist-sans);
   --font-mono: var(--font-geist-mono);
   --font-cause: var(--font-cause);
   --font-bumbel: var(--font-bumbel);
   --font-beachday: var(--font-beachday);
+  --font-ettamelody: var(--font-ettamelody);
+  --font-starbim: var(--font-starbim);
 }
 
 @media (prefers-color-scheme: dark) {
