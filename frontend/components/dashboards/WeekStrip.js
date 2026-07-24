@@ -82,10 +82,19 @@ export default function WeekStrip() {
                             px-2
                             py-1.5
                         `}>
-                            <span className="font-serif font-bold text-green-dark text-[20px]">
+                            <span className="
+                                font-serif 
+                                font-bold 
+                                text-green-dark 
+                                text-[20px]
+                            ">
                                 {label}
                             </span>
-                            <span className="font-cause text-green-dark text-xs">
+                            <span className="
+                                font-cause 
+                                text-green-dark 
+                                text-xs
+                            ">
                                 {day?.dayOfMonth}
                             </span>
                         </div>
@@ -114,12 +123,13 @@ export default function WeekStrip() {
                             {event?.action && (
                                 <button type="button" className="
                                     mt-auto
-                                    bg-sage-dark
-                                    border
+                                    bg-green
+                                    border-2
+                                    font-bold
                                     border-green-dark
                                     text-green-dark
                                     font-cause
-                                    text-xs
+                                    text-[13px]
                                     tracking-wide
                                     px-4
                                     py-1.5

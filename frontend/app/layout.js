@@ -1,5 +1,6 @@
 import { Geist, Geist_Mono } from "next/font/google";
 import { Cause } from "next/font/google";
+import { Combo } from "next/font/google";
 import localFont from "next/font/local";
 import "./globals.css";
 
@@ -16,6 +17,12 @@ const cause = Cause({
 const geistMono = Geist_Mono({
   variable: "--font-geist-mono",
   subsets: ["latin"],
+});
+
+const combo = Combo({
+  variable: "--font-combo",
+  subsets: ["latin"],
+  weight: "400", // Combo is a static font — only 400 exists, so it must be named
 });
 
 const bumbel = localFont({
@@ -38,6 +45,11 @@ const starbim = localFont({
   variable: "--font-starbim",
 });
 
+const cupidvibes = localFont({
+  src: "./fonts/CupidVibes.woff2",
+  variable: "--font-cupidvibes",
+});
+
 export const metadata = {
   title: "Elemental Beauty",
   description: "Purdue's cosmetic science club",
@@ -51,10 +63,12 @@ export default function RootLayout({ children }) {
         ${geistSans.variable} 
         ${geistMono.variable} 
         ${cause.variable}
+        ${combo.variable}
         ${bumbel.variable}
         ${beachday.variable}
         ${ettamelody.variable}
         ${starbim.variable}
+        ${cupidvibes.variable}
         h-full antialiased`}
     >
       <body className="min-h-full flex flex-col">{children}</body>

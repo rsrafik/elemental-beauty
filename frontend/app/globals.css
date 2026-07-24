@@ -24,10 +24,12 @@
   --font-sans: var(--font-geist-sans);
   --font-mono: var(--font-geist-mono);
   --font-cause: var(--font-cause);
+  --font-combo: var(--font-combo);
   --font-bumbel: var(--font-bumbel);
   --font-beachday: var(--font-beachday);
   --font-ettamelody: var(--font-ettamelody);
   --font-starbim: var(--font-starbim);
+  --font-cupidvibes: var(--font-cupidvibes);
 }
 
 @media (prefers-color-scheme: dark) {

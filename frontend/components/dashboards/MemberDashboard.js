@@ -1,5 +1,6 @@
 // Shown to a member (role = 'member'). Its own layout — design freely.
 import WeekStrip from '@/components/dashboards/WeekStrip'
+import CurvedLoopText from '@/components/dashboards/CurvedLoopText'
 
 export default function MemberDashboard() {
     return (
@@ -12,7 +13,6 @@ export default function MemberDashboard() {
             justify-center
             p-8
         ">
-            {/* Outer column: the two-up row on top, week strip full width below. */}
             <div className="
                 w-full
                 max-w-[1440px]
@@ -46,7 +46,7 @@ export default function MemberDashboard() {
                             rounded-full
                             bg-slate-300
                             border-3
-                            border-black
+                            border-dark-red
                             z-10
                         " />
 
@@ -65,17 +65,17 @@ export default function MemberDashboard() {
                             <h2 className="
                                 font-ettamelody
                                 text-dark-red
-                                text-[72px]
+                                text-[70px]
                                 leading-[0.9]
                             ">
                                 Welcome back,
                             </h2>
                             <h3 className="
                                 self-center
-                                font-sans
+                                font-combo
                                 font-light
                                 text-black
-                                text-[66px]
+                                text-[100px]
                                 leading-none
                             ">
                                 Azu
@@ -85,6 +85,7 @@ export default function MemberDashboard() {
                                 bg-terracotta
                                 text-cream
                                 font-beachday
+                                shadow-[-3px_3px_3px_rgba(0,0,0,0.48)]
                                 font-bold
                                 text-base
                                 text-[20px]
@@ -155,25 +156,59 @@ export default function MemberDashboard() {
                             flex
                             items-center
                             justify-center
+                            pt-8
                         ">
                             <StatCard label="Past Labs" value={4} />
-                            <img
-                                src="/cloud-1.png"
-                                alt="20 points"
-                                className="
-                                    w-[38%]
-                                    shrink-0
-                                    -mx-8
-                                    z-10
-                                    drop-shadow-md
-                                "
-                            />
+
+                            {/* Points sit over the cloud, so the number stays
+                                real text the backend can fill in later. */}
+                            <div className="
+                                relative
+                                w-[34%]
+                                shrink-0
+                                z-0
+                            ">
+                                <CurvedLoopText
+                                    text="POINTS"
+                                    className="
+                                        absolute
+                                        -top-[30%]
+                                        -left-[42%]
+                                        w-[184%]
+                                        z-10
+                                        fill-dark-red
+                                        font-cupidvibes
+                                        text-[17px]
+                                        tracking-wide
+                                    "
+                                />
+                                <img
+                                    src="/cloud-1.png"
+                                    alt=""
+                                    className="
+                                        relative
+                                        w-full
+                                        drop-shadow-md"
+                                />
+                                <span className="
+                                    absolute
+                                    inset-0
+                                    flex
+                                    items-center
+                                    justify-center
+                                    font-cupidvibes
+                                    text-salmon
+                                    text-6xl
+                                    mt-3
+                                ">
+                                    20
+                                </span>
+                            </div>
+
                             <StatCard label="Past Events" value={12} />
                         </section>
                     </div>
                 </div>
-
-                {/* Week strip spans the full width, under both columns. */}
                 <WeekStrip />
             </div>
         </main>
@@ -183,6 +218,8 @@ export default function MemberDashboard() {
 function StatCard({ label, value }) {
     return (
         <div className="
+            relative
+            z-20
             flex-1
             min-w-0
             bg-mustard
