@@ -1,28 +1,18 @@
-import { Geist, Geist_Mono } from "next/font/google";
-import { Cause } from "next/font/google";
-import { Combo } from "next/font/google";
+import { Be_Vietnam_Pro } from "next/font/google";
+import { Delicious_Handrawn } from "next/font/google";
 import localFont from "next/font/local";
 import "./globals.css";
 
-const geistSans = Geist({
-  variable: "--font-geist-sans",
+const bevietnampro = Be_Vietnam_Pro({
+  variable: "--font-vietnam",
   subsets: ["latin"],
+  weight: ["100", "200", "300", "400", "500", "600", "700", "800", "900"],
 });
 
-const cause = Cause({
-  variable: "--font-cause",
+const delicioushandrawn = Delicious_Handrawn({
+  variable: "--font-handrawn",
   subsets: ["latin"],
-});
-
-const geistMono = Geist_Mono({
-  variable: "--font-geist-mono",
-  subsets: ["latin"],
-});
-
-const combo = Combo({
-  variable: "--font-combo",
-  subsets: ["latin"],
-  weight: "400", // Combo is a static font — only 400 exists, so it must be named
+  weight: "400",
 });
 
 const bumbel = localFont({
@@ -50,6 +40,26 @@ const cupidvibes = localFont({
   variable: "--font-cupidvibes",
 });
 
+const aalto = localFont({
+  src: "./fonts/Aalto.woff2",
+  variable: "--font-aalto",
+});
+
+const beautifulbg = localFont({
+  src: "./fonts/BeautifulBackground.woff2",
+  variable: "--font-beautifulbg",
+});
+
+const canobis = localFont({
+  src: "./fonts/Canobis.woff2",
+  variable: "--font-canobis",
+});
+
+const reasons = localFont({
+  src: "./fonts/CertainReasons.woff2",
+  variable: "--font-reasons",
+});
+
 export const metadata = {
   title: "Elemental Beauty",
   description: "Purdue's cosmetic science club",
@@ -60,18 +70,22 @@ export default function RootLayout({ children }) {
     <html
       lang="en"
       className={`
-        ${geistSans.variable} 
-        ${geistMono.variable} 
-        ${cause.variable}
-        ${combo.variable}
+        ${bevietnampro.variable}
+        ${delicioushandrawn.variable}
         ${bumbel.variable}
         ${beachday.variable}
         ${ettamelody.variable}
         ${starbim.variable}
         ${cupidvibes.variable}
+        ${aalto.variable}
+        ${beautifulbg.variable}
+        ${canobis.variable}
+        ${reasons.variable}
         h-full antialiased`}
     >
-      <body className="min-h-full flex flex-col">{children}</body>
+      <body className="min-h-full flex flex-col" suppressHydrationWarning>
+        {children}
+      </body>
     </html>
   );
 }
