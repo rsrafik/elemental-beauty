@@ -26,7 +26,10 @@ const nextConfig = {
         }),
 
     // next/image optimization needs a server; a static export has none
-    images: { unoptimized: true }
+    images: { unoptimized: true },
+
+    // hide the little Next.js dev indicator badge (the "N" bottom-left)
+    devIndicators: false
 }
 
 export default nextConfig

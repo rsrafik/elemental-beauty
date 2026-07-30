@@ -3,17 +3,16 @@ import Sidebar from '@/components/dashboards/Sidebar'
 function PassField({ label, value, className = '' }) {
 	return (
 		<div className={`
-			border-2
+			border-1
 			border-salmon-light
-			rounded-[10px]
-			px-3
+			px-2
 			py-1
 			${className}
 		`}>
 			<p className="
 				font-vietnam
                 font-semibold
-				text-[11px]
+				text-[13px]
 				leading-tight
 				text-white/80
 			">
@@ -21,7 +20,7 @@ function PassField({ label, value, className = '' }) {
 			</p>
 			<p className="
 				font-handrawn
-				text-lg
+				text-[25px]
 				leading-tight
 				text-black
 			">
@@ -34,12 +33,14 @@ function PassField({ label, value, className = '' }) {
 function StatCard({ title, value, bg, valueColor }) {
 	return (
 		<div className={`
-			rounded-[28px]
+			rounded-[30px]
 			p-6
 			min-h-[150px]
 			flex
 			flex-col
+            items-center
 			${bg}
+            shadow-[-4px_4px_8px_rgba(0,0,0,0.5)]
 		`}>
 			<p className="
 				font-vietnam
@@ -50,9 +51,8 @@ function StatCard({ title, value, bg, valueColor }) {
 				{title}
 			</p>
 			<p className={`
-				font-vietnam
-				font-extrabold
-				text-5xl
+				font-beachday
+				text-[50px]
 				mt-auto
 				${valueColor}
 			`}>
@@ -63,16 +63,60 @@ function StatCard({ title, value, bg, valueColor }) {
 }
 
 function Stamp({ day, date, note, style, rotate = 0 }) {
+	// Position + rotation live on this one wrapper. Everything inside
+	// (stamp, pin, text) rotates with it automatically — no per-item angles.
+	//
+	// `center` = horizontal distance (px) of the stamp's center from the green
+	// panel's center x-axis. 0 = dead center, negative = left, positive = right.
+	// (90px below is half the stamp width, 180 / 2.)
+	const { center = 0, ...pos } = style
+	const sign = center < 0 ? '-' : '+'
+	// rotate lives on the outer div (inline), so hover:scale goes on the inner
+	// wrapper — otherwise the inline transform would override the scale.
 	return (
-		<div className="absolute w-[46%]" style={style}>
-			<div className="relative" style={{ transform: `rotate(${rotate}deg)` }}>
+		<div
+			className="group absolute w-[180px] h-[236px] cursor-pointer hover:z-20"
+			style={{
+				...pos,
+				left: `calc(50% - 90px ${sign} ${Math.abs(center)}px)`,
+				transform: `rotate(${rotate}deg)`,
+			}}
+		>
+			<div className="
+				relative
+				w-full
+				h-full
+				transition-transform
+				duration-200
+				ease-out
+				group-hover:scale-105
+			">
+				{/* white base stays fully opaque — the yellow just fades in on top,
+				    so the stamp never goes see-through and reveals the ones behind */}
 				<img
 					src="/stamp.png"
 					alt=""
 					className="
+						absolute
+						inset-0
 						w-full
-						block
+						h-full
 						select-none
+					"
+				/>
+				<img
+					src="/stamp-yellow.png"
+					alt=""
+					className="
+						absolute
+						inset-0
+						w-full
+						h-full
+						select-none
+						opacity-0
+						transition-opacity
+						duration-200
+						group-hover:opacity-100
 					"
 				/>
 				<img
@@ -80,7 +124,7 @@ function Stamp({ day, date, note, style, rotate = 0 }) {
 					alt=""
 					className="
 						absolute
-						-top-3
+						top-[20px]
 						left-1/2
 						-translate-x-1/2
 						w-9
@@ -98,8 +142,8 @@ function Stamp({ day, date, note, style, rotate = 0 }) {
 					text-center
 				">
 					<p className="
-						font-ettamelody
-						text-2xl
+						font-beautifulbg
+						text-[30px]
 						text-black
 					">
 						{day} <span className="
@@ -108,11 +152,12 @@ function Stamp({ day, date, note, style, rotate = 0 }) {
 						">{date}</span>
 					</p>
 					<p className="
-						font-ettamelody
-						text-lg
+						font-handrawn
+						text-[20px]
 						text-black
 						mt-3
 						leading-tight
+						w-full
 					">
 						{note}
 					</p>
@@ -124,12 +169,20 @@ function Stamp({ day, date, note, style, rotate = 0 }) {
 
 // ---- data ------------------------------------------------------------------
 
+// Per-stamp layout inside the group box (GROUP_W × GROUP_H, centered in the panel).
+//   top    = px distance from the top of the group.
+//   center = px distance of the stamp's center from the panel's center x-axis
+//            (0 = centered, negative = left, positive = right).
+//   rotate = tilt in degrees.
+const GROUP_W = 395
+const GROUP_H = 851
+
 const upcoming = [
-	{ day: 'Mon.', date: '27', note: 'none', style: { top: '1%', left: '6%' }, rotate: -7 },
-	{ day: 'Tues.', date: '28', note: 'bubbles & beakers p.1', style: { top: '17%', left: '48%' }, rotate: 6 },
-	{ day: 'Wed.', date: '29', note: 'none', style: { top: '33%', left: '2%' }, rotate: -5 },
-	{ day: 'Thurs.', date: '30', note: 'bubbles & beakers p.2', style: { top: '50%', left: '46%' }, rotate: 7 },
-	{ day: 'Fri.', date: '31', note: 'none', style: { top: '70%', left: '9%' }, rotate: -4 },
+	{ day: 'Mon.', date: '27', note: 'none', style: { top: '30px', center: -70 }, rotate: -11 },
+	{ day: 'Tues.', date: '28', note: 'bubbles & beakers p.1', style: { top: '155px', center: 75 }, rotate: 7 },
+	{ day: 'Wed.', date: '29', note: 'none', style: { top: '305px', center: -75 }, rotate: -23 },
+	{ day: 'Thurs.', date: '30', note: 'bubbles & beakers p.2', style: { top: '460px', center: 95 }, rotate: 4 },
+	{ day: 'Fri.', date: '31', note: 'none', style: { top: '615px', center: -50 }, rotate: -4 },
 ]
 
 // ---- page ------------------------------------------------------------------
@@ -139,10 +192,11 @@ export default function MemberDashboard() {
 		<main className="
 			bg-cream
 			w-full
-			min-h-screen
-			p-4
+			h-screen
+			overflow-hidden
+			p-8
 			flex
-			gap-4
+			gap-15
 		">
 			<Sidebar items={['dashboard', 'labs', 'events', 'calendar']} active="dashboard" />
 
@@ -151,21 +205,24 @@ export default function MemberDashboard() {
 				flex-1
 				flex
 				flex-col
-				gap-6
+				justify-center
+				gap-5
 			">
 				{/* announcements */}
 				<div className="
 					relative
 					bg-white
-					border-[3px]
+					border-[5px]
 					border-orange
-					rounded-[30px]
+					rounded-tl-[50px]
+                    rounded-br-[50px]
 					px-8
 					py-5
 				">
 					<p className="
 						font-vietnam
-						text-lg
+						text-[18px]
+                        font-semibold
 						text-black
 					">
 						announcements
@@ -178,28 +235,16 @@ export default function MemberDashboard() {
 					">
 						Welcome to Elemental Beauty!
 					</p>
-					{/* speech-bubble tail */}
-					<div className="
-						absolute
-						-bottom-[11px]
-						left-12
-						w-5
-						h-5
-						bg-white
-						rotate-45
-						border-b-[3px]
-						border-r-[3px]
-						border-orange
-					" />
 				</div>
 
 				{/* elementist pass */}
 				<div className="
 					bg-salmon
-					rounded-[24px]
+					rounded-[10px]
 					p-6
 					flex
-					gap-5
+					gap-6
+					shadow-[-4px_4px_9px_rgba(0,0,0,0.5)]
 				">
 					<div className="
 						bg-neutral-300
@@ -212,17 +257,17 @@ export default function MemberDashboard() {
 						flex-1
 						flex
 						flex-col
-						gap-2
 					">
 						<h3 className="
 							font-starbim
 							text-yellow-light
 							text-2xl
-							text-right
+							text-center
 							tracking-wide
 							whitespace-nowrap
+                            [-webkit-text-stroke:0.75px_black]
 						">
-							ELEMENTIST P★SS
+							ELEMENTIST PASS
 						</h3>
 						<PassField label="username" value="azuazu" />
 						<PassField label="first name" value="Azu" />
@@ -231,7 +276,6 @@ export default function MemberDashboard() {
 							flex
 							gap-3
 							items-end
-							mt-1
 						">
 							<PassField
 								label="date joined"
@@ -239,17 +283,16 @@ export default function MemberDashboard() {
 								className="w-40 shrink-0"
 							/>
 							<p className="
-								font-vietnam
+								font-beachday
 								font-bold
-								text-sm
-								text-salmon-dark
-								leading-tight
+								text-[20px]
+								text-salmon-med
 								pb-1
-								shrink-0
+								flex-1
 								whitespace-nowrap
-								text-right
+								text-center
 							">
-								CLICK CARD FOR<br />QR CODE
+								CLICK CARD FOR QR CODE
 							</p>
 						</div>
 					</div>
@@ -258,9 +301,11 @@ export default function MemberDashboard() {
 				{/* stats + points cloud */}
 				<div className="relative">
 					<div className="
+                    mt-5
 						grid
 						grid-cols-2
-						gap-6
+						gap-x-[90px]
+						gap-y-[24px]
 					">
 						<StatCard title="past labs" value="10" bg="bg-green" valueColor="text-green-dark" />
 						<StatCard title="rsvp'd labs" value="1" bg="bg-yellow-light" valueColor="text-yellow-dark" />
@@ -276,13 +321,14 @@ export default function MemberDashboard() {
 						justify-center
 						pointer-events-none
 					">
-						<div className="relative w-44">
+						<div className="relative w-60 ">
 							<img
 								src="/cloud-1.png"
 								alt=""
 								className="
 									w-full
 									select-none
+                                    
 								"
 							/>
 							<div className="
@@ -295,13 +341,14 @@ export default function MemberDashboard() {
 							">
 								<p className="
 									font-vietnam
-									text-sm
+                                    font-semibold
+									text-[20px]
 									text-black
 								">
 									points
 								</p>
 								<p className="
-									font-vietnam
+									font-beachday
 									font-bold
 									text-3xl
 									text-salmon-med
@@ -317,30 +364,42 @@ export default function MemberDashboard() {
 
 			{/* right column: upcoming */}
 			<section className="
-				w-[380px]
+				w-[500px]
+				-my-8
+				-mr-8
 				bg-green
-				rounded-[40px]
+				rounded-tl-[100px]
+				rounded-bl-[100px]
 				p-8
 				flex
 				flex-col
+				shadow-[inset_7px_5px_6px_rgba(0,0,0,0.25)]
 			">
 				<h2 className="
-					font-reasons
+					font-canobis
 					text-green-dark
 					text-5xl
 					text-center
 					mb-4
+                    [-webkit-text-stroke:1px_black]
 				">
-					upcoming
+					UPCOMING
 				</h2>
 				<div className="
-					relative
 					flex-1
-					min-h-[820px]
+					min-h-0
+					flex
+					items-center
+					justify-center
 				">
-					{upcoming.map((s) => (
-						<Stamp key={s.day} {...s} />
-					))}
+					<div
+						className="relative"
+						style={{ width: `${GROUP_W}px`, height: `${GROUP_H}px` }}
+					>
+						{upcoming.map((s) => (
+							<Stamp key={s.day} {...s} />
+						))}
+					</div>
 				</div>
 			</section>
 		</main>
