@@ -104,7 +104,7 @@ export default function Sidebar({
               font-vietnam font-semibold text-black
               transition-all duration-200 ease-out
               hover:-translate-y-0.5 hover:shadow-lg hover:shadow-black/10
-              hover:bg-yellow-light active:translate-y-0 active:shadow-none"
+              active:translate-y-0 active:shadow-none"
           >
             <UserIcon className="w-5 h-5 transition-transform duration-200 ease-out
               group-hover:scale-110 group-hover:-rotate-6" />
