@@ -1,5 +1,7 @@
 'use client'
 
+import { useState } from 'react'
+
 // Reusable sidebar template used across (almost) all dashboard views.
 //
 // Just give it a list of button labels — numbers auto-increment (01, 02, ...),
@@ -50,8 +52,11 @@ export default function Sidebar({
   titleFont = 'font-reasons',
   className = '',
 }) {
-  const isActive = (label, i) =>
-    typeof active === 'number' ? active === i : active === label
+  // Track the active button internally so a click animates the swap.
+  // Seed from the `active` prop (label or index), then own it on click.
+  const initialIndex =
+    typeof active === 'number' ? active : Math.max(0, items.indexOf(active))
+  const [activeIndex, setActiveIndex] = useState(initialIndex)
 
   return (
     <aside
@@ -63,17 +68,20 @@ export default function Sidebar({
 
       <nav className="flex flex-col gap-3">
         {items.map((label, i) => {
-          const activeItem = isActive(label, i)
+          const activeItem = activeIndex === i
           const number = String(i + 1).padStart(2, '0')
           return (
             <button
               key={label}
               type="button"
-              onClick={() => onSelect?.(label, i)}
+              onClick={() => {
+                setActiveIndex(i)
+                onSelect?.(label, i)
+              }}
               aria-current={activeItem ? 'page' : undefined}
               className={`group flex items-center justify-between rounded-[5px] px-4 text-left
                 font-vietnam font-semibold text-black
-                transition-all duration-200 ease-out
+                transition-all duration-300 ease-out
                 hover:-translate-y-0.5 hover:shadow-lg hover:shadow-black/10
                 active:translate-y-0 active:shadow-none
                 ${activeItem
@@ -84,7 +92,7 @@ export default function Sidebar({
                 group-hover:translate-x-0.5">{label}</span>
               <span
                 className={`flex items-center justify-center rounded-full text-xs w-7 h-7 shrink-0
-                  transition-transform duration-200 ease-out group-hover:scale-110
+                  transition-all duration-300 ease-out group-hover:scale-110
                   ${activeItem ? 'bg-yellow' : 'bg-white'}`}
               >
                 {number}
