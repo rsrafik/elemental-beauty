@@ -3,7 +3,7 @@ import MemberDashboard from '@/components/dashboards/MemberDashboard'
 import OfficerDashboard from '@/components/dashboards/OfficerDashboard'
 
 
-const previewRole = 'member'   // 'user' | 'member' | 'officer'
+const previewRole = 'officer'   // 'user' | 'member' | 'officer'
 
 export default function Dashboard() {
     if (previewRole === 'user') return <OnboardingDashboard />
