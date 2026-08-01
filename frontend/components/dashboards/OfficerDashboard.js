@@ -215,9 +215,10 @@ export default function OfficerDashboard() {
                             oct 3
                         </p>
 							<h2 className="
+								ml-20
 								text-black
 								font-beachday
-								text-[35px]
+								text-[30px]
 								leading-tight
 							">
 								Bubbles and Beakers
@@ -226,7 +227,8 @@ export default function OfficerDashboard() {
 								text-black
 								font-vietnam
 								mt-1
-								mb-20
+								ml-20
+								mb-10
 							">
 								Attending: 5/20
 							</h3>
@@ -272,7 +274,7 @@ export default function OfficerDashboard() {
 							<h2 className="
 								text-black
 								font-beachday
-								text-[35px]
+								text-[30px]
 								leading-tight
 							">
 								Bubbles and Beakers
@@ -404,9 +406,8 @@ export default function OfficerDashboard() {
 						transition
 						duration-200
 						ease-out
-						hover:-translate-y-0.5
-						hover:brightness-105
-						active:translate-y-0
+						hover:brightness-110
+						active:shadow-[0px_0px_0px_rgba(0,0,0,0.5)]
 					">
 						<span>PO</span>
 						<span>ST</span>
