@@ -1,4 +1,6 @@
 import Sidebar from '@/components/dashboards/Sidebar'
+import { currentRole } from '@/lib/roles'
+import { navFor, showInstagramFor } from '@/lib/nav'
 
 // Shown to officer / treasurer / admin.
 // Sidebar + a 2x2 grid (quick actions / upcoming / announcement / leaderboard)
@@ -72,9 +74,8 @@ export default function OfficerDashboard() {
 			gap-6
 		">
 			<Sidebar
-				items={['dashboard', 'labs', 'events', 'calendar', 'students', 'analytics']}
-				active="dashboard"
-				showInstagram={false}
+				items={navFor(currentRole)}
+				showInstagram={showInstagramFor(currentRole)}
 			/>
 
 			{/* 2x2 grid + centered overlay circle */}

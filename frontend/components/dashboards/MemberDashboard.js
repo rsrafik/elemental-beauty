@@ -1,5 +1,7 @@
 import Sidebar from '@/components/dashboards/Sidebar'
 import ElementistPass from '@/components/dashboards/ElementistPass'
+import { currentRole } from '@/lib/roles'
+import { navFor, showInstagramFor } from '@/lib/nav'
 
 function StatCard({ title, value, bg, valueColor }) {
 	return (
@@ -169,7 +171,10 @@ export default function MemberDashboard() {
 			flex
 			gap-15
 		">
-			<Sidebar items={['dashboard', 'labs', 'events', 'calendar']} active="dashboard" />
+			<Sidebar
+				items={navFor(currentRole)}
+				showInstagram={showInstagramFor(currentRole)}
+			/>
 
 			{/* center column */}
 			<section className="

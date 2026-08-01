@@ -1,7 +1,8 @@
+import { currentRole, hasRole } from '@/lib/roles'
+import UserEventView from '@/components/events/UserEventView'
+import OfficerEventView from '@/components/events/OfficerEventView'
+
 export default function EventView() {
-    return (
-        <main className="p-8">
-            <h1 className="text-2xl font-bold">Event View</h1>
-        </main>
-    )
+	if (hasRole('officer', currentRole)) return <OfficerEventView />
+	return <UserEventView />
 }

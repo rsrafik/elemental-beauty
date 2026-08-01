@@ -1,4 +1,6 @@
 import Sidebar from '@/components/dashboards/Sidebar'
+import { currentRole } from '@/lib/roles'
+import { navFor, showInstagramFor } from '@/lib/nav'
 
 // Shown to a user (role = 'user'). Its own layout — design freely.
 export default function OnboardingDashboard() {
@@ -12,8 +14,8 @@ export default function OnboardingDashboard() {
 			gap-4
 		">
 			<Sidebar
-				items={['dashboard']}
-				active="dashboard"
+				items={navFor(currentRole)}
+				showInstagram={showInstagramFor(currentRole)}
 			/>
 		</main>
 	)

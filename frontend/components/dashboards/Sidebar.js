@@ -1,23 +1,24 @@
 'use client'
 
 import { useState } from 'react'
+import Link from 'next/link'
+import { usePathname } from 'next/navigation'
 
 // Reusable sidebar template used across (almost) all dashboard views.
 //
-// Just give it a list of button labels — numbers auto-increment (01, 02, ...),
-// the active one renders as the tall white card, the rest as yellow pills.
-// Which labels you pass in is up to the caller, so each role (user / member /
-// officer) can show a different set of buttons.
+// Items may be plain labels or { label, href } objects. With an href the pill
+// becomes a <Link> and navigates; without one it's a plain button and you
+// handle the click yourself via onSelect.
 //
-//   <Sidebar
-//     items={['dashboard', 'labs', 'events', 'calendar']}
-//     active="dashboard"
-//     onSelect={(label, i) => ...}
-//     showInstagram
-//   />
+//   <Sidebar items={navFor(currentRole)} />                 // routed
+//   <Sidebar items={['tab a', 'tab b']} onSelect={fn} />    // local tabs
 //
-// `active` may be the label string or the index. `titleFont` swaps the
-// display font on the "menu" heading (default --font-bumbel).
+// Numbers auto-increment (01, 02, ...), the active one renders as the tall
+// white card and the rest as yellow pills. The active item is worked out from
+// the URL when the items have hrefs, so pages don't have to declare it — pass
+// `active` (label or index) only to override that, e.g. for local tabs.
+//
+// `titleFont` swaps the display font on the "menu" heading.
 
 function UserIcon({ className }) {
 	return (
@@ -59,20 +60,47 @@ function LogoutIcon({ className }) {
 
 export default function Sidebar({
 	items = [],
-	active = 0,
+	active,
 	onSelect,
 	showInstagram = true,
 	instagramUrl = 'https://instagram.com/elementist_',
+	profileHref = '/account',
 	onProfile,
 	onLogout,
 	titleFont = 'font-reasons',
 	className = '',
 }) {
-	// Track the active button internally so a click animates the swap.
-	// Seed from the `active` prop (label or index), then own it on click.
-	const initialIndex =
-		typeof active === 'number' ? active : Math.max(0, items.indexOf(active))
-	const [activeIndex, setActiveIndex] = useState(initialIndex)
+	// Accept both shapes so older callers passing bare strings keep working.
+	const entries = items.map((item) =>
+		typeof item === 'string' ? { label: item } : item
+	)
+
+	const pathname = usePathname()
+
+	// /labs/view still lights up "labs", so a detail page keeps its parent lit.
+	const fromPath = entries.findIndex(
+		(entry) =>
+			entry.href &&
+			(pathname === entry.href || pathname.startsWith(`${entry.href}/`))
+	)
+	const fromProp =
+		typeof active === 'number'
+			? active
+			: entries.findIndex((entry) => entry.label === active)
+
+	// Optimistic highlight: a routed click swaps the card immediately instead of
+	// waiting for the navigation to land. `from` is the pathname at click time,
+	// so the guess expires by itself the moment the URL actually changes — no
+	// effect needed to clear it.
+	const [pending, setPending] = useState(null)
+	const optimistic = pending && pending.from === pathname ? pending.index : null
+
+	// On a routed sidebar, a URL that matches nothing (e.g. the no-access page)
+	// leaves every pill un-highlighted rather than falsely lighting up the
+	// first one. Local tabs, which have no hrefs, still default to index 0.
+	const routed = entries.some((entry) => entry.href)
+	const resolved = fromPath >= 0 ? fromPath : fromProp
+	const activeIndex = optimistic ?? (resolved >= 0 ? resolved : routed ? -1 : 0)
 
 	return (
 		<aside
@@ -105,42 +133,34 @@ export default function Sidebar({
 				flex-col
 				gap-3
 			">
-				{items.map((label, i) => {
+				{entries.map(({ label, href }, i) => {
 					const activeItem = activeIndex === i
 					const number = String(i + 1).padStart(2, '0')
-					return (
-						<button
-							key={label}
-							type="button"
-							onClick={() => {
-								setActiveIndex(i)
-								onSelect?.(label, i)
-							}}
-							aria-current={activeItem ? 'page' : undefined}
-							className={`
-								group
-								flex
-								items-center
-								justify-between
-								rounded-[5px]
-								px-4
-								text-left
-								font-vietnam
-								font-semibold
-								text-black
-								transition-all
-								duration-300
-								ease-out
-								hover:-translate-y-0.5
-								hover:shadow-lg
-								hover:shadow-black/10
-								active:translate-y-0
-								active:shadow-none
-								${activeItem
-									? 'bg-white h-28 items-start pt-4 shadow-sm'
-									: 'bg-yellow-light h-14 hover:bg-yellow'}
-							`}
-						>
+					const itemClass = `
+						group
+						flex
+						items-center
+						justify-between
+						rounded-[5px]
+						px-4
+						text-left
+						font-vietnam
+						font-semibold
+						text-black
+						transition-all
+						duration-300
+						ease-out
+						hover:-translate-y-0.5
+						hover:shadow-lg
+						hover:shadow-black/10
+						active:translate-y-0
+						active:shadow-none
+						${activeItem
+							? 'bg-white h-28 items-start pt-4 shadow-sm'
+							: 'bg-yellow-light h-14 hover:bg-yellow'}
+					`
+					const inner = (
+						<>
 							<span className="
 								text-lg
 								transition-transform
@@ -167,6 +187,33 @@ export default function Sidebar({
 							`}>
 								{number}
 							</span>
+						</>
+					)
+
+					const handleClick = () => {
+						setPending({ index: i, from: pathname })
+						onSelect?.(label, i)
+					}
+
+					return href ? (
+						<Link
+							key={label}
+							href={href}
+							onClick={handleClick}
+							aria-current={activeItem ? 'page' : undefined}
+							className={itemClass}
+						>
+							{inner}
+						</Link>
+					) : (
+						<button
+							key={label}
+							type="button"
+							onClick={handleClick}
+							aria-current={activeItem ? 'page' : undefined}
+							className={itemClass}
+						>
+							{inner}
 						</button>
 					)
 				})}
@@ -184,8 +231,8 @@ export default function Sidebar({
 					flex
 					gap-2
 				">
-					<button
-						type="button"
+					<Link
+						href={profileHref}
 						onClick={onProfile}
 						className="
 							group
@@ -228,7 +275,7 @@ export default function Sidebar({
 						">
 							profile
 						</span>
-					</button>
+					</Link>
 					<button
 						type="button"
 						onClick={onLogout}

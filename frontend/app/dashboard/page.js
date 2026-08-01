@@ -1,12 +1,10 @@
+import { currentRole, hasRole } from '@/lib/roles'
 import OnboardingDashboard from '@/components/dashboards/OnboardingDashboard'
 import MemberDashboard from '@/components/dashboards/MemberDashboard'
 import OfficerDashboard from '@/components/dashboards/OfficerDashboard'
 
-
-const previewRole = 'officer'   // 'user' | 'member' | 'officer'
-
 export default function Dashboard() {
-    if (previewRole === 'user') return <OnboardingDashboard />
-    if (previewRole === 'officer') return <OfficerDashboard />
-    return <MemberDashboard />
+	if (hasRole('officer', currentRole)) return <OfficerDashboard />
+	if (hasRole('member', currentRole)) return <MemberDashboard />
+	return <OnboardingDashboard />
 }

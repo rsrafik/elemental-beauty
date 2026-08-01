@@ -1,7 +1,8 @@
+import { currentRole, hasRole } from '@/lib/roles'
+import UserEvents from '@/components/events/UserEvents'
+import OfficerEvents from '@/components/events/OfficerEvents'
+
 export default function Events() {
-    return (
-        <main className="p-8">
-            <h1 className="text-2xl font-bold">Events</h1>
-        </main>
-    )
+	if (hasRole('officer', currentRole)) return <OfficerEvents />
+	return <UserEvents />
 }

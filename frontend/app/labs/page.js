@@ -1,7 +1,8 @@
+import { currentRole, hasRole } from '@/lib/roles'
+import UserLabs from '@/components/labs/UserLabs'
+import OfficerLabs from '@/components/labs/OfficerLabs'
+
 export default function Labs() {
-    return (
-        <main className="p-8">
-            <h1 className="text-2xl font-bold">Labs</h1>
-        </main>
-    )
+	if (hasRole('officer', currentRole)) return <OfficerLabs />
+	return <UserLabs />
 }
