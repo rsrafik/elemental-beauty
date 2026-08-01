@@ -40,12 +40,16 @@ const TYPES = [
 // Who the day is for. This is the colour dimension: the badge on the day and
 // the pill in the legend share these classes, so they can never drift apart.
 const TRACKS = {
-	members: { label: 'all members', pill: 'bg-orange text-white' },
-	elementists: { label: 'elementists', pill: 'bg-salmon-med text-white' },
+	members: { label: 'members', pill: 'bg-orange text-white' },
 	officers: { label: 'officers', pill: 'bg-yellow text-black' },
 	open: { label: 'open to all', pill: 'bg-green text-black' },
 	online: { label: 'online', pill: 'bg-blue text-white' },
 }
+
+// Officer-only days aren't a member's business: they're kept out of the grid
+// and off the legend here. This is only the view side of that rule — the API
+// should be filtering them out before they ever reach the page.
+const VISIBLE_TRACKS = Object.keys(TRACKS).filter((track) => track !== 'officers')
 
 // Keyed 'YYYY-MM', then by day of the month. Placeholder rows until /calendar
 // is wired to the API — one entry per day is all the grid has room for. A month
@@ -54,27 +58,27 @@ const entries = {
 	'2026-08': {
 		1: { type: 'Social', title: 'Kickoff Mixer', track: 'open' },
 		4: { type: 'GBM', title: 'First Meeting', track: 'members' },
-		6: { type: 'Lab', title: 'Bubbles & Beakers', track: 'elementists' },
+		6: { type: 'Lab', title: 'Bubbles & Beakers', track: 'members' },
 		8: { type: 'Pop-Up', title: 'Vendor Booth', track: 'open' },
 		11: { type: 'Lab', title: 'Lip Gloss', track: 'members' },
 		13: { type: 'Workshop', title: 'Skincare 101', track: 'online' },
 		15: { type: 'Social', title: 'Glow Night', track: 'members' },
-		18: { type: 'Lab', title: 'Bronzer', track: 'elementists' },
+		18: { type: 'Lab', title: 'Bronzer', track: 'members' },
 		20: { type: 'Deadline', title: 'Dues Due', track: 'online' },
 		21: { type: 'GBM', title: 'Officer Sync', track: 'officers' },
 		23: { type: 'Volunteering', title: 'Beach Cleanup', track: 'open' },
 		25: { type: 'Photoshoot', title: 'Member Portraits', track: 'members' },
 		27: { type: 'Fundraiser', title: 'Bake Sale', track: 'open' },
-		29: { type: 'Lab', title: 'Lipstick', track: 'elementists' },
+		29: { type: 'Lab', title: 'Lipstick', track: 'members' },
 		31: { type: 'GBM', title: 'Month Recap', track: 'members' },
 	},
 	'2026-09': {
 		2: { type: 'GBM', title: 'Fall Kickoff', track: 'members' },
-		5: { type: 'Lab', title: 'Blush', track: 'elementists' },
+		5: { type: 'Lab', title: 'Blush', track: 'members' },
 		9: { type: 'Workshop', title: 'Brush Care', track: 'online' },
 		12: { type: 'Lab', title: 'Highlighter', track: 'members' },
 		17: { type: 'Fundraiser', title: 'Bake Sale', track: 'open' },
-		19: { type: 'Lab', title: 'Body Butter', track: 'elementists' },
+		19: { type: 'Lab', title: 'Body Butter', track: 'members' },
 		24: { type: 'Photoshoot', title: 'Officer Headshots', track: 'officers' },
 		26: { type: 'Lab', title: 'Lip Scrub', track: 'members' },
 		30: { type: 'Deadline', title: 'Points Due', track: 'online' },
@@ -82,7 +86,7 @@ const entries = {
 	'2026-07': {
 		4: { type: 'Social', title: 'Summer Meetup', track: 'open' },
 		15: { type: 'Workshop', title: 'Ingredient Basics', track: 'online' },
-		22: { type: 'Lab', title: 'Sunscreen', track: 'elementists' },
+		22: { type: 'Lab', title: 'Sunscreen', track: 'members' },
 		29: { type: 'GBM', title: 'Planning Session', track: 'officers' },
 	},
 }
@@ -271,6 +275,10 @@ export default function MemberCalendar() {
 	const weeks = monthWeeks(view.year, view.month)
 	const monthEntries = entries[monthKey(view.year, view.month)] ?? {}
 
+	// Officer-only days read as empty here, same as a day with nothing on it.
+	const visible = (entry) =>
+		entry && VISIBLE_TRACKS.includes(entry.track) ? entry : null
+
 	return (
 		// my-auto rather than justify-center: it centers the sheet in the page but
 		// still lets a tall month scroll from its top instead of clipping it.
@@ -400,9 +408,9 @@ export default function MemberCalendar() {
 							flex-wrap
 							gap-2
 						">
-							{Object.entries(TRACKS).map(([key, track]) => (
-								<Pill key={key} className={track.pill}>
-									{track.label}
+							{VISIBLE_TRACKS.map((key) => (
+								<Pill key={key} className={TRACKS[key].pill}>
+									{TRACKS[key].label}
 								</Pill>
 							))}
 						</div>
@@ -460,7 +468,7 @@ export default function MemberCalendar() {
 									key={`${i}-${day.number}`}
 									number={day.number}
 									inMonth={day.inMonth}
-									entry={day.inMonth ? monthEntries[day.number] : null}
+									entry={day.inMonth ? visible(monthEntries[day.number]) : null}
 								/>
 							))}
 						</div>
