@@ -1,6 +1,6 @@
 'use client'
 
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import Link from 'next/link'
 import { usePathname } from 'next/navigation'
 
@@ -19,6 +19,32 @@ import { usePathname } from 'next/navigation'
 // `active` (label or index) only to override that, e.g. for local tabs.
 //
 // `titleFont` swaps the display font on the "menu" heading.
+
+// How long the swap takes: the old card shrinking back to a pill and the new
+// one growing into place. Hovering stays quick (HOVER_MS) so the menu doesn't
+// feel sluggish to move around in — only the swap itself is slow. Retune the
+// whole menu from these two numbers.
+const SWAP_MS = 500
+const HOVER_MS = 200
+
+// The sidebar is re-created on every navigation (each page renders its own),
+// so a plain CSS transition has nothing to animate from — the new sidebar
+// mounts with the new item already active and snaps.
+//
+// This module isn't re-evaluated on client-side navigation, so it can carry
+// the previous URL across that boundary. A freshly mounted sidebar renders one
+// frame with the *old* item active, then flips to the real one, which gives
+// the CSS transition something to run. Client-only: reading it during server
+// rendering would leak one request's path into another's.
+let previousPath = null
+
+function indexForPath(entries, path) {
+	// /labs/view still lights up "labs", so a detail page keeps its parent lit.
+	return entries.findIndex(
+		(entry) =>
+			entry.href && (path === entry.href || path.startsWith(`${entry.href}/`))
+	)
+}
 
 function UserIcon({ className }) {
 	return (
@@ -77,30 +103,37 @@ export default function Sidebar({
 
 	const pathname = usePathname()
 
-	// /labs/view still lights up "labs", so a detail page keeps its parent lit.
-	const fromPath = entries.findIndex(
-		(entry) =>
-			entry.href &&
-			(pathname === entry.href || pathname.startsWith(`${entry.href}/`))
-	)
+	// Hold the previous page's highlight for one frame on mount, so the swap
+	// animates instead of snapping. See `previousPath` above.
+	const [animateFrom, setAnimateFrom] = useState(() => {
+		if (typeof window === 'undefined') return null
+		return previousPath && previousPath !== pathname ? previousPath : null
+	})
+
+	useEffect(() => {
+		previousPath = pathname
+		if (animateFrom === null) return
+		// Next frame, so the browser paints the starting state before the
+		// classes change — otherwise there's nothing to transition from.
+		const frame = requestAnimationFrame(() => setAnimateFrom(null))
+		return () => cancelAnimationFrame(frame)
+	}, [pathname, animateFrom])
+
+	const fromPath = indexForPath(entries, animateFrom ?? pathname)
+
+	// Sidebars whose items have no hrefs (local tabs) track their own selection.
+	const [selected, setSelected] = useState(null)
 	const fromProp =
 		typeof active === 'number'
 			? active
 			: entries.findIndex((entry) => entry.label === active)
 
-	// Optimistic highlight: a routed click swaps the card immediately instead of
-	// waiting for the navigation to land. `from` is the pathname at click time,
-	// so the guess expires by itself the moment the URL actually changes — no
-	// effect needed to clear it.
-	const [pending, setPending] = useState(null)
-	const optimistic = pending && pending.from === pathname ? pending.index : null
-
 	// On a routed sidebar, a URL that matches nothing (e.g. the no-access page)
 	// leaves every pill un-highlighted rather than falsely lighting up the
 	// first one. Local tabs, which have no hrefs, still default to index 0.
 	const routed = entries.some((entry) => entry.href)
-	const resolved = fromPath >= 0 ? fromPath : fromProp
-	const activeIndex = optimistic ?? (resolved >= 0 ? resolved : routed ? -1 : 0)
+	const resolved = fromPath >= 0 ? fromPath : selected ?? fromProp
+	const activeIndex = resolved >= 0 ? resolved : routed ? -1 : 0
 
 	return (
 		<aside
@@ -147,9 +180,6 @@ export default function Sidebar({
 						font-vietnam
 						font-semibold
 						text-black
-						transition-all
-						duration-300
-						ease-out
 						hover:-translate-y-0.5
 						hover:shadow-lg
 						hover:shadow-black/10
@@ -159,6 +189,17 @@ export default function Sidebar({
 							? 'bg-white h-28 items-start pt-4 shadow-sm'
 							: 'bg-yellow-light h-14 hover:bg-yellow'}
 					`
+					// Height/padding/colour belong to the swap and take SWAP_MS;
+					// the hover lift and its shadow stay on HOVER_MS.
+					const itemStyle = {
+						transition: `
+							height ${SWAP_MS}ms ease-out,
+							padding-top ${SWAP_MS}ms ease-out,
+							background-color ${SWAP_MS}ms ease-out,
+							transform ${HOVER_MS}ms ease-out,
+							box-shadow ${HOVER_MS}ms ease-out
+						`,
+					}
 					const inner = (
 						<>
 							<span className="
@@ -170,28 +211,33 @@ export default function Sidebar({
 							">
 								{label}
 							</span>
-							<span className={`
-								flex
-								items-center
-								justify-center
-								rounded-full
-								text-xs
-								w-7
-								h-7
-								shrink-0
-								transition-all
-								duration-300
-								ease-out
-								group-hover:scale-110
-								${activeItem ? 'bg-yellow' : 'bg-white'}
-							`}>
+							<span
+								className={`
+									flex
+									items-center
+									justify-center
+									rounded-full
+									text-xs
+									w-7
+									h-7
+									shrink-0
+									group-hover:scale-110
+									${activeItem ? 'bg-yellow' : 'bg-white'}
+								`}
+								style={{
+									transition: `
+										background-color ${SWAP_MS}ms ease-out,
+										transform ${HOVER_MS}ms ease-out
+									`,
+								}}
+							>
 								{number}
 							</span>
 						</>
 					)
 
 					const handleClick = () => {
-						setPending({ index: i, from: pathname })
+						if (!href) setSelected(i)
 						onSelect?.(label, i)
 					}
 
@@ -202,6 +248,7 @@ export default function Sidebar({
 							onClick={handleClick}
 							aria-current={activeItem ? 'page' : undefined}
 							className={itemClass}
+							style={itemStyle}
 						>
 							{inner}
 						</Link>
@@ -212,6 +259,7 @@ export default function Sidebar({
 							onClick={handleClick}
 							aria-current={activeItem ? 'page' : undefined}
 							className={itemClass}
+							style={itemStyle}
 						>
 							{inner}
 						</button>

@@ -17,7 +17,7 @@ export const RANK = {
 	admin: 4,
 }
 
-export const currentRole = 'officer'   // 'user' | 'member' | 'officer' | 'treasurer' | 'admin'
+export const currentRole = 'member'   // 'user' | 'member' | 'officer' | 'treasurer' | 'admin'
 
 // hasRole('officer') -> true for officer, treasurer, admin.
 export function hasRole(min, role = currentRole) {
