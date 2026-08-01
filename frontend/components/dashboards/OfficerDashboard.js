@@ -12,20 +12,28 @@ function PodiumSpot({ name, medal, height }) {
 			flex
 			flex-col
 			items-center
-			gap-1
+			gap-2
 		">
 			<span className="
 				font-handrawn
-				text-[16px]
+				text-[20px]
 				text-black
 			">
 				{name}
 			</span>
-			<span className="text-[26px] leading-none">{medal}</span>
+			
 			<div
-				className="w-[92px] rounded-t-[10px] bg-yellow-light"
+				className="
+					w-[92px] 
+					bg-yellow
+					flex
+					justify-center
+					shadow-[5px_5px_2px_rgba(0,0,0,0.5)]
+					"
 				style={{ height: `${height}px` }}
-			/>
+			>
+				<span className="text-[30px]">{medal}</span>
+			</div>
 		</div>
 	)
 }
@@ -33,18 +41,15 @@ function PodiumSpot({ name, medal, height }) {
 function LeaderRow({ place, name }) {
 	return (
 		<div className="
-			rounded-l-full
-			rounded-r-[10px]
-			border-2
-			border-black/15
+			rounded-[10px]
 			bg-yellow-light
 			px-5
 			py-1.5
-			shadow-[0_2px_3px_rgba(0,0,0,0.15)]
+			shadow-[inset_5px_2px_2px_rgba(0,0,0,0.5)]
 		">
 			<span className="
 				font-handrawn
-				text-[18px]
+				text-[20px]
 				text-black
 			">
 				{place}. {name}
@@ -179,6 +184,7 @@ export default function OfficerDashboard() {
 					</h2>
 					{/* concentric rings anchored to the bottom-left corner */}
 					<div className="
+						peer/light
 						absolute
 						bottom-0
 						left-0
@@ -187,6 +193,9 @@ export default function OfficerDashboard() {
 						rounded-tr-[100px]
 						border-black/10
 						bg-orange-light
+						transition-all
+						duration-500
+						ease-out
                         shadow-[5px_-5px_2px_rgba(0,0,0,0.5)]
 					">
                         <p className="
@@ -202,6 +211,7 @@ export default function OfficerDashboard() {
                         </p>
                     </div>
 					<div className="
+						peer/lighter
 						absolute
 						bottom-0
 						left-0
@@ -210,6 +220,11 @@ export default function OfficerDashboard() {
 						rounded-tr-[100px]
 						border-black/10
 						bg-orange-lighter
+						transition-all
+						duration-500
+						ease-out
+						peer-hover/light:w-[35%]
+						peer-hover/light:h-[45%]
                         shadow-[5px_-5px_2px_rgba(0,0,0,0.5)]
 					">
                         <p className="
@@ -233,6 +248,13 @@ export default function OfficerDashboard() {
 						rounded-tr-[100px]
 						border-black/10
 						bg-orange-lightest
+						transition-all
+						duration-500
+						ease-out
+						peer-hover/light:w-[25%]
+						peer-hover/light:h-[35%]
+						peer-hover/lighter:w-[25%]
+						peer-hover/lighter:h-[35%]
                         shadow-[5px_-5px_2px_rgba(0,0,0,0.5)]
 					">
                         <p className="
@@ -263,7 +285,7 @@ export default function OfficerDashboard() {
 				">
 					<h2 className="
 						font-vietnam
-						font-bold
+						font-semibold
 						text-[22px]
 						text-black
 						text-center
@@ -318,19 +340,19 @@ export default function OfficerDashboard() {
 
 				{/* leaderboard */}
 				<div className="
-					bg-yellow
-					rounded-[30px]
-					p-6
+					bg-yellow-light
+					rounded-br-[100px]
 					flex
 					flex-col
-					shadow-[inset_0_6px_10px_rgba(0,0,0,0.15)]
 				">
 					<h2 className="
 						font-vietnam
-						font-bold
+						font-semibold
 						text-[22px]
 						text-black
 						text-right
+						pr-6
+						pt-6
 					">
 						leaderboard
 					</h2>
@@ -339,22 +361,43 @@ export default function OfficerDashboard() {
 						flex
 						items-end
 						justify-center
-						gap-3
+						gap-10
 					">
-						<PodiumSpot name="Ting C." medal="🥈" height={44} />
-						<PodiumSpot name="Azu N." medal="🥇" height={62} />
-						<PodiumSpot name="Michelle C." medal="🥉" height={30} />
+						<PodiumSpot name="Ting C." medal="🥈" height={50} />
+						<PodiumSpot name="Azu N." medal="🥇" height={70} />
+						<PodiumSpot name="Michelle C." medal="🥉" height={40} />
 					</div>
+
 					<div className="
-						mt-3
+						w-full
+						h-full
+						bg-yellow
+						p-5
 						flex
-						flex-col
-						gap-2
+						items-center
+						justify-center
+						rounded-br-[100px]
+						overflow-hidden
 					">
-						<LeaderRow place="4" name="Toji Fushiguro" />
-						<LeaderRow place="5" name="Yo Mama" />
-						<LeaderRow place="6" name="Raia Rafiki" />
+						<div className="
+							mt-4
+							flex
+							flex-col
+							gap-4
+							w-full
+							grid
+							grid-cols-2
+							gap-4
+						">
+							<LeaderRow place="4" name="Toji Fushiguro" />
+							<LeaderRow place="5" name="Yo Mama" />
+							<LeaderRow place="6" name="Raia Rafiki" />
+							<LeaderRow place="7" name="Elijah Leone" />
+							<LeaderRow place="8" name="Miadora Bilanicz" />
+							<LeaderRow place="9" name="Yoyo Qin" />
+						</div>
 					</div>
+					
 				</div>
 
 				{/* centered DASH BOARD circle overlaying the grid intersection */}
