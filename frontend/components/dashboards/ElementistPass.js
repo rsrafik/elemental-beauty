@@ -48,7 +48,7 @@ export default function ElementistPass() {
 					relative
 					cursor-pointer
 					transition-transform
-					duration-[600ms]
+					duration-[900ms]
 					[transform-style:preserve-3d]
 					${flipped ? '[transform:rotateY(180deg)]' : ''}
 				`}
