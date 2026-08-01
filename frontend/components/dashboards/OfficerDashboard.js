@@ -120,8 +120,8 @@ export default function OfficerDashboard() {
 						duration-200
 						ease-out
 						hover:-translate-y-0.5
-						hover:brightness-105
-						active:translate-y-0
+						hover:shadow-[inset_0px_0px_0px_rgba(0,0,0,0.5)]
+						active:brightness-105
 					">
 						Email All
 					</button>
@@ -138,8 +138,8 @@ export default function OfficerDashboard() {
 						duration-200
 						ease-out
 						hover:-translate-y-0.5
-						hover:brightness-105
-						active:translate-y-0
+						hover:shadow-[inset_0px_0px_0px_rgba(0,0,0,0.5)]
+						active:brightness-105
 					">
 						New Event
 					</button>
@@ -156,8 +156,8 @@ export default function OfficerDashboard() {
 						duration-200
 						ease-out
 						hover:-translate-y-0.5
-						hover:brightness-105
-						active:translate-y-0
+						hover:shadow-[inset_0px_0px_0px_rgba(0,0,0,0.5)]
+						active:brightness-105
 					">
 						New Lab
 					</button>
@@ -194,7 +194,7 @@ export default function OfficerDashboard() {
 						border-black/10
 						bg-orange-light
 						transition-all
-						duration-500
+						duration-700
 						ease-out
                         shadow-[5px_-5px_2px_rgba(0,0,0,0.5)]
 					">
@@ -217,11 +217,12 @@ export default function OfficerDashboard() {
 						left-0
 						w-[75%]
 						h-[70%]
+						overflow-hidden
 						rounded-tr-[100px]
 						border-black/10
 						bg-orange-lighter
 						transition-all
-						duration-500
+						duration-700
 						ease-out
 						peer-hover/light:w-[35%]
 						peer-hover/light:h-[45%]
@@ -238,6 +239,31 @@ export default function OfficerDashboard() {
                         ">
                             sep 17
                         </p>
+						<div className="
+							absolute
+							top-[125px]
+							left-0
+							right-0
+							flex
+							flex-col
+							items-center
+							text-center
+						">
+							<h2 className="
+								text-black
+								font-beachday
+								text-[35px]
+							">
+								Bubbles and Beakers
+							</h2>
+							<h3 className="
+								text-black
+								font-vietnam
+								mb-4
+							">
+								Attending: 5/20
+							</h3>
+						</div>
                     </div>
 					<div className="
 						absolute
@@ -245,11 +271,12 @@ export default function OfficerDashboard() {
 						left-0
 						w-[65%]
 						h-[60%]
+						overflow-hidden
 						rounded-tr-[100px]
 						border-black/10
 						bg-orange-lightest
 						transition-all
-						duration-500
+						duration-700
 						ease-out
 						peer-hover/light:w-[25%]
 						peer-hover/light:h-[35%]
@@ -268,8 +295,32 @@ export default function OfficerDashboard() {
                         ">
                             aug 28
                         </p>
+						<div className="
+							absolute
+							top-[100px]
+							left-0
+							right-0
+							flex
+							flex-col
+							items-center
+							text-center
+						">
+							<h2 className="
+								text-black
+								font-beachday
+								text-[30px]
+							">
+								Bubbles and Beakers
+							</h2>
+							<h3 className="
+								text-black
+								font-vietnam
+							">
+								Attending: 5/20
+							</h3>
+						</div>
                     </div>
-					
+
 				</div>
 
 				{/* make announcement */}
