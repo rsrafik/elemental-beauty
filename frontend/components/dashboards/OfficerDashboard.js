@@ -193,6 +193,10 @@ export default function OfficerDashboard() {
 						rounded-tr-[100px]
 						border-black/10
 						bg-orange-light
+						flex
+						items-center
+						flex-col
+						justify-center
 						transition-all
 						duration-700
 						ease-out
@@ -206,9 +210,26 @@ export default function OfficerDashboard() {
                             font-handrawn
                             text-[20px]
                             text-black
+							
                         ">
                             oct 3
                         </p>
+							<h2 className="
+								text-black
+								font-beachday
+								text-[35px]
+								leading-tight
+							">
+								Bubbles and Beakers
+							</h2>
+							<h3 className="
+								text-black
+								font-vietnam
+								mt-1
+								mb-20
+							">
+								Attending: 5/20
+							</h3>
                     </div>
 					<div className="
 						peer/lighter
@@ -217,15 +238,14 @@ export default function OfficerDashboard() {
 						left-0
 						w-[75%]
 						h-[70%]
-						overflow-hidden
 						rounded-tr-[100px]
 						border-black/10
 						bg-orange-lighter
-						transition-all
+						transition-transform
 						duration-700
 						ease-out
-						peer-hover/light:w-[35%]
-						peer-hover/light:h-[45%]
+						peer-hover/light:-translate-x-[50%]
+						peer-hover/light:translate-y-[45%]
                         shadow-[5px_-5px_2px_rgba(0,0,0,0.5)]
 					">
                         <p className="
@@ -241,25 +261,26 @@ export default function OfficerDashboard() {
                         </p>
 						<div className="
 							absolute
-							top-[125px]
-							left-0
-							right-0
+							inset-0
 							flex
 							flex-col
 							items-center
+							justify-center
+							px-6
 							text-center
 						">
 							<h2 className="
 								text-black
 								font-beachday
 								text-[35px]
+								leading-tight
 							">
 								Bubbles and Beakers
 							</h2>
 							<h3 className="
 								text-black
 								font-vietnam
-								mb-4
+								mt-1
 							">
 								Attending: 5/20
 							</h3>
@@ -271,17 +292,16 @@ export default function OfficerDashboard() {
 						left-0
 						w-[65%]
 						h-[60%]
-						overflow-hidden
 						rounded-tr-[100px]
 						border-black/10
 						bg-orange-lightest
-						transition-all
+						transition-transform
 						duration-700
 						ease-out
-						peer-hover/light:w-[25%]
-						peer-hover/light:h-[35%]
-						peer-hover/lighter:w-[25%]
-						peer-hover/lighter:h-[35%]
+						peer-hover/light:-translate-x-[60%]
+						peer-hover/light:translate-y-[55%]
+						peer-hover/lighter:-translate-x-[60%]
+						peer-hover/lighter:translate-y-[55%]
                         shadow-[5px_-5px_2px_rgba(0,0,0,0.5)]
 					">
                         <p className="
@@ -296,25 +316,29 @@ export default function OfficerDashboard() {
                             aug 28
                         </p>
 						<div className="
+							mt-5
+							mr-5
 							absolute
-							top-[100px]
-							left-0
-							right-0
+							inset-0
 							flex
 							flex-col
 							items-center
+							justify-center
+							px-6
 							text-center
 						">
 							<h2 className="
 								text-black
 								font-beachday
 								text-[30px]
+								leading-tight
 							">
 								Bubbles and Beakers
 							</h2>
 							<h3 className="
 								text-black
 								font-vietnam
+								mt-1
 							">
 								Attending: 5/20
 							</h3>
