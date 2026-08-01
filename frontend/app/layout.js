@@ -63,6 +63,12 @@ const reasons = localFont({
 export const metadata = {
   title: "Elemental Beauty",
   description: "Purdue's cosmetic science club",
+  // The flower in public/ does double duty as the tab icon and the icon iOS
+  // uses when the site is saved to a home screen.
+  icons: {
+    icon: "/logo.png",
+    apple: "/logo.png",
+  },
 };
 
 export default function RootLayout({ children }) {
