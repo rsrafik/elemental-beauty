@@ -1,5 +1,5 @@
 import { currentRole, hasRole } from '@/lib/roles'
-import UserEventView from '@/components/events/UserEventView'
+import UserEventView from '@/components/events/MemberEventView'
 import OfficerEventView from '@/components/events/OfficerEventView'
 
 export default function EventView() {

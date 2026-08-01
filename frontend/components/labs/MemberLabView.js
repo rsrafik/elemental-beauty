@@ -1,9 +1,9 @@
 import DashboardShell from '@/components/dashboards/DashboardShell'
 
-// /events/view for a user or member: one event's details and RSVP.
-// Its own layout — design freely.
+// /labs/view for a user or member: one lab's details, RSVP button, their own
+// attendance status. Its own layout — design freely.
 
-export default function UserEventView() {
+export default function MemberLabView() {
 	return (
 		<DashboardShell>
 			<h1 className="
@@ -11,7 +11,7 @@ export default function UserEventView() {
 				text-[50px]
 				text-black
 			">
-				event
+				lab
 			</h1>
 		</DashboardShell>
 	)

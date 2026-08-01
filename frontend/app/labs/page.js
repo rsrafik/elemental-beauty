@@ -1,5 +1,5 @@
 import { currentRole, hasRole } from '@/lib/roles'
-import UserLabs from '@/components/labs/UserLabs'
+import UserLabs from '@/components/labs/MemberLabs'
 import OfficerLabs from '@/components/labs/OfficerLabs'
 
 export default function Labs() {

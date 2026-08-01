@@ -1,5 +1,5 @@
 import { currentRole, hasRole } from '@/lib/roles'
-import UserEvents from '@/components/events/UserEvents'
+import UserEvents from '@/components/events/MemberEvents'
 import OfficerEvents from '@/components/events/OfficerEvents'
 
 export default function Events() {

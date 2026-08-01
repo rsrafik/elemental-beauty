@@ -1,9 +1,9 @@
 import DashboardShell from '@/components/dashboards/DashboardShell'
 
-// /events for a user or member: browse upcoming events and RSVP.
+// /events/view for a user or member: one event's details and RSVP.
 // Its own layout — design freely.
 
-export default function UserEvents() {
+export default function MemberEventView() {
 	return (
 		<DashboardShell>
 			<h1 className="
@@ -11,7 +11,7 @@ export default function UserEvents() {
 				text-[50px]
 				text-black
 			">
-				events
+				event
 			</h1>
 		</DashboardShell>
 	)
