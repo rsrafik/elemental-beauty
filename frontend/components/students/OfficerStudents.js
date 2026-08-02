@@ -12,11 +12,16 @@ import { currentRole, hasRole } from '@/lib/roles'
 // roster reads as a sheet of paper laid on the desk rather than a second app
 // chrome. Title, search and buttons all sit on the cream above it.
 //
-// Deleting is rank-gated: officers and treasurers can only remove plain
-// members, and anyone on staff — officer, treasurer, admin — can only be
-// removed by an admin. That gate lives on the checkbox rather than on the
-// delete button, so a row that can't be removed can't be picked in the first
-// place.
+// Two things here are rank-gated, and both gates sit on the control itself
+// rather than on the action, so nothing offers what it would then refuse:
+//
+//   deleting — officers and treasurers can only remove plain members; anyone
+//     on staff (officer, treasurer, admin) can only be removed by an admin.
+//     The gate is on the row's checkbox, so an untouchable row can't even be
+//     picked up.
+//   roles — only an admin can change anyone's role, which is also what the
+//     API enforces on PUT /members/:id/role. For everyone else the pill is a
+//     label rather than a button.
 
 // ---- data ------------------------------------------------------------------
 
@@ -346,9 +351,9 @@ function Avatar({ student }) {
 	)
 }
 
-function RoleTag({ role }) {
+function RoleTag({ role, title }) {
 	return (
-		<span className={`
+		<span title={title} className={`
 			inline-flex
 			items-center
 			rounded-full
@@ -1216,6 +1221,11 @@ export default function OfficerStudents() {
 		if (!box) return
 
 		const fit = () => {
+			// a hidden tab or a collapsed pane measures zero, and taking that at
+			// face value would drop the page to one row and leave it there until
+			// something resized. Better to keep the last real count.
+			if (box.clientHeight === 0) return
+
 			const head = box.querySelector('thead')?.getBoundingClientRect().height
 			const row = box.querySelector('tbody tr[data-student]')?.getBoundingClientRect().height
 			if (head) rowMetrics.current.head = head
@@ -1299,9 +1309,9 @@ export default function OfficerStudents() {
 	const openRoleMenu = (id) => (anchor) =>
 		setRoleMenu((prev) => (prev?.id === id ? null : { id, anchor }))
 
-	// Promoting someone out of reach can leave them ticked in a selection this
-	// officer may no longer delete — `selectedStudents` re-checks the rank, so
-	// the row simply drops out of the count.
+	// Only ever reachable as an admin, since nobody else is given the pill to
+	// click. Promoting someone who was already ticked leaves them ticked, which
+	// is fine — an admin may delete any rank.
 	const changeRole = (role) => {
 		setStudents((prev) =>
 			prev.map((student) =>
@@ -1611,12 +1621,22 @@ export default function OfficerStudents() {
 										">
 											{student.username}
 										</td>
+										{/* only an admin gets the clickable version — for anyone
+										    else the role is a plain label, with no caret
+										    advertising a menu they can't open */}
 										<td className="px-2 py-2.5">
-											<RolePill
-												role={student.role}
-												open={roleMenu?.id === student.id}
-												onOpen={openRoleMenu(student.id)}
-											/>
+											{isAdmin ? (
+												<RolePill
+													role={student.role}
+													open={roleMenu?.id === student.id}
+													onOpen={openRoleMenu(student.id)}
+												/>
+											) : (
+												<RoleTag
+													role={student.role}
+													title="only an admin can change roles"
+												/>
+											)}
 										</td>
 										<td className="
 											px-2
