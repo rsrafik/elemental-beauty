@@ -19,6 +19,13 @@ export const RANK = {
 
 export const currentRole = 'officer'   // 'user' | 'member' | 'officer' | 'treasurer' | 'admin'
 
+// Which member is looking, not just at what rank. Pages that show someone their
+// own rows — an officer's compensation requests, say — filter on this rather
+// than showing everybody's. Hardcoded alongside `currentRole` for now, and
+// replaced by the same session read when auth lands. `id` is the user_id the
+// API returns.
+export const currentUser = { id: 12288, first: 'Isabel', last: 'Harris' }
+
 // hasRole('officer') -> true for officer, treasurer, admin.
 export function hasRole(min, role = currentRole) {
 	return (RANK[role] ?? -1) >= (RANK[min] ?? Infinity)
