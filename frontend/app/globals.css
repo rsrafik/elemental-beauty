@@ -57,6 +57,257 @@
   }
 }
 
+/* Page entrance.
+ *
+ * Every route mounts its own shell, so these run on their own each time the
+ * sidebar takes you somewhere — no JS, no state, nothing to reset. Switching
+ * pages reads as movement rather than a swap.
+ *
+ * The parallax is in the layering: the panel drifts up as one plane while the
+ * cards inside it come up behind it, and each row travels further and arrives
+ * later than the one above it. Rows near the fold move most, which is what
+ * reads as depth rather than as one sheet sliding.
+ *
+ *   page-enter    the plane itself — a short fade and a small drift
+ *   page-stagger  its children, rising in sequence
+ *
+ * Both together on a scroll column; page-stagger on its own wherever the rows
+ * live one level further in.
+ */
+
+/* Opacity only, deliberately: a transform on a scroll column makes it the
+   containing block for anything `fixed` inside it, and every dialog on every
+   page is fixed. The plane fades, the rows inside it are what move. */
+@keyframes page-drift {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+@keyframes page-rise {
+  from {
+    opacity: 0;
+    transform: translateY(var(--rise, 24px));
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+/* the same easing the cards use for their hover lift, so the page arrives the
+   way everything on it behaves.
+ *
+ * `backwards` rather than `both`: it holds the opening frame through the delay,
+ * which is what the stagger needs, but stops applying anything once the row has
+ * landed. A forwards fill would leave a transform in effect for the rest of the
+ * page's life, and a `fixed` dialog opened later would position itself against
+ * that row instead of the window. */
+.page-enter {
+  animation: page-drift 450ms cubic-bezier(0.22, 1, 0.36, 1) backwards;
+}
+
+.page-stagger > * {
+  animation: page-rise 650ms cubic-bezier(0.22, 1, 0.36, 1) backwards;
+}
+
+.page-stagger > *:nth-child(1) {
+  --rise: 16px;
+  animation-delay: 40ms;
+}
+
+.page-stagger > *:nth-child(2) {
+  --rise: 24px;
+  animation-delay: 100ms;
+}
+
+.page-stagger > *:nth-child(3) {
+  --rise: 32px;
+  animation-delay: 160ms;
+}
+
+.page-stagger > *:nth-child(4) {
+  --rise: 40px;
+  animation-delay: 220ms;
+}
+
+.page-stagger > *:nth-child(5) {
+  --rise: 48px;
+  animation-delay: 280ms;
+}
+
+/* anything past the fifth row is below the fold on arrival — it can share the
+   last step rather than making the page take longer to settle */
+.page-stagger > *:nth-child(n + 6) {
+  --rise: 56px;
+  animation-delay: 340ms;
+}
+
+/* ---- the calendar's arrival -----------------------------------------------
+ *
+ * The month sheet gets its own entrance rather than the standard one: the two
+ * columns come in from opposite sides — the title from the left, the grid from
+ * the right — and the day cells wash across it on the diagonal, each one
+ * keyed off its row plus its column so the wave starts at monday the 1st and
+ * runs to the bottom-right corner.
+ */
+
+@keyframes calendar-side {
+  from {
+    opacity: 0;
+    transform: translateX(-28px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+@keyframes calendar-grid {
+  from {
+    opacity: 0;
+    transform: translateX(24px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+@keyframes calendar-cell {
+  from {
+    opacity: 0;
+    transform: translateY(16px) scale(0.94);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+.calendar-side {
+  animation: calendar-side 700ms cubic-bezier(0.22, 1, 0.36, 1) backwards;
+}
+
+.calendar-grid {
+  animation: calendar-grid 700ms cubic-bezier(0.22, 1, 0.36, 1) backwards;
+}
+
+/* --wave is row + column, set on the cell itself: everything on the same
+   diagonal arrives together, and each diagonal follows the one before it */
+.calendar-cell {
+  animation: calendar-cell 520ms cubic-bezier(0.22, 1, 0.36, 1) backwards;
+  animation-delay: calc(var(--wave, 0) * 40ms + 140ms);
+}
+
+/* ---- dialogs and menus ----------------------------------------------------
+ *
+ * These come after the page rules on purpose. A dialog is a child of the
+ * column it was opened from, so `.page-stagger > *` would otherwise have it
+ * rising with the page — same specificity, so the later rule is the one that
+ * wins and the dialog keeps its own entrance.
+ *
+ * The veil and the card are separate layers: the dim fades while the card
+ * comes up under it with a little overshoot. Going away is quicker than
+ * arriving, the way a thing being dismissed should be.
+ *
+ * The exit needs the dialog to outlive the click that closed it — that's what
+ * lib/dismiss.js is for. Without the `dialog-leaving` class being applied for
+ * a beat before unmount, only the entrance would ever be seen.
+ */
+
+@keyframes dialog-veil-in {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+@keyframes dialog-veil-out {
+  from {
+    opacity: 1;
+  }
+  to {
+    opacity: 0;
+  }
+}
+
+@keyframes dialog-card-in {
+  from {
+    opacity: 0;
+    transform: translateY(16px) scale(0.96);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+@keyframes dialog-card-out {
+  from {
+    opacity: 1;
+    transform: none;
+  }
+  to {
+    opacity: 0;
+    transform: translateY(8px) scale(0.98);
+  }
+}
+
+.dialog-open {
+  animation: dialog-veil-in 200ms ease-out backwards;
+}
+
+.dialog-open > * {
+  animation: dialog-card-in 300ms cubic-bezier(0.34, 1.35, 0.64, 1) backwards;
+}
+
+.dialog-leaving {
+  animation: dialog-veil-out 160ms ease-in forwards;
+}
+
+.dialog-leaving > * {
+  animation: dialog-card-out 160ms ease-in forwards;
+}
+
+/* the small ones — a filter funnel, a role picker. They belong to the control
+   that opened them, so they grow out of it rather than fading in place. */
+@keyframes menu-in {
+  from {
+    opacity: 0;
+    transform: translateY(-6px) scale(0.96);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+.menu-open {
+  animation: menu-in 160ms cubic-bezier(0.22, 1, 0.36, 1) backwards;
+  transform-origin: top center;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .page-enter,
+  .page-stagger > *,
+  .calendar-side,
+  .calendar-grid,
+  .calendar-cell,
+  .dialog-open,
+  .dialog-open > *,
+  .dialog-leaving,
+  .dialog-leaving > *,
+  .menu-open {
+    animation: none;
+  }
+}
+
 /* filter: drop-shadow(-4px 4px 2 rgba(0,0,0,0.9)); */
 
 body {

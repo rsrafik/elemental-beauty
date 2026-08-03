@@ -2,6 +2,7 @@
 
 import { useState } from 'react'
 import DashboardShell from '@/components/dashboards/DashboardShell'
+import { useDismiss } from '@/lib/dismiss'
 import {
 	Card,
 	CardNote,
@@ -564,6 +565,9 @@ function LedgerCard({ tab, onTab, rows, year, onAdd, onEdit, onDelete }) {
 // they're the same form. `entry` null means adding; anything else is the row
 // being corrected, and the form opens on what it currently says.
 function EntryDialog({ kind, entry, onClose, onSave }) {
+	const { closing, dismiss } = useDismiss()
+	const close = () => dismiss(onClose)
+
 	const income = kind === 'income'
 	const categories = income ? INCOME_CATEGORIES : EXPENSE_CATEGORIES
 	const field = income ? 'source' : 'title'
@@ -589,12 +593,14 @@ function EntryDialog({ kind, entry, onClose, onSave }) {
 	const submit = (event) => {
 		event.preventDefault()
 		if (!ready) return
-		onSave({
-			date: form.date,
-			[field]: form.description.trim(),
-			category: form.category,
-			amount,
-		})
+		dismiss(() =>
+			onSave({
+				date: form.date,
+				[field]: form.description.trim(),
+				category: form.category,
+				amount,
+			})
+		)
 	}
 
 	return (
@@ -605,8 +611,9 @@ function EntryDialog({ kind, entry, onClose, onSave }) {
 			note={income
 				? 'Goes straight into the income summary and the balance line.'
 				: 'Goes straight into the expense summary and the balance line.'}
-			onClose={onClose}
+			onClose={close}
 			onSubmit={submit}
+			closing={closing}
 		>
 			<div className="
 				mt-6
@@ -685,7 +692,7 @@ function EntryDialog({ kind, entry, onClose, onSave }) {
 			</div>
 
 			<DialogActions
-				onCancel={onClose}
+				onCancel={close}
 				submitLabel={entry ? 'save changes' : 'record it'}
 				ready={ready}
 			/>
@@ -698,6 +705,9 @@ function EntryDialog({ kind, entry, onClose, onSave }) {
 // count toward money in hand — and the deposit itself is a separate income row,
 // because the cheque and the decision don't arrive on the same day.
 function GrantDialog({ grant, onClose, onSave }) {
+	const { closing, dismiss } = useDismiss()
+	const close = () => dismiss(onClose)
+
 	const [form, setForm] = useState({
 		name: grant?.name ?? '',
 		org: grant?.org ?? '',
@@ -721,21 +731,24 @@ function GrantDialog({ grant, onClose, onSave }) {
 	const submit = (event) => {
 		event.preventDefault()
 		if (!ready) return
-		onSave({
-			name: form.name.trim(),
-			org: form.org.trim(),
-			amount,
-			status: form.status,
-			due: form.due,
-		})
+		dismiss(() =>
+			onSave({
+				name: form.name.trim(),
+				org: form.org.trim(),
+				amount,
+				status: form.status,
+				due: form.due,
+			})
+		)
 	}
 
 	return (
 		<Dialog
 			title={grant ? 'edit grant' : 'add a grant'}
 			note="Awarding one doesn't bank it — record the deposit as income when the money lands."
-			onClose={onClose}
+			onClose={close}
 			onSubmit={submit}
+			closing={closing}
 		>
 			<div className="
 				mt-6
@@ -825,7 +838,7 @@ function GrantDialog({ grant, onClose, onSave }) {
 			</div>
 
 			<DialogActions
-				onCancel={onClose}
+				onCancel={close}
 				submitLabel={grant ? 'save changes' : 'add grant'}
 				ready={ready}
 			/>
@@ -835,25 +848,55 @@ function GrantDialog({ grant, onClose, onSave }) {
 
 // ---- the queue -------------------------------------------------------------
 
+// The receipt photo, full size. Its own component rather than inline in the
+// page so it can hold the closing state its exit animation needs.
+function PhotoDialog({ request, onClose }) {
+	const { closing, dismiss } = useDismiss()
+
+	return (
+		<Dialog
+			title={request.what}
+			note={`${request.who} · ${prettyDate(request.date)} · ${money(request.amount)}`}
+			onClose={() => dismiss(onClose)}
+			closing={closing}
+			width="w-[520px]"
+		>
+			<img
+				src={request.image.preview}
+				alt={`Receipt for ${request.what}`}
+				className="
+					mt-6
+					w-full
+					rounded-[12px]
+				"
+			/>
+		</Dialog>
+	)
+}
+
 // Turning someone down costs them their own money, so it can't be done with one
 // click and no explanation: the reason is required, it's what the officer sees
 // on their own page, and it's what they'd have to answer when they send it back.
 function DenyDialog({ request, onClose, onSave }) {
+	const { closing, dismiss } = useDismiss()
+	const close = () => dismiss(onClose)
+
 	const [reason, setReason] = useState('')
 	const ready = reason.trim() !== ''
 
 	const submit = (event) => {
 		event.preventDefault()
 		if (!ready) return
-		onSave(reason.trim())
+		dismiss(() => onSave(reason.trim()))
 	}
 
 	return (
 		<Dialog
 			title="deny this request?"
 			note={`${request.who} · ${request.what} · ${money(request.amount)}`}
-			onClose={onClose}
+			onClose={close}
 			onSubmit={submit}
+			closing={closing}
 			width="w-[520px]"
 		>
 			<div className="mt-6">
@@ -881,7 +924,7 @@ function DenyDialog({ request, onClose, onSave }) {
 			</div>
 
 			<DialogActions
-				onCancel={onClose}
+				onCancel={close}
 				submitLabel="deny it"
 				ready={ready}
 				tint="bg-red"
@@ -1389,9 +1432,10 @@ export default function TreasurerAnalytics() {
 		// a card and its edge the shadow gets sliced off down the sides. py-8
 		// leaves the same air over the first card and under the last one.
 		<DashboardShell className="-my-8 -mr-8 py-8 pr-11 pl-3">
-			{/* no padding under the last card: scrolled to the end, the page stops
-			    on the sidebar's bottom edge rather than short of it */}
+			{/* the cards are a level in from the shell, so the stagger is repeated
+			    here — otherwise the whole page would arrive as one block */}
 			<div className="
+				page-stagger
 				flex
 				flex-col
 				gap-6
@@ -1524,22 +1568,10 @@ export default function TreasurerAnalytics() {
 			)}
 
 			{photo && (
-				<Dialog
-					title={photo.what}
-					note={`${photo.who} · ${prettyDate(photo.date)} · ${money(photo.amount)}`}
+				<PhotoDialog
+					request={photo}
 					onClose={() => setPhoto(null)}
-					width="w-[520px]"
-				>
-					<img
-						src={photo.image.preview}
-						alt={`Receipt for ${photo.what}`}
-						className="
-							mt-6
-							w-full
-							rounded-[12px]
-						"
-					/>
-				</Dialog>
+				/>
 			)}
 		</DashboardShell>
 	)

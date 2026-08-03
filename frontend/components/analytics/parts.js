@@ -2,6 +2,7 @@
 
 import { useEffect, useRef, useState } from 'react'
 import { STATUS_PILL, money, prettyDate, sum } from '@/lib/finances'
+import { useDismiss } from '@/lib/dismiss'
 
 // The pieces both analytics pages are built out of — the card, the pills, the
 // charts, the dialog shell. They live here rather than in either page because
@@ -593,6 +594,7 @@ export function ColumnFilter({ label, options, picked, onChange }) {
 
 			{open && (
 				<div className="
+					menu-open
 					absolute
 					right-0
 					top-12
@@ -782,7 +784,7 @@ export function DialogActions({ onCancel, submitLabel, ready = true, tint = 'bg-
 // that swallows its own clicks so only the backdrop closes, and the title row
 // with its close button. `as` is 'form' for anything being filled in, so the
 // enter key submits from any field.
-export function Dialog({ title, note, onClose, onSubmit, children, width = 'w-[560px]' }) {
+export function Dialog({ title, note, onClose, onSubmit, children, closing = false, width = 'w-[560px]' }) {
 	useEffect(() => {
 		const onKey = (event) => {
 			if (event.key === 'Escape') onClose()
@@ -794,8 +796,11 @@ export function Dialog({ title, note, onClose, onSubmit, children, width = 'w-[5
 	const Body = onSubmit ? 'form' : 'div'
 
 	return (
+		// dialog-open / dialog-leaving are the entrance and the exit (see
+		// globals.css). They also keep the page's own arrival animation off the
+		// backdrop: it's a child of the animated column, but it isn't the page.
 		<div
-			className="
+			className={`
 				fixed
 				inset-0
 				z-50
@@ -804,7 +809,8 @@ export function Dialog({ title, note, onClose, onSubmit, children, width = 'w-[5
 				justify-center
 				bg-black/40
 				p-8
-			"
+				${closing ? 'dialog-leaving' : 'dialog-open'}
+			`}
 			onClick={onClose}
 		>
 			<Body
@@ -883,8 +889,16 @@ export function Dialog({ title, note, onClose, onSubmit, children, width = 'w-[5
 // Deleting a ledger row is the one thing on these pages that can't be undone
 // from the page itself, so it gets asked about by name.
 export function ConfirmDialog({ title, body, confirmLabel, onCancel, onConfirm }) {
+	const { closing, dismiss } = useDismiss()
+	const cancel = () => dismiss(onCancel)
+
 	return (
-		<Dialog title={title} onClose={onCancel} width="w-[440px]">
+		<Dialog
+			title={title}
+			onClose={cancel}
+			closing={closing}
+			width="w-[440px]"
+		>
 			<p className="
 				font-vietnam
 				text-sm
@@ -902,7 +916,7 @@ export function ConfirmDialog({ title, body, confirmLabel, onCancel, onConfirm }
 			">
 				<button
 					type="button"
-					onClick={onCancel}
+					onClick={cancel}
 					className="
 						rounded-full
 						border
@@ -928,7 +942,7 @@ export function ConfirmDialog({ title, body, confirmLabel, onCancel, onConfirm }
 				</button>
 				<button
 					type="button"
-					onClick={onConfirm}
+					onClick={() => dismiss(onConfirm)}
 					className="
 						rounded-full
 						bg-red

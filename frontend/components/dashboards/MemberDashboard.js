@@ -176,8 +176,12 @@ export default function MemberDashboard() {
 				showInstagram={showInstagramFor(currentRole)}
 			/>
 
-			{/* center column */}
+			{/* center column. page-enter / page-stagger are the entrance (see
+			    globals.css): the column drifts up and its panels rise in
+			    sequence, so arriving here reads as movement rather than a swap. */}
 			<section className="
+				page-enter
+				page-stagger
 				flex-1
 				flex
 				flex-col
@@ -280,8 +284,12 @@ export default function MemberDashboard() {
 				</div>
 			</section>
 
-			{/* right column: upcoming */}
+			{/* right column: upcoming. Only page-enter — the green panel arrives as
+			    one plane, a beat behind the center column, which is where the
+			    depth comes from. */}
 			<section className="
+				page-enter
+				[animation-delay:120ms]
 				w-[500px]
 				-my-8
 				-mr-8

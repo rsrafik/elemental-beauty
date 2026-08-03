@@ -3,6 +3,7 @@
 import { useEffect, useRef, useState } from 'react'
 import DashboardShell from '@/components/dashboards/DashboardShell'
 import { currentRole, hasRole } from '@/lib/roles'
+import { useDismiss } from '@/lib/dismiss'
 
 // /students — officer and up only. The member roster as one sheet: search,
 // sort by any column that holds a value, filter by role, add a student, and
@@ -468,6 +469,7 @@ function RoleMenu({ anchor, current, onPick, onClose }) {
 			aria-label="Role"
 			style={{ top, left: anchor.left }}
 			className="
+				menu-open
 				fixed
 				z-50
 				w-44
@@ -595,19 +597,24 @@ function Label({ children }) {
 // scrolled off the page or fell behind a filter, and this is the last place to
 // notice one that shouldn't be there.
 function ConfirmDeleteDialog({ students, onCancel, onConfirm }) {
+	// dismiss plays the exit animation and then closes for real — see
+	// lib/dismiss.js
+	const { closing, dismiss } = useDismiss()
+	const cancel = () => dismiss(onCancel)
+
 	useEffect(() => {
 		const onKey = (event) => {
-			if (event.key === 'Escape') onCancel()
+			if (event.key === 'Escape') cancel()
 		}
 		window.addEventListener('keydown', onKey)
 		return () => window.removeEventListener('keydown', onKey)
-	}, [onCancel])
+	})
 
 	const many = students.length !== 1
 
 	return (
 		<div
-			className="
+			className={`
 				fixed
 				inset-0
 				z-[60]
@@ -616,8 +623,9 @@ function ConfirmDeleteDialog({ students, onCancel, onConfirm }) {
 				justify-center
 				bg-black/40
 				p-8
-			"
-			onClick={onCancel}
+				${closing ? 'dialog-leaving' : 'dialog-open'}
+			`}
+			onClick={cancel}
 		>
 			<div
 				onClick={(event) => event.stopPropagation()}
@@ -678,7 +686,7 @@ function ConfirmDeleteDialog({ students, onCancel, onConfirm }) {
 				">
 					<button
 						type="button"
-						onClick={onCancel}
+						onClick={cancel}
 						className="
 							rounded-full
 							border
@@ -704,7 +712,7 @@ function ConfirmDeleteDialog({ students, onCancel, onConfirm }) {
 					</button>
 					<button
 						type="button"
-						onClick={onConfirm}
+						onClick={() => dismiss(onConfirm)}
 						className="
 							rounded-full
 							bg-red
@@ -737,6 +745,9 @@ function ConfirmDeleteDialog({ students, onCancel, onConfirm }) {
 // Mounted only while open, so it always starts blank. Points aren't asked for —
 // a new student starts at zero and earns from there.
 function AddStudentDialog({ onClose, onSave }) {
+	const { closing, dismiss } = useDismiss()
+	const close = () => dismiss(onClose)
+
 	const [form, setForm] = useState({
 		first: '',
 		last: '',
@@ -750,11 +761,11 @@ function AddStudentDialog({ onClose, onSave }) {
 
 	useEffect(() => {
 		const onKey = (event) => {
-			if (event.key === 'Escape') onClose()
+			if (event.key === 'Escape') close()
 		}
 		window.addEventListener('keydown', onKey)
 		return () => window.removeEventListener('keydown', onKey)
-	}, [onClose])
+	})
 
 	const ready =
 		form.first.trim() !== '' &&
@@ -765,17 +776,19 @@ function AddStudentDialog({ onClose, onSave }) {
 	const submit = (event) => {
 		event.preventDefault()
 		if (!ready) return
-		onSave({
-			...form,
-			first: form.first.trim(),
-			last: form.last.trim(),
-			username: form.username.trim(),
-		})
+		dismiss(() =>
+			onSave({
+				...form,
+				first: form.first.trim(),
+				last: form.last.trim(),
+				username: form.username.trim(),
+			})
+		)
 	}
 
 	return (
 		<div
-			className="
+			className={`
 				fixed
 				inset-0
 				z-50
@@ -784,8 +797,9 @@ function AddStudentDialog({ onClose, onSave }) {
 				justify-center
 				bg-black/40
 				p-8
-			"
-			onClick={onClose}
+				${closing ? 'dialog-leaving' : 'dialog-open'}
+			`}
+			onClick={close}
 		>
 			{/* the card swallows clicks so only the backdrop itself closes */}
 			<form
@@ -820,7 +834,7 @@ function AddStudentDialog({ onClose, onSave }) {
 					</h2>
 					<button
 						type="button"
-						onClick={onClose}
+						onClick={close}
 						aria-label="Close"
 						className="
 							w-9
@@ -927,7 +941,7 @@ function AddStudentDialog({ onClose, onSave }) {
 				">
 					<button
 						type="button"
-						onClick={onClose}
+						onClick={close}
 						className="
 							rounded-full
 							border
@@ -1051,6 +1065,7 @@ function RoleFilter({ roles, onChange }) {
 
 			{open && (
 				<div className="
+					menu-open
 					absolute
 					right-0
 					top-12
@@ -1329,8 +1344,10 @@ export default function OfficerStudents() {
 		<DashboardShell className="px-3">
 			{/* a column the height of the shell: toolbar and pager keep their own
 			    size and the sheet takes everything between them, which is what
-			    lands the pager on the sidebar's bottom edge */}
+			    lands the pager on the sidebar's bottom edge. page-stagger brings
+			    the three in one after another on arrival (see globals.css) */}
 			<div className="
+				page-stagger
 				flex
 				flex-col
 				h-full

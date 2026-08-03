@@ -3,6 +3,7 @@
 import { useState } from 'react'
 import DashboardShell from '@/components/dashboards/DashboardShell'
 import { currentUser } from '@/lib/roles'
+import { useDismiss } from '@/lib/dismiss'
 import {
 	Card,
 	CardNote,
@@ -74,6 +75,11 @@ import {
 // yet — it rides along on the request so the thumbnail has something to draw
 // once this is posting to the API.
 function ReceiptDialog({ request, onClose, onSave }) {
+	// every way out of this dialog goes through dismiss, so the card animates
+	// away whether it was cancelled or sent
+	const { closing, dismiss } = useDismiss()
+	const close = () => dismiss(onClose)
+
 	const [form, setForm] = useState({
 		what: request?.what ?? '',
 		reason: request?.reason ?? '',
@@ -106,14 +112,16 @@ function ReceiptDialog({ request, onClose, onSave }) {
 	const submit = (event) => {
 		event.preventDefault()
 		if (!ready) return
-		onSave({
-			what: form.what.trim(),
-			reason: form.reason.trim(),
-			category: form.category,
-			date: form.date,
-			amount,
-			image,
-		})
+		dismiss(() =>
+			onSave({
+				what: form.what.trim(),
+				reason: form.reason.trim(),
+				category: form.category,
+				date: form.date,
+				amount,
+				image,
+			})
+		)
 	}
 
 	return (
@@ -122,8 +130,9 @@ function ReceiptDialog({ request, onClose, onSave }) {
 			note={request
 				? 'Change what they asked about, and it goes back into their queue as pending.'
 				: 'The category is what the expense summary files it under. The treasurer sees it as soon as you send it.'}
-			onClose={onClose}
+			onClose={close}
 			onSubmit={submit}
+			closing={closing}
 		>
 			{/* the objection, kept in front of the form it's about — answering it is
 			    the whole reason this dialog is open */}
@@ -305,7 +314,7 @@ function ReceiptDialog({ request, onClose, onSave }) {
 			</div>
 
 			<DialogActions
-				onCancel={onClose}
+				onCancel={close}
 				submitLabel={request ? 'send it back' : 'submit receipt'}
 				ready={ready}
 			/>
@@ -833,9 +842,10 @@ export default function OfficerAnalytics() {
 		// a card and its edge the shadow gets sliced off down the sides. py-8
 		// leaves the same air over the first card and under the last one.
 		<DashboardShell className="-my-8 -mr-8 py-8 pr-11 pl-3">
-			{/* no padding under the last card: scrolled to the end, the page stops
-			    on the sidebar's bottom edge rather than short of it */}
+			{/* the cards are a level in from the shell, so the stagger is repeated
+			    here — otherwise the whole page would arrive as one block */}
 			<div className="
+				page-stagger
 				flex
 				flex-col
 				gap-6

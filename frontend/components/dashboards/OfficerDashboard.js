@@ -78,8 +78,13 @@ export default function OfficerDashboard() {
 				showInstagram={showInstagramFor(currentRole)}
 			/>
 
-			{/* 2x2 grid + centered overlay circle */}
+			{/* 2x2 grid + centered overlay circle. page-enter / page-stagger are
+			    the entrance (see globals.css) — the grid drifts up and the four
+			    quadrants come in one after another, so landing here from the
+			    sidebar reads as movement rather than a swap. */}
 			<section className="
+				page-enter
+				page-stagger
 				flex-1
 				relative
 				grid

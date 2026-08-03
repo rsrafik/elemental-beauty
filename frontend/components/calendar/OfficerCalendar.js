@@ -1,6 +1,7 @@
 'use client'
 
 import { useEffect, useState } from 'react'
+import { useDismiss } from '@/lib/dismiss'
 import DashboardShell from '@/components/dashboards/DashboardShell'
 
 // /calendar for officer / treasurer / admin: the member month view, plus the
@@ -378,17 +379,21 @@ function ChipInput({ value, onChange, onCommit, onCancel }) {
 }
 
 function ConfirmRemoveDialog({ label, onCancel, onConfirm }) {
+	// dismiss plays the exit animation and then closes for real — lib/dismiss.js
+	const { closing, dismiss } = useDismiss()
+	const cancel = () => dismiss(onCancel)
+
 	useEffect(() => {
 		const onKey = (event) => {
-			if (event.key === 'Escape') onCancel()
+			if (event.key === 'Escape') cancel()
 		}
 		window.addEventListener('keydown', onKey)
 		return () => window.removeEventListener('keydown', onKey)
-	}, [onCancel])
+	})
 
 	return (
 		<div
-			className="
+			className={`
 				fixed
 				inset-0
 				z-50
@@ -397,8 +402,9 @@ function ConfirmRemoveDialog({ label, onCancel, onConfirm }) {
 				justify-center
 				bg-black/40
 				p-8
-			"
-			onClick={onCancel}
+				${closing ? 'dialog-leaving' : 'dialog-open'}
+			`}
+			onClick={cancel}
 		>
 			{/* the card swallows clicks so only the backdrop itself closes */}
 			<div
@@ -440,7 +446,7 @@ function ConfirmRemoveDialog({ label, onCancel, onConfirm }) {
 				">
 					<button
 						type="button"
-						onClick={onCancel}
+						onClick={cancel}
 						className="
 							rounded-full
 							border
@@ -466,7 +472,7 @@ function ConfirmRemoveDialog({ label, onCancel, onConfirm }) {
 					</button>
 					<button
 						type="button"
-						onClick={onConfirm}
+						onClick={() => dismiss(onConfirm)}
 						className="
 							rounded-full
 							bg-red
@@ -517,16 +523,23 @@ function Pill({ children, className = '' }) {
 // One square of the grid. Out-of-month days keep their number but lose the
 // badge, which is what makes the month itself read as a block. The badge takes
 // its colour from the first thing on the day.
-function Day({ number, inMonth, entries: dayEntries }) {
+// `wave` is the cell's row plus its column, handed to the entrance animation as
+// --wave: every cell on the same diagonal arrives together and each diagonal
+// follows the one before it, so the month washes in from the top-left corner.
+function Day({ number, inMonth, entries: dayEntries, wave = 0 }) {
 	const first = dayEntries[0]
 	const badge = first ? TRACKS[first.track].pill : 'bg-black text-cream'
 	return (
-		<div className="
-			group
-			min-h-[112px]
-			pt-3
-			pr-2
-		">
+		<div
+			style={{ '--wave': wave }}
+			className="
+				calendar-cell
+				group
+				min-h-[112px]
+				pt-3
+				pr-2
+			"
+		>
 			<span className={`
 				w-7
 				h-7
@@ -624,6 +637,10 @@ function Label({ children }) {
 // draws it — it rides along so the events dashboard, which does show photos,
 // has one once this is posting to the API.
 function EventDialog({ categories, onClose, onSave }) {
+	// dismiss plays the exit animation and then closes for real — lib/dismiss.js
+	const { closing, dismiss } = useDismiss()
+	const close = () => dismiss(onClose)
+
 	const [form, setForm] = useState({
 		title: '',
 		date: '',
@@ -640,11 +657,11 @@ function EventDialog({ categories, onClose, onSave }) {
 	// Escape closes, same as the backdrop.
 	useEffect(() => {
 		const onKey = (event) => {
-			if (event.key === 'Escape') onClose()
+			if (event.key === 'Escape') close()
 		}
 		window.addEventListener('keydown', onKey)
 		return () => window.removeEventListener('keydown', onKey)
-	}, [onClose])
+	})
 
 	const pickImage = (event) => {
 		const file = event.target.files?.[0]
@@ -660,17 +677,19 @@ function EventDialog({ categories, onClose, onSave }) {
 	const submit = (event) => {
 		event.preventDefault()
 		if (!ready) return
-		onSave({
-			...form,
-			title: form.title.trim(),
-			description: form.description.trim(),
-			image,
-		})
+		dismiss(() =>
+			onSave({
+				...form,
+				title: form.title.trim(),
+				description: form.description.trim(),
+				image,
+			})
+		)
 	}
 
 	return (
 		<div
-			className="
+			className={`
 				fixed
 				inset-0
 				z-50
@@ -679,8 +698,9 @@ function EventDialog({ categories, onClose, onSave }) {
 				justify-center
 				bg-black/40
 				p-8
-			"
-			onClick={onClose}
+				${closing ? 'dialog-leaving' : 'dialog-open'}
+			`}
+			onClick={close}
 		>
 			{/* the card swallows clicks so only the backdrop itself closes */}
 			<form
@@ -715,7 +735,7 @@ function EventDialog({ categories, onClose, onSave }) {
 					</h2>
 					<button
 						type="button"
-						onClick={onClose}
+						onClick={close}
 						aria-label="Close"
 						className="
 							w-9
@@ -915,7 +935,7 @@ function EventDialog({ categories, onClose, onSave }) {
 				">
 					<button
 						type="button"
-						onClick={onClose}
+						onClick={close}
 						className="
 							rounded-full
 							border
@@ -1072,8 +1092,12 @@ export default function OfficerCalendar() {
 				"
 				style={{ minHeight: `${SHEET_H}px` }}
 			>
-				{/* left column: month and add button up top, legends at the bottom */}
+				{/* left column: month and add button up top, legends at the bottom.
+				    calendar-side / calendar-grid bring the two columns in from
+				    opposite edges (see globals.css) — the depth is in them moving
+				    against each other, with the day cells washing across after. */}
 				<div className="
+					calendar-side
 					w-[340px]
 					shrink-0
 					flex
@@ -1235,6 +1259,7 @@ export default function OfficerCalendar() {
 
 				{/* right column: the month grid */}
 				<div className="
+					calendar-grid
 					flex-1
 					min-w-0
 				">
@@ -1243,10 +1268,12 @@ export default function OfficerCalendar() {
 						grid-cols-7
 						gap-2
 					">
-						{WEEKDAYS.map((day) => (
+						{WEEKDAYS.map((day, column) => (
 							<div
 								key={day}
+								style={{ '--wave': column }}
 								className="
+									calendar-cell
 									bg-salmon
 									rounded-full
 									py-1.5
@@ -1279,9 +1306,10 @@ export default function OfficerCalendar() {
 								pb-4
 							"
 						>
-							{week.map((day) => (
+							{week.map((day, column) => (
 								<Day
 									key={`${i}-${day.number}`}
+									wave={i + column + 1}
 									number={day.number}
 									inMonth={day.inMonth}
 									entries={

@@ -1,6 +1,7 @@
 'use client'
 
 import { useEffect, useState } from 'react'
+import { useDismiss } from '@/lib/dismiss'
 import DashboardShell from '@/components/dashboards/DashboardShell'
 
 // /labs for officer / treasurer / admin: every lab on one sheet, each one
@@ -227,17 +228,21 @@ function Label({ children }) {
 
 // Sits on top of the edit dialog, so it needs to clear that layer's z-50.
 function ConfirmDeleteDialog({ label, onCancel, onConfirm }) {
+	// dismiss plays the exit animation and then closes for real — lib/dismiss.js
+	const { closing, dismiss } = useDismiss()
+	const cancel = () => dismiss(onCancel)
+
 	useEffect(() => {
 		const onKey = (event) => {
-			if (event.key === 'Escape') onCancel()
+			if (event.key === 'Escape') cancel()
 		}
 		window.addEventListener('keydown', onKey)
 		return () => window.removeEventListener('keydown', onKey)
-	}, [onCancel])
+	})
 
 	return (
 		<div
-			className="
+			className={`
 				fixed
 				inset-0
 				z-[60]
@@ -246,8 +251,9 @@ function ConfirmDeleteDialog({ label, onCancel, onConfirm }) {
 				justify-center
 				bg-black/40
 				p-8
-			"
-			onClick={onCancel}
+				${closing ? 'dialog-leaving' : 'dialog-open'}
+			`}
+			onClick={cancel}
 		>
 			<div
 				onClick={(event) => event.stopPropagation()}
@@ -287,7 +293,7 @@ function ConfirmDeleteDialog({ label, onCancel, onConfirm }) {
 				">
 					<button
 						type="button"
-						onClick={onCancel}
+						onClick={cancel}
 						className="
 							rounded-full
 							border
@@ -313,7 +319,7 @@ function ConfirmDeleteDialog({ label, onCancel, onConfirm }) {
 					</button>
 					<button
 						type="button"
-						onClick={onConfirm}
+						onClick={() => dismiss(onConfirm)}
 						className="
 							rounded-full
 							bg-red
@@ -352,6 +358,10 @@ function ConfirmDeleteDialog({ label, onCancel, onConfirm }) {
 // `onDelete` only comes in when there's a lab to delete, which is what puts the
 // delete button on the footer.
 function LabDialog({ lab, onClose, onSave, onDelete }) {
+	// dismiss plays the exit animation and then closes for real — lib/dismiss.js
+	const { closing, dismiss } = useDismiss()
+	const close = () => dismiss(onClose)
+
 	const [form, setForm] = useState({
 		title: lab?.title ?? '',
 		date: lab?.date ?? '',
@@ -367,11 +377,11 @@ function LabDialog({ lab, onClose, onSave, onDelete }) {
 	// confirmation is up, or one keypress would dismiss both layers at once.
 	useEffect(() => {
 		const onKey = (event) => {
-			if (event.key === 'Escape' && !confirmingDelete) onClose()
+			if (event.key === 'Escape' && !confirmingDelete) close()
 		}
 		window.addEventListener('keydown', onKey)
 		return () => window.removeEventListener('keydown', onKey)
-	}, [onClose, confirmingDelete])
+	})
 
 	const pickImage = (event) => {
 		const file = event.target.files?.[0]
@@ -384,17 +394,19 @@ function LabDialog({ lab, onClose, onSave, onDelete }) {
 	const submit = (event) => {
 		event.preventDefault()
 		if (!ready) return
-		onSave({
-			...form,
-			title: form.title.trim(),
-			description: form.description.trim(),
-			image,
-		})
+		dismiss(() =>
+			onSave({
+				...form,
+				title: form.title.trim(),
+				description: form.description.trim(),
+				image,
+			})
+		)
 	}
 
 	return (
 		<div
-			className="
+			className={`
 				fixed
 				inset-0
 				z-50
@@ -403,8 +415,9 @@ function LabDialog({ lab, onClose, onSave, onDelete }) {
 				justify-center
 				bg-black/40
 				p-8
-			"
-			onClick={onClose}
+				${closing ? 'dialog-leaving' : 'dialog-open'}
+			`}
+			onClick={close}
 		>
 			{/* the card swallows clicks so only the backdrop itself closes */}
 			<form
@@ -439,7 +452,7 @@ function LabDialog({ lab, onClose, onSave, onDelete }) {
 					</h2>
 					<button
 						type="button"
-						onClick={onClose}
+						onClick={close}
 						aria-label="Close"
 						className="
 							w-9
@@ -609,7 +622,7 @@ function LabDialog({ lab, onClose, onSave, onDelete }) {
 					">
 					<button
 						type="button"
-						onClick={onClose}
+						onClick={close}
 						className="
 							rounded-full
 							border

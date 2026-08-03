@@ -33,7 +33,14 @@ export default function DashboardShell({
 				showInstagram={showInstagram}
 			/>
 
+			{/* page-enter / page-stagger are the entrance (see globals.css): the
+			    column drifts up as one plane and whatever sits directly inside it
+			    rises in sequence, so arriving on a page reads as movement instead
+			    of a swap. The sidebar deliberately has none — it's the thing that
+			    stays put while the page changes behind it. */}
 			<section className={`
+				page-enter
+				page-stagger
 				flex-1
 				min-w-0
 				overflow-y-auto
