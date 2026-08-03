@@ -204,15 +204,23 @@ function Pill({ children, className = '' }) {
 
 // One square of the grid. Out-of-month days keep their number but lose the
 // badge, which is what makes the month itself read as a block.
-function Day({ number, inMonth, entry }) {
+//
+// `wave` is the cell's row plus its column, handed to the entrance animation as
+// --wave: every cell on the same diagonal arrives together and each diagonal
+// follows the one before it, so the month washes in from the top-left corner.
+function Day({ number, inMonth, entry, wave = 0 }) {
 	const badge = entry ? TRACKS[entry.track].pill : 'bg-black text-cream'
 	return (
-		<div className="
-			group
-			min-h-[112px]
-			pt-3
-			pr-2
-		">
+		<div
+			style={{ '--wave': wave }}
+			className="
+				calendar-cell
+				group
+				min-h-[112px]
+				pt-3
+				pr-2
+			"
+		>
 			<span className={`
 				w-7
 				h-7
@@ -300,8 +308,12 @@ export default function MemberCalendar() {
 				"
 				style={{ height: `${SHEET_H}px` }}
 			>
-				{/* left column: month at the top, legends pushed to the bottom */}
+				{/* left column: month at the top, legends pushed to the bottom.
+				    calendar-side / calendar-grid bring the two columns in from
+				    opposite edges (see globals.css) — the depth is in them moving
+				    against each other, with the day cells washing across after. */}
 				<div className="
+					calendar-side
 					w-[340px]
 					shrink-0
 					flex
@@ -419,6 +431,7 @@ export default function MemberCalendar() {
 
 				{/* right column: the month grid */}
 				<div className="
+					calendar-grid
 					flex-1
 					min-w-0
 				">
@@ -427,10 +440,12 @@ export default function MemberCalendar() {
 						grid-cols-7
 						gap-2
 					">
-						{WEEKDAYS.map((day) => (
+						{WEEKDAYS.map((day, column) => (
 							<div
 								key={day}
+								style={{ '--wave': column }}
 								className="
+									calendar-cell
 									bg-salmon
 									rounded-full
 									py-1.5
@@ -463,9 +478,10 @@ export default function MemberCalendar() {
 								pb-4
 							"
 						>
-							{week.map((day) => (
+							{week.map((day, column) => (
 								<Day
 									key={`${i}-${day.number}`}
+									wave={i + column + 1}
 									number={day.number}
 									inMonth={day.inMonth}
 									entry={day.inMonth ? visible(monthEntries[day.number]) : null}

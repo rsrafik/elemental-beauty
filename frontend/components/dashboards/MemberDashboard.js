@@ -284,23 +284,25 @@ export default function MemberDashboard() {
 				</div>
 			</section>
 
-			{/* right column: upcoming. Only page-enter — the green panel arrives as
-			    one plane, a beat behind the center column, which is where the
-			    depth comes from. */}
-			<section className="
-				page-enter
-				[animation-delay:120ms]
-				w-[500px]
-				-my-8
-				-mr-8
-				bg-green
-				rounded-tl-[100px]
-				rounded-bl-[100px]
-				p-8
-				flex
-				flex-col
-				shadow-[inset_7px_5px_6px_rgba(0,0,0,0.25)]
-			">
+			{/* right column: upcoming. It comes in from off the right edge rather
+			    than rising with the center column — two planes moving in
+			    different directions is where the depth comes from. */}
+			<section
+				style={{ '--slide': '140px' }}
+				className="
+					panel-slide
+					w-[500px]
+					-my-8
+					-mr-8
+					bg-green
+					rounded-tl-[100px]
+					rounded-bl-[100px]
+					p-8
+					flex
+					flex-col
+					shadow-[inset_7px_5px_6px_rgba(0,0,0,0.25)]
+				"
+			>
 				<h2 className="
 					font-canobis
 					text-green-dark

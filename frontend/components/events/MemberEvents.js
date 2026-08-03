@@ -407,7 +407,10 @@ export default function MemberEvents() {
 			-mr-8
 			ml-20
 		">
+			{/* page-plain: the panels inside bring their own entrance, so this
+			    box doesn't take the standard one on top of it */}
 			<div className="
+				page-plain
 				absolute
 				inset-0
 				overflow-hidden
@@ -415,6 +418,7 @@ export default function MemberEvents() {
 				{/* back panel: upcoming */}
 				<section
 					className="
+						panel-slide
 						absolute
 						inset-y-0
 						right-0
@@ -427,6 +431,7 @@ export default function MemberEvents() {
 						ease-out
 					"
 					style={{
+						'--slide': '210px',
 						left: `${SHADOW_ROOM}px`,
 						transitionDuration: `${PEEK_MS}ms`,
 						transform: `translateX(${upcomingNudge}px)`,
@@ -469,6 +474,7 @@ export default function MemberEvents() {
 				{/* front panel: current — slides right to uncover the one behind it */}
 				<section
 					className="
+						panel-slide
 						absolute
 						inset-y-0
 						right-0
@@ -481,6 +487,7 @@ export default function MemberEvents() {
 						ease-out
 					"
 					style={{
+						'--slide': '130px',
 						left: `${TAB_W + SHADOW_ROOM}px`,
 						transitionDuration: `${slideMs}ms`,
 						transform: showUpcoming
