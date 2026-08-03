@@ -1907,7 +1907,7 @@ export function MonthStats({ stats }) {
 				good="up"
 			/>
 			<StatCard
-				label="spending's"
+				label="spendings"
 				stat={stats.spendings}
 				icon={<SpendingIcon className="w-4 h-4" />}
 				tint="bg-salmon"

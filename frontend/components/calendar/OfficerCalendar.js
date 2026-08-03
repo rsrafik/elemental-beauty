@@ -916,14 +916,6 @@ function EventDialog({ categories, onClose, onSave }) {
 								/>
 							</label>
 						</div>
-						<p className="
-							font-vietnam
-							text-xs
-							text-black/45
-							mt-2
-						">
-							Shown on the events dashboard, not on the calendar.
-						</p>
 					</div>
 				</div>
 

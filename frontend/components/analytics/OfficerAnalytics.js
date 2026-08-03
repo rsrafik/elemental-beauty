@@ -128,7 +128,7 @@ function ReceiptDialog({ request, onClose, onSave }) {
 		<Dialog
 			title={request ? 'send it back' : 'submit a receipt'}
 			note={request
-				? 'Change what they asked about, and it goes back into their queue as pending.'
+				? 'Change what the treasurer requested, and it goes back into their queue as pending.'
 				: 'The category is what the expense summary files it under. The treasurer sees it as soon as you send it.'}
 			onClose={close}
 			onSubmit={submit}
