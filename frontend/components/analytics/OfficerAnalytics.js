@@ -9,6 +9,7 @@ import {
 	CardNote,
 	CardTitle,
 	BalanceCard,
+	ConfirmDialog,
 	Dialog,
 	DialogActions,
 	FIELD,
@@ -325,7 +326,13 @@ function ReceiptDialog({ request, onClose, onSave }) {
 // Everything handed in that hasn't been paid out yet — waiting, agreed, or sent
 // back. Anything reimbursed has stopped being something to watch and lives in
 // the table below.
-function ReceiptsCard({ receipts, onSubmit, onRevise }) {
+//
+// Every row here can also be taken back, which is why revoking is offered on
+// this card and nowhere else: what it's for is a receipt that shouldn't have
+// been filed — the wrong amount, a duplicate, something the club ended up not
+// owing — and once the money has actually been handed over there's nothing left
+// to withdraw. Those rows aren't on this card.
+function ReceiptsCard({ receipts, onSubmit, onRevise, onRevoke }) {
 	const owed = sum(
 		receipts
 			.filter((receipt) => receipt.status !== 'denied')
@@ -504,9 +511,9 @@ function ReceiptsCard({ receipts, onSubmit, onRevise }) {
 							</div>
 						</div>
 
-						{/* one that came back: what the treasurer wants changed, and the
-						    way to change it. The note is quoted in full rather than
-						    truncated — it's an instruction, not a label */}
+						{/* one that came back: what the treasurer wants changed, quoted
+						    in full rather than truncated — it's an instruction, not a
+						    label */}
 						{receipt.status === 'denied' && receipt.denialReason && (
 							<div className="
 								mt-2.5
@@ -522,12 +529,24 @@ function ReceiptsCard({ receipts, onSubmit, onRevise }) {
 								">
 									{receipt.denialReason}
 								</p>
+							</div>
+						)}
 
+						{/* what can still be done about it, kept in one row under the
+						    receipt whether or not there's an objection above it */}
+						<div className="
+							mt-2.5
+							flex
+							flex-wrap
+							items-center
+							justify-end
+							gap-2
+						">
+							{receipt.status === 'denied' && (
 								<button
 									type="button"
 									onClick={() => onRevise(receipt)}
 									className="
-										mt-2.5
 										rounded-full
 										bg-salmon-dark
 										px-4
@@ -549,8 +568,34 @@ function ReceiptsCard({ receipts, onSubmit, onRevise }) {
 								>
 									fix it and send it back
 								</button>
-							</div>
-						)}
+							)}
+
+							<button
+								type="button"
+								onClick={() => onRevoke(receipt)}
+								className="
+									rounded-full
+									border
+									border-black/25
+									px-4
+									py-1.5
+									font-vietnam
+									font-semibold
+									text-xs
+									text-black/60
+									cursor-pointer
+									transition-all
+									duration-200
+									ease-out
+									hover:-translate-y-0.5
+									hover:border-red
+									hover:text-red
+									active:translate-y-0
+								"
+							>
+								revoke
+							</button>
+						</div>
 					</div>
 				))}
 
@@ -778,6 +823,8 @@ export default function OfficerAnalytics() {
 	// null = closed. Otherwise the receipt form is open, on a blank one or on the
 	// request being sent back.
 	const [composing, setComposing] = useState(null)
+	// the receipt being taken back, held while it's asked about
+	const [revoking, setRevoking] = useState(null)
 	const [statusFilter, setStatusFilter] = useState('all')
 
 	// The ledgers are read-only here — an officer can't post to them, so there's
@@ -828,6 +875,16 @@ export default function OfficerAnalytics() {
 				]
 		)
 		setComposing(null)
+	}
+
+	// Taking one back drops it, rather than marking it withdrawn: an officer's
+	// own receipt that was never settled isn't a record of anything — nobody was
+	// paid and nothing was refused — so it comes off the card and out of the
+	// history together. The API has to check the status again on DELETE: a
+	// request that's been reimbursed since this page loaded can't be pulled.
+	const revoke = () => {
+		setRequests((previous) => previous.filter((entry) => entry.id !== revoking.id))
+		setRevoking(null)
 	}
 
 	return (
@@ -921,6 +978,7 @@ export default function OfficerAnalytics() {
 						receipts={open}
 						onSubmit={() => setComposing({ request: null })}
 						onRevise={(request) => setComposing({ request })}
+						onRevoke={setRevoking}
 					/>
 
 					<div className="2xl:col-span-2">
@@ -938,6 +996,20 @@ export default function OfficerAnalytics() {
 					request={composing.request}
 					onClose={() => setComposing(null)}
 					onSave={send}
+				/>
+			)}
+
+			{revoking && (
+				<ConfirmDialog
+					title="revoke this receipt?"
+					body={
+						revoking.status === 'approved'
+							? `${revoking.what} — ${money(revoking.amount)}. The treasurer has already agreed to pay this back, and revoking it says you're not asking for it after all. It comes off your history too, so there'd be nothing left to point at.`
+							: `${revoking.what} — ${money(revoking.amount)}. It leaves the treasurer's queue and your own history with it. If you want it back you'd have to file it again.`
+					}
+					confirmLabel="revoke it"
+					onCancel={() => setRevoking(null)}
+					onConfirm={revoke}
 				/>
 			)}
 		</DashboardShell>

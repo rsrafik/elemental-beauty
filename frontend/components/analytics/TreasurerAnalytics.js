@@ -310,11 +310,30 @@ function RowButton({ label, onClick, tone = 'plain', children }) {
 // Sorting and filtering work the way they do on the roster — click a column to
 // sort by it, click again to flip it, and the funnel narrows the table to the
 // categories (or statuses) that are ticked. Both are view state and both belong
-// to the tab that's open, which is why the page mounts this per tab.
+// to the tab that's open, so switching tabs starts them over.
+//
+// Started over in place, deliberately: this card stays mounted across a tab
+// change. Remounting it — a `key={tab}` on the page — would reset the same two
+// pieces of state, but it also hands the card the page's entrance animation
+// again, so picking a tab makes the whole card drop out and rise back in as if
+// the route had just opened. Swapping the table under a card that's already
+// there is what the click actually is.
 function LedgerCard({ tab, onTab, rows, year, onAdd, onEdit, onDelete }) {
 	const ledger = LEDGERS[tab]
 	const [sort, setSort] = useState(ledger.defaultSort)
 	const [picked, setPicked] = useState([])
+
+	// Which tab the state above belongs to. Set during the render that notices
+	// the tab has moved, which is React's own way of resetting state on a prop
+	// change without a remount: it re-runs this render with the new values
+	// before anything reaches the screen, so nothing draws the old sort against
+	// the new table.
+	const [sorted, setSorted] = useState(tab)
+	if (sorted !== tab) {
+		setSorted(tab)
+		setSort(ledger.defaultSort)
+		setPicked([])
+	}
 
 	// A second click on the sorted column flips it; a first click on any other
 	// starts that one ascending.
@@ -848,9 +867,17 @@ function GrantDialog({ grant, onClose, onSave }) {
 
 // ---- the queue -------------------------------------------------------------
 
-// The receipt photo, full size. Its own component rather than inline in the
-// page so it can hold the closing state its exit animation needs.
-function PhotoDialog({ request, onClose }) {
+// The receipt itself, opened off any row in the queue: the photo that was handed
+// in, what it was bought for, and where the request has got to. Read only —
+// approving, denying and reimbursing stay on the row, and this is what someone
+// reads before pressing one of them.
+//
+// Every request opens, photo or not. Nothing attached is itself something the
+// treasurer needs to know — it's grounds for sending one back — so the dialog
+// says so in place of the image rather than refusing to open. Its own component
+// rather than inline in the page so it can hold the closing state its exit
+// animation needs.
+function ReceiptDialog({ request, onClose }) {
 	const { closing, dismiss } = useDismiss()
 
 	return (
@@ -861,15 +888,133 @@ function PhotoDialog({ request, onClose }) {
 			closing={closing}
 			width="w-[520px]"
 		>
-			<img
-				src={request.image.preview}
-				alt={`Receipt for ${request.what}`}
-				className="
+			{request.image
+				? <img
+					src={request.image.preview}
+					alt={`Receipt for ${request.what}`}
+					className="
+						mt-6
+						w-full
+						rounded-[12px]
+					"
+				/>
+				: <div className="
 					mt-6
-					w-full
+					flex
+					flex-col
+					items-center
+					justify-center
+					gap-3
 					rounded-[12px]
-				"
-			/>
+					border
+					border-dashed
+					border-black/25
+					bg-white
+					py-12
+				">
+					<ReceiptIcon className="w-8 h-8 text-black/25" />
+					<p className="
+						font-vietnam
+						text-sm
+						text-black/45
+					">
+						no photo attached
+					</p>
+				</div>}
+
+			<div className="
+				mt-6
+				flex
+				flex-col
+				gap-5
+			">
+				<div className="
+					flex
+					flex-wrap
+					items-start
+					justify-between
+					gap-4
+				">
+					<div>
+						<Label>category</Label>
+						<CategoryTag
+							category={categoryLabel(request.category)}
+							color={categoryColor(request.category)}
+						/>
+					</div>
+					<div>
+						<Label>status</Label>
+						<StatusPill status={request.status} />
+					</div>
+				</div>
+
+				<div>
+					<Label>what it was for</Label>
+					<p className="
+						font-vietnam
+						text-sm
+						text-black/75
+					">
+						{request.reason || 'nothing written'}
+					</p>
+				</div>
+
+				{/* the objection, when there is one, and the one before it on a
+				    request that's already been round once */}
+				{request.denialReason && (
+					<div className="
+						rounded-[12px]
+						bg-salmon-lightest
+						px-5
+						py-4
+					">
+						<p className="
+							font-vietnam
+							text-[11px]
+							uppercase
+							tracking-[0.12em]
+							text-salmon-dark
+						">
+							why you sent it back
+						</p>
+						<p className="
+							mt-1.5
+							font-vietnam
+							text-sm
+							text-black/75
+						">
+							{request.denialReason}
+						</p>
+					</div>
+				)}
+
+				{request.previousDenial && (
+					<div className="
+						rounded-[12px]
+						bg-yellow-light
+						px-5
+						py-4
+					">
+						<p className="
+							font-vietnam
+							text-[11px]
+							uppercase
+							tracking-[0.12em]
+							text-yellow-dark
+						">
+							sent back once before
+						</p>
+						<p className="
+							mt-1.5
+							font-vietnam
+							text-sm
+							text-black/75
+						">
+							{request.previousDenial}
+						</p>
+					</div>
+				)}
+			</div>
 		</Dialog>
 	)
 }
@@ -971,7 +1116,7 @@ function QueueAction({ label, tint, onClick, children }) {
 // Every officer's receipts, and the two decisions that move one along:
 // approving says the club agrees it owes the money, reimbursing says it's been
 // handed back — and that second one is what writes the expense row.
-function RequestQueue({ requests, filter, onFilter, onApprove, onDeny, onReimburse, onPhoto }) {
+function RequestQueue({ requests, filter, onFilter, onApprove, onDeny, onReimburse, onView }) {
 	const rows = filter === 'all'
 		? requests
 		: requests.filter((request) => request.status === filter)
@@ -1099,14 +1244,15 @@ function RequestQueue({ requests, filter, onFilter, onApprove, onDeny, onReimbur
 										items-center
 										gap-3
 									">
-										{/* the photo is the evidence — clickable when there is
-										    one, a plain placeholder when there isn't */}
+										{/* the photo is the evidence, and it opens the receipt.
+										    So does a row with nothing attached: that the photo is
+										    missing is itself worth being able to look at */}
 										<button
 											type="button"
-											onClick={() => request.image && onPhoto(request)}
-											disabled={!request.image}
-											aria-label={request.image ? 'View receipt photo' : 'No photo attached'}
-											className={`
+											onClick={() => onView(request)}
+											aria-label="View receipt"
+											title="View receipt"
+											className="
 												w-10
 												h-10
 												shrink-0
@@ -1116,13 +1262,12 @@ function RequestQueue({ requests, filter, onFilter, onApprove, onDeny, onReimbur
 												overflow-hidden
 												rounded-[8px]
 												bg-cream
+												cursor-pointer
 												transition-transform
 												duration-200
 												ease-out
-												${request.image
-													? 'cursor-pointer hover:-translate-y-0.5'
-													: 'cursor-default'}
-											`}
+												hover:-translate-y-0.5
+											"
 										>
 											{request.image
 												? <img
@@ -1242,7 +1387,9 @@ function RequestQueue({ requests, filter, onFilter, onApprove, onDeny, onReimbur
 								</td>
 
 								{/* what's offered follows the status, so nothing here can be
-								    clicked into a state it shouldn't reach */}
+								    clicked into a state it shouldn't reach. Nothing for
+								    reading it: the thumbnail at the head of the row is
+								    already the way into the receipt */}
 								<td className="px-2 py-3">
 									<div className="
 										flex
@@ -1349,7 +1496,8 @@ export default function TreasurerAnalytics() {
 	// the request being turned down, held while its reason is written
 	const [denying, setDenying] = useState(null)
 	const [queueFilter, setQueueFilter] = useState('all')
-	const [photo, setPhoto] = useState(null)
+	// the request being read rather than acted on
+	const [viewing, setViewing] = useState(null)
 
 	const yearIncome = inYear(income, year)
 	const yearExpenses = inYear(expenses, year)
@@ -1504,10 +1652,10 @@ export default function TreasurerAnalytics() {
 					/>
 				</div>
 
-				{/* keyed on the tab so the sort and the funnel start fresh on each
-				    one — a category ticked on expenses means nothing on income */}
+				{/* not keyed on the tab: the card resets its own sort and funnel when
+				    the tab moves (see LedgerCard), and remounting it here would replay
+				    the page's entrance every time a tab is clicked */}
 				<LedgerCard
-					key={tab}
 					tab={tab}
 					onTab={setTab}
 					rows={rows}
@@ -1524,7 +1672,7 @@ export default function TreasurerAnalytics() {
 					onApprove={approve}
 					onDeny={setDenying}
 					onReimburse={reimburse}
-					onPhoto={setPhoto}
+					onView={setViewing}
 				/>
 			</div>
 
@@ -1567,10 +1715,10 @@ export default function TreasurerAnalytics() {
 				/>
 			)}
 
-			{photo && (
-				<PhotoDialog
-					request={photo}
-					onClose={() => setPhoto(null)}
+			{viewing && (
+				<ReceiptDialog
+					request={viewing}
+					onClose={() => setViewing(null)}
 				/>
 			)}
 		</DashboardShell>

@@ -1059,9 +1059,9 @@ export default function OfficerCalendar() {
 	}
 
 	const weeks = monthWeeks(view.year, view.month)
-	const key = monthKey(view.year, view.month)
-	const seeded = entries[key] ?? {}
-	const mine = added[key] ?? {}
+	const stamp = monthKey(view.year, view.month)
+	const seeded = entries[stamp] ?? {}
+	const mine = added[stamp] ?? {}
 
 	return (
 		// my-auto rather than justify-center: it centers the sheet in the page but
@@ -1286,9 +1286,15 @@ export default function OfficerCalendar() {
 						))}
 					</div>
 
+					{/* the month is in the key, not just the row number: stepping to
+					    another month is a fresh set of rows rather than the same seven
+					    cells being relabelled, so every cell mounts again and the wave
+					    runs across the new month the way it did on arrival. Keyed on the
+					    row alone, only the cells whose date happened to change would
+					    remount, and the wave would come through in patches. */}
 					{weeks.map((week, i) => (
 						<div
-							key={i}
+							key={`${stamp}-${i}`}
 							className="
 								grid
 								grid-cols-7
