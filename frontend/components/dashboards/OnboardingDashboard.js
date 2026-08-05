@@ -9,8 +9,11 @@ export default function OnboardingDashboard() {
 			bg-cream
 			w-full
 			min-h-screen
+			overflow-x-clip
 			p-4
 			flex
+			flex-col
+			lg:flex-row
 			gap-4
 		">
 			<Sidebar

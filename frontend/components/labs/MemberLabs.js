@@ -18,7 +18,15 @@ import DashboardShell from '@/components/dashboards/DashboardShell'
 
 // Width of the vertical tab strip on each panel's left edge, and how long the
 // slide takes. Retune the whole interaction from these two.
-const TAB_W = 100
+//
+// The width is a CSS variable rather than a number because it has to shrink on
+// a phone — a 100px strip out of a 390px screen is a quarter of the page spent
+// on a handle. Everything that needs it (the strip itself, the room the cards
+// leave for the parked tab, how far the front panel travels) reads --tab-w, so
+// the whole interaction rescales from the one declaration on the box below and
+// none of it needs to measure the window.
+const TAB_W = 'var(--tab-w)'
+const TAB_SIZES = '[--tab-w:56px] sm:[--tab-w:72px] lg:[--tab-w:100px]'
 const SLIDE_MS = 550
 
 // Hovering the tab of the minimized panel widens its sliver by this much, so it
@@ -277,19 +285,21 @@ function LabCard({ title, date, image, icon, action, availability }) {
 							text-sm
 							shrink-0
 							whitespace-nowrap
-							mr-2
 						">
 							{availability}
 						</span>
 					)}
 				</div>
 
-				{/* date line: the icon is the one bit that differs between sections */}
+				{/* date line: the icon is the one bit that differs between sections.
+				    The gap and the icon's inset are tight because the cards get
+				    narrow once the grid drops to two or three across — every pixel
+				    spent here is one the date loses to its ellipsis. */}
 				<div className="
 					flex
 					items-end
 					justify-between
-					gap-2
+					gap-1.5
 				">
 					<p className="
 						font-vietnam
@@ -302,7 +312,6 @@ function LabCard({ title, date, image, icon, action, availability }) {
 					</p>
 					<span className="
 						shrink-0
-						mr-2
 						-translate-y-2
 					">
 						{icon}
@@ -340,8 +349,12 @@ function LabGrid({ items, icons, renderAction }) {
 		">
 			<div className="
 				grid
-				grid-cols-4
-				gap-5
+				grid-cols-1
+				sm:grid-cols-2
+				xl:grid-cols-3
+				2xl:grid-cols-4
+				gap-4
+				sm:gap-5
 			">
 				{items.map((lab) => (
 					<LabCard
@@ -390,11 +403,13 @@ function SideTab({ label, onClick, onPeek, color, hidden = false }) {
 				ease-out
 				${hidden ? 'opacity-0 pointer-events-none' : 'opacity-100'}
 			`}
-			style={{ width: `${TAB_W}px` }}
+			style={{ width: TAB_W }}
 		>
 			<span className={`
 				font-vietnam
-				text-[22px]
+				text-[16px]
+				sm:text-[19px]
+				lg:text-[22px]
 				[writing-mode:vertical-rl]
 				rotate-180
 				transition-transform
@@ -413,12 +428,18 @@ function PanelHeading({ children }) {
 	return (
 		<h1 className="
 			font-canobis
-			[-webkit-text-stroke:2px_black]
+			[-webkit-text-stroke:1px_black]
+			lg:[-webkit-text-stroke:2px_black]
 			text-black
-			text-[45px]
+			text-[30px]
+			sm:text-[36px]
+			lg:text-[45px]
 			text-center
-			pt-15
-			pb-5
+			pt-6
+			sm:pt-10
+			lg:pt-15
+			pb-4
+			lg:pb-5
 			select-none
 		">
 			{children}
@@ -484,18 +505,36 @@ export default function MemberLabs() {
 	return (
 		<DashboardShell className="
 			relative
-			-my-8
-			-mr-8
-			ml-20
+			lg:-mt-8
+			lg:-mb-8
+			lg:-mr-8
+			lg:ml-8
+			xl:ml-12
+			2xl:ml-20
 		">
 			{/* page-plain: the panels inside bring their own entrance, so this
-			    box doesn't take the standard one on top of it */}
-			<div className="
+			    box doesn't take the standard one on top of it.
+
+			    The panels are absolutely positioned, so this box is the only
+			    thing that can give them a height. Above `lg` it takes the one the
+			    shell's scroll column already has; below that the shell is part of
+			    a page that grows with its content, so the box has to name a
+			    height itself — the window less the menu bar and the padding
+			    around it — or it collapses to nothing and takes the panels with
+			    it. `dvh` because mobile browsers move the bottom bar around. */}
+			<div className={`
 				page-plain
-				absolute
-				inset-0
+				${TAB_SIZES}
+				relative
+				h-[calc(100dvh-7rem)]
+				sm:h-[calc(100dvh-8rem)]
+				lg:h-auto
+				lg:absolute
+				lg:inset-0
 				overflow-hidden
-			">
+				rounded-[30px]
+				lg:rounded-none
+			`}>
 				{/* back panel: upcoming */}
 				<section
 					className="
@@ -504,8 +543,10 @@ export default function MemberLabs() {
 						inset-y-0
 						right-0
 						bg-salmon
-						rounded-tl-[60px]
-						rounded-bl-[60px]
+						rounded-tl-[40px]
+						rounded-bl-[40px]
+						lg:rounded-tl-[60px]
+						lg:rounded-bl-[60px]
 						shadow-[-5px_1px_4px_rgba(0,0,0,0.7)]
 						flex
 						transition-transform
@@ -527,16 +568,18 @@ export default function MemberLabs() {
 					/>
 
 					{/* the parked "current" tab sits over this panel's right edge once
-					    it slides away, so keep TAB_W (plus a little air) clear of cards */}
+					    it slides away, so keep --tab-w (plus a little air) clear of cards */}
 					<div
 						className="
 							flex-1
 							min-w-0
 							flex
 							flex-col
-							pb-8
+							pb-6
+							lg:pb-8
+							pr-[calc(var(--tab-w)+12px)]
+							lg:pr-[calc(var(--tab-w)+40px)]
 						"
-						style={{ paddingRight: `${TAB_W + 40}px` }}
 					>
 						<PanelHeading>UPCOMING</PanelHeading>
 						<LabGrid
@@ -560,8 +603,10 @@ export default function MemberLabs() {
 						inset-y-0
 						right-0
 						bg-salmon-light
-						rounded-tl-[60px]
-						rounded-bl-[60px]
+						rounded-tl-[40px]
+						rounded-bl-[40px]
+						lg:rounded-tl-[60px]
+						lg:rounded-bl-[60px]
 						flex
 						shadow-[-5px_1px_4px_rgba(0,0,0,0.5)]
 						transition-transform
@@ -569,10 +614,10 @@ export default function MemberLabs() {
 					"
 					style={{
 						'--slide': '130px',
-						left: `${TAB_W + SHADOW_ROOM}px`,
+						left: `calc(${TAB_W} + ${SHADOW_ROOM}px)`,
 						transitionDuration: `${slideMs}ms`,
 						transform: showUpcoming
-							? `translateX(calc(100% - ${TAB_W + currentNudge}px))`
+							? `translateX(calc(100% - ${TAB_W} - ${currentNudge}px))`
 							: 'translateX(0)',
 					}}
 				>
@@ -589,8 +634,10 @@ export default function MemberLabs() {
 						min-w-0
 						flex
 						flex-col
-						pr-10
-						pb-8
+						pr-4
+						lg:pr-10
+						pb-6
+						lg:pb-8
 					">
 						<PanelHeading>CURRENT</PanelHeading>
 						<LabGrid items={current} icons={currentIcons} />

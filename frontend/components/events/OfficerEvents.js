@@ -178,7 +178,8 @@ function EventCard({ title, date, image, onEdit }) {
 					<p className="
 						font-vietnam
 						text-black/70
-						text-sm
+						text-xs
+						sm:text-sm
 						mt-1
 						truncate
 					">
@@ -272,7 +273,8 @@ function ConfirmDeleteDialog({ label, onCancel, onConfirm }) {
 				items-center
 				justify-center
 				bg-black/40
-				p-8
+				p-4
+				sm:p-8
 				${closing ? 'dialog-leaving' : 'dialog-open'}
 			`}
 			onClick={cancel}
@@ -283,7 +285,8 @@ function ConfirmDeleteDialog({ label, onCancel, onConfirm }) {
 				aria-modal="true"
 				aria-label="Delete event"
 				className="
-					w-[420px]
+					w-full
+					max-w-[420px]
 					bg-cream
 					rounded-[20px]
 					p-8
@@ -441,7 +444,8 @@ function EventDialog({ event, onClose, onSave, onDelete }) {
 				items-center
 				justify-center
 				bg-black/40
-				p-8
+				p-4
+				sm:p-8
 				${closing ? 'dialog-leaving' : 'dialog-open'}
 			`}
 			onClick={close}
@@ -454,7 +458,10 @@ function EventDialog({ event, onClose, onSave, onDelete }) {
 				aria-modal="true"
 				aria-label={event ? 'Edit event' : 'New event'}
 				className="
-					w-[560px]
+					w-full
+					max-w-[560px]
+					max-h-[90dvh]
+					overflow-y-auto
 					max-h-[85vh]
 					overflow-y-auto
 					bg-cream
@@ -532,7 +539,8 @@ function EventDialog({ event, onClose, onSave, onDelete }) {
 
 					<div className="
 						grid
-						grid-cols-2
+						grid-cols-1
+						sm:grid-cols-2
 						gap-4
 					">
 						<label className="block">
@@ -557,7 +565,8 @@ function EventDialog({ event, onClose, onSave, onDelete }) {
 
 					<div className="
 						grid
-						grid-cols-2
+						grid-cols-1
+						sm:grid-cols-2
 						gap-4
 					">
 						<label className="block">
@@ -810,15 +819,21 @@ export default function OfficerEvents() {
 				flex
 				items-center
 				justify-center
-				gap-5
-				pt-6
-				pb-10
+				gap-3
+				sm:gap-5
+				pt-4
+				sm:pt-6
+				pb-6
+				sm:pb-10
 			">
 				<h1 className="
 					font-canobis
-					[-webkit-text-stroke:2px_black]
+					[-webkit-text-stroke:1px_black]
+					sm:[-webkit-text-stroke:2px_black]
 					text-black
-					text-[45px]
+					text-[30px]
+					sm:text-[38px]
+					lg:text-[45px]
 					select-none
 				">
 					ALL EVENTS
@@ -859,8 +874,13 @@ export default function OfficerEvents() {
 
 			<div className="
 				grid
-				grid-cols-5
-				gap-8
+				grid-cols-2
+				lg:grid-cols-3
+				xl:grid-cols-4
+				2xl:grid-cols-5
+				gap-3
+				sm:gap-5
+				lg:gap-8
 				px-3
 				pb-3
 			">

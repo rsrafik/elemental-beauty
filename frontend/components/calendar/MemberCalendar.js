@@ -19,6 +19,10 @@ const MONTH = 7 // 0-indexed: August
 // columns are held to it, so a five-week month leaves empty space under the
 // last row instead of dragging the title and the legends up with it — stepping
 // through the months never moves anything but the days themselves.
+//
+// It only applies from `lg` up, where the two columns are actually side by side.
+// Stacked, there is no second column to hold level with and a fixed height would
+// just be a hole under the grid.
 const SHEET_H = 815
 
 const WEEKDAYS = ['sun', 'mon', 'tue', 'wed', 'thu', 'fri', 'sat']
@@ -216,9 +220,17 @@ function Day({ number, inMonth, entry, wave = 0 }) {
 			className="
 				calendar-cell
 				group
-				min-h-[112px]
-				pt-3
-				pr-2
+				min-h-[42px]
+				md:min-h-[90px]
+				lg:min-h-[112px]
+				flex
+				md:block
+				items-center
+				justify-center
+				pt-0
+				md:pt-3
+				pr-0
+				md:pr-2
 			"
 		>
 			<span className={`
@@ -241,8 +253,16 @@ function Day({ number, inMonth, entry, wave = 0 }) {
 				{number}
 			</span>
 
+			{/* A seven-column month on a phone gives each day about 45px, which is
+			    room for the badge and nothing else — so below `md` the cell is just
+			    the badge and its colour, and what's actually on those days is listed
+			    under the grid instead (see Agenda). */}
 			{entry && (
-				<div className="mt-3">
+				<div className="
+					hidden
+					md:block
+					mt-3
+				">
 					<p className="
 						font-vietnam
 						text-[10px]
@@ -263,6 +283,91 @@ function Day({ number, inMonth, entry, wave = 0 }) {
 					</p>
 				</div>
 			)}
+		</div>
+	)
+}
+
+// What the cells can't say on a narrow screen. One row per day that has
+// something on it, in date order, carrying the same badge colour the cell does
+// so the list and the grid read as the same thing.
+function Agenda({ days }) {
+	if (!days.length) return null
+	return (
+		<div className="
+			md:hidden
+			mt-6
+		">
+			<div className="
+				bg-salmon
+				rounded-full
+				py-2
+				text-center
+			">
+				<span className="
+					font-vietnam
+					font-semibold
+					text-cream
+					text-sm
+					uppercase
+					tracking-[0.15em]
+				">
+					this month
+				</span>
+			</div>
+
+			<ul className="
+				mt-4
+				flex
+				flex-col
+				gap-3
+			">
+				{days.map(({ number, entry }) => (
+					<li
+						key={number}
+						className="
+							flex
+							items-start
+							gap-3
+						"
+					>
+						<span className={`
+							w-7
+							h-7
+							shrink-0
+							flex
+							items-center
+							justify-center
+							rounded-full
+							font-vietnam
+							font-semibold
+							text-xs
+							${TRACKS[entry.track].pill}
+						`}>
+							{number}
+						</span>
+						<div className="min-w-0">
+							<p className="
+								font-vietnam
+								text-[10px]
+								uppercase
+								tracking-[0.12em]
+								text-black/45
+							">
+								{entry.type}
+							</p>
+							<p className="
+								font-vietnam
+								text-sm
+								leading-tight
+								text-black
+								mt-0.5
+							">
+								{entry.title}
+							</p>
+						</div>
+					</li>
+				))}
+			</ul>
 		</div>
 	)
 }
@@ -288,6 +393,14 @@ export default function MemberCalendar() {
 	const visible = (entry) =>
 		entry && VISIBLE_TRACKS.includes(entry.track) ? entry : null
 
+	// The same days the grid shows a badge for, in date order — what the narrow
+	// layout lists under the month.
+	const agendaDays = Object.keys(monthEntries)
+		.map(Number)
+		.sort((a, b) => a - b)
+		.map((number) => ({ number, entry: visible(monthEntries[number]) }))
+		.filter(({ entry }) => entry)
+
 	return (
 		// my-auto rather than justify-center: it centers the sheet in the page but
 		// still lets a tall month scroll from its top instead of clipping it.
@@ -299,23 +412,35 @@ export default function MemberCalendar() {
 			    of how many week rows the month happens to have. items-stretch then
 			    hands that same height to both, which is what lets the title sit on
 			    the top edge and the legends on the bottom one. */}
+			{/* The columns don't pair off until `xl`. At `lg` the sidebar has
+			    already taken 327px of the window, and a 340px title column beside
+			    that leaves the seven days about 30px each. */}
 			<div
 				className="
-					my-auto
+					xl:my-auto
 					flex
+					flex-col
+					xl:flex-row
 					items-stretch
-					gap-12
-					pr-2
+					gap-8
+					xl:gap-8
+					2xl:gap-12
+					xl:h-[var(--sheet-h)]
+					pr-0
+					xl:pr-2
 				"
-				style={{ height: `${SHEET_H}px` }}
+				style={{ '--sheet-h': `${SHEET_H}px` }}
 			>
 				{/* left column: month at the top, legends pushed to the bottom.
 				    calendar-side / calendar-grid bring the two columns in from
 				    opposite edges (see globals.css) — the depth is in them moving
-				    against each other, with the day cells washing across after. */}
+				    against each other, with the day cells washing across after.
+				    Stacked, they're a header above the grid instead. */}
 				<div className="
 					calendar-side
-					w-[340px]
+					w-full
+					xl:w-[280px]
+					2xl:w-[340px]
 					shrink-0
 					flex
 					flex-col
@@ -323,7 +448,10 @@ export default function MemberCalendar() {
 					<h1 className="
 						font-canobis
 						text-black
-						text-[76px]
+						text-[48px]
+						sm:text-[60px]
+						xl:text-[64px]
+						2xl:text-[76px]
 						leading-none
 						select-none
 					">
@@ -342,7 +470,10 @@ export default function MemberCalendar() {
 							font-vietnam
 							font-semibold
 							text-black/35
-							text-[42px]
+							text-[28px]
+							sm:text-[34px]
+							xl:text-[36px]
+							2xl:text-[42px]
 							leading-none
 						">
 							{view.year}
@@ -365,10 +496,12 @@ export default function MemberCalendar() {
 
 					{/* mt-auto drops both legends to the bottom of the column, so they
 					    finish level with the last rule of the grid. pt-12 keeps them off
-					    the title on a short month. */}
+					    the title on a short month. Stacked there's no grid beside them
+					    to finish level with, so they just follow the title. */}
 					<div className="
-						mt-auto
-						pt-12
+						xl:mt-auto
+						pt-8
+						xl:pt-12
 					">
 						<div className="
 							bg-salmon
@@ -439,7 +572,8 @@ export default function MemberCalendar() {
 					<div className="
 						grid
 						grid-cols-7
-						gap-2
+						gap-1
+						sm:gap-2
 					">
 						{WEEKDAYS.map((day, column) => (
 							<div
@@ -449,17 +583,22 @@ export default function MemberCalendar() {
 									calendar-cell
 									bg-salmon
 									rounded-full
-									py-1.5
+									py-1
+									sm:py-1.5
 									text-center
+									overflow-hidden
 								"
 							>
 								<span className="
 									font-vietnam
 									font-semibold
 									text-cream
-									text-sm
+									text-[10px]
+									sm:text-xs
+									lg:text-sm
 									uppercase
-									tracking-[0.15em]
+									tracking-normal
+									sm:tracking-[0.15em]
 								">
 									{day}
 								</span>
@@ -479,10 +618,12 @@ export default function MemberCalendar() {
 							className="
 								grid
 								grid-cols-7
-								gap-2
+								gap-1
+								sm:gap-2
 								border-b
 								border-black/20
-								pb-4
+								pb-2
+								md:pb-4
 							"
 						>
 							{week.map((day, column) => (
@@ -503,6 +644,8 @@ export default function MemberCalendar() {
 						border-b
 						border-black/20
 					" />
+
+					<Agenda days={agendaDays} />
 				</div>
 			</div>
 		</DashboardShell>

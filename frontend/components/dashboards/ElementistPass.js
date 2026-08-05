@@ -53,32 +53,52 @@ export default function ElementistPass() {
 					${flipped ? '[transform:rotateY(180deg)]' : ''}
 				`}
 			>
-				{/* FRONT */}
+				{/* FRONT.
+
+				    The photo sits beside the details while there's room for both;
+				    on a narrow card it goes above them instead and stops being a
+				    fixed 240px square, because two columns inside a phone-width
+				    card leaves neither one usable. */}
 				<div className="
 					[backface-visibility:hidden]
 					bg-salmon
 					rounded-[10px]
-					p-6
+					p-4
+					sm:p-6
 					flex
-					gap-6
+					flex-col
+					sm:flex-row
+					items-center
+					sm:items-stretch
+					gap-4
+					sm:gap-6
 					shadow-[-4px_4px_9px_rgba(0,0,0,0.5)]
 				">
+					{/* a share of the card rather than a fixed 240px, so the photo
+					    gives ground as the card narrows instead of squeezing the
+					    details out */}
 					<div className="
 						bg-neutral-300
-						w-[240px]
+						w-full
+						max-w-[240px]
+						sm:w-[38%]
 						aspect-square
 						rounded-md
 						shrink-0
 					" />
 					<div className="
 						flex-1
+						min-w-0
+						w-full
 						flex
 						flex-col
 					">
 						<h3 className="
 							font-starbim
 							text-yellow-light
-							text-2xl
+							text-lg
+							sm:text-xl
+							2xl:text-2xl
 							text-center
 							tracking-wide
 							whitespace-nowrap
@@ -91,22 +111,31 @@ export default function ElementistPass() {
 						<PassField label="last name" value="Nakao" />
 						<div className="
 							flex
-							gap-3
-							items-end
+							flex-col
+							sm:flex-row
+							gap-2
+							sm:gap-3
+							items-stretch
+							sm:items-end
 						">
 							<PassField
 								label="date joined"
 								value="08/24/2026"
-								className="w-40 shrink-0"
+								className="sm:flex-1 sm:min-w-0"
 							/>
+							{/* wraps rather than holding one line: the card gets narrow
+							    enough at some widths that a nowrap line here is what
+							    would push the whole pass out of its column */}
 							<p className="
 								font-beachday
 								font-bold
-								text-[20px]
+								text-[17px]
+								sm:text-[20px]
 								text-salmon-med
 								pb-1
 								flex-1
-								whitespace-nowrap
+								min-w-0
+								leading-tight
 								text-center
 							">
 								CLICK CARD FOR QR CODE
@@ -123,7 +152,8 @@ export default function ElementistPass() {
 					[transform:rotateY(180deg)]
 					bg-salmon
 					rounded-[10px]
-					p-6
+					p-4
+					sm:p-6
 					flex
 					flex-col
 					items-center
@@ -131,16 +161,22 @@ export default function ElementistPass() {
 					gap-4
 					shadow-[-4px_4px_9px_rgba(0,0,0,0.5)]
 				">
+					{/* the QR has to stay inside the card whatever the card's height
+					    is — the front is what sets that, and on a narrow screen the
+					    front is much taller than it is wide */}
 					<div className="
 						bg-neutral-300
 						w-[225px]
+						max-w-full
+						max-h-[60%]
 						aspect-square
 						rounded-md
 					" />
 					<p className="
 						font-beachday
 						font-bold
-						text-[20px]
+						text-[17px]
+						sm:text-[20px]
 						text-salmon-med
 						text-center
 					">

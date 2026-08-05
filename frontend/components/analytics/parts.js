@@ -784,7 +784,7 @@ export function DialogActions({ onCancel, submitLabel, ready = true, tint = 'bg-
 // that swallows its own clicks so only the backdrop closes, and the title row
 // with its close button. `as` is 'form' for anything being filled in, so the
 // enter key submits from any field.
-export function Dialog({ title, note, onClose, onSubmit, children, closing = false, width = 'w-[560px]' }) {
+export function Dialog({ title, note, onClose, onSubmit, children, closing = false, width = 'max-w-[560px]' }) {
 	useEffect(() => {
 		const onKey = (event) => {
 			if (event.key === 'Escape') onClose()
@@ -808,7 +808,8 @@ export function Dialog({ title, note, onClose, onSubmit, children, closing = fal
 				items-center
 				justify-center
 				bg-black/40
-				p-8
+				p-4
+				sm:p-8
 				${closing ? 'dialog-leaving' : 'dialog-open'}
 			`}
 			onClick={onClose}
@@ -820,12 +821,14 @@ export function Dialog({ title, note, onClose, onSubmit, children, closing = fal
 				aria-modal="true"
 				aria-label={title}
 				className={`
+					w-full
 					${width}
-					max-h-[85vh]
+					max-h-[85dvh]
 					overflow-y-auto
 					bg-cream
 					rounded-[20px]
-					p-8
+					p-5
+					sm:p-8
 					shadow-[0_10px_40px_rgba(0,0,0,0.35)]
 				`}
 			>
@@ -838,7 +841,8 @@ export function Dialog({ title, note, onClose, onSubmit, children, closing = fal
 					<h2 className="
 						font-beachday
 						text-black
-						text-[38px]
+						text-[28px]
+						sm:text-[38px]
 						leading-none
 					">
 						{title}
@@ -897,7 +901,7 @@ export function ConfirmDialog({ title, body, confirmLabel, onCancel, onConfirm }
 			title={title}
 			onClose={cancel}
 			closing={closing}
-			width="w-[440px]"
+			width="max-w-[440px]"
 		>
 			<p className="
 				font-vietnam

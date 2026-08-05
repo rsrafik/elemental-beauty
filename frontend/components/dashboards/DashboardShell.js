@@ -19,14 +19,26 @@ export default function DashboardShell({
 	className = '',
 }) {
 	return (
+		// Above `lg` this is a fixed-height two-column frame and the content
+		// column is what scrolls. Below it the columns stack — menu bar on top,
+		// content under it — and the page scrolls as a whole, because a
+		// locked-height column inside a phone-sized window leaves nowhere to put
+		// anything.
 		<main className="
 			bg-cream
 			w-full
-			h-screen
-			overflow-hidden
-			p-8
+			min-h-screen
+			lg:h-screen
+			overflow-x-clip
+			lg:overflow-hidden
+			p-4
+			sm:p-6
+			lg:p-8
 			flex
-			gap-6
+			flex-col
+			lg:flex-row
+			gap-4
+			lg:gap-6
 		">
 			<Sidebar
 				items={navFor(currentRole)}
@@ -43,7 +55,7 @@ export default function DashboardShell({
 				page-stagger
 				flex-1
 				min-w-0
-				overflow-y-auto
+				lg:overflow-y-auto
 				${className}
 			`}>
 				{children}

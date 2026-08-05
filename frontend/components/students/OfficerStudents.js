@@ -622,7 +622,8 @@ function ConfirmDeleteDialog({ students, onCancel, onConfirm }) {
 				items-center
 				justify-center
 				bg-black/40
-				p-8
+				p-4
+				sm:p-8
 				${closing ? 'dialog-leaving' : 'dialog-open'}
 			`}
 			onClick={cancel}
@@ -633,7 +634,10 @@ function ConfirmDeleteDialog({ students, onCancel, onConfirm }) {
 				aria-modal="true"
 				aria-label="Delete students"
 				className="
-					w-[460px]
+					w-full
+					max-w-[460px]
+					max-h-[90dvh]
+					overflow-y-auto
 					bg-cream
 					rounded-[20px]
 					p-8
@@ -643,7 +647,8 @@ function ConfirmDeleteDialog({ students, onCancel, onConfirm }) {
 				<h2 className="
 					font-beachday
 					text-black
-					text-[32px]
+					text-[26px]
+					sm:text-[32px]
 					leading-none
 				">
 					delete {many ? `${students.length} students` : 'student'}?
@@ -796,7 +801,8 @@ function AddStudentDialog({ onClose, onSave }) {
 				items-center
 				justify-center
 				bg-black/40
-				p-8
+				p-4
+				sm:p-8
 				${closing ? 'dialog-leaving' : 'dialog-open'}
 			`}
 			onClick={close}
@@ -809,7 +815,10 @@ function AddStudentDialog({ onClose, onSave }) {
 				aria-modal="true"
 				aria-label="Add a student"
 				className="
-					w-[560px]
+					w-full
+					max-w-[560px]
+					max-h-[90dvh]
+					overflow-y-auto
 					max-h-[85vh]
 					overflow-y-auto
 					bg-cream
@@ -827,7 +836,8 @@ function AddStudentDialog({ onClose, onSave }) {
 					<h2 className="
 						font-beachday
 						text-black
-						text-[38px]
+						text-[28px]
+						sm:text-[38px]
 						leading-none
 					">
 						add a student
@@ -866,7 +876,8 @@ function AddStudentDialog({ onClose, onSave }) {
 				">
 					<div className="
 						grid
-						grid-cols-2
+						grid-cols-1
+						sm:grid-cols-2
 						gap-4
 					">
 						<label className="block">
@@ -1353,14 +1364,20 @@ export default function OfficerStudents() {
 				h-full
 			">
 				{/* the title and the toolbar share a row, both sitting on the cream —
-				    the white belongs to the table alone */}
+				    the white belongs to the table alone. Narrow, the toolbar drops
+				    under the title and its controls wrap among themselves rather
+				    than being squeezed onto one line. */}
 				<div className="
 					flex
+					flex-col
+					lg:flex-row
 					shrink-0
-					items-end
+					items-stretch
+					lg:items-end
 					justify-between
 					gap-4
-					pt-15
+					pt-6
+					lg:pt-15
 					pb-6
 				">
 					<div className="
@@ -1371,7 +1388,8 @@ export default function OfficerStudents() {
 						<h1 className="
 							font-canobis
 							text-black
-							text-[35px]
+							text-[28px]
+							sm:text-[35px]
 							[-webkit-text-stroke:1px_black]
 							leading-none
 							select-none
@@ -1400,6 +1418,7 @@ export default function OfficerStudents() {
 
 					<div className="
 						flex
+						flex-wrap
 						items-center
 						gap-3
 					">
@@ -1410,7 +1429,10 @@ export default function OfficerStudents() {
 							border-b
 							border-black/25
 							pb-1
-							w-56
+							flex-1
+							min-w-[160px]
+							lg:flex-none
+							lg:w-56
 							transition-colors
 							duration-200
 							ease-out

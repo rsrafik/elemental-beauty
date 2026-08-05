@@ -653,7 +653,8 @@ function EntryDialog({ kind, entry, onClose, onSave }) {
 
 				<div className="
 					grid
-					grid-cols-2
+					grid-cols-1
+					sm:grid-cols-2
 					gap-4
 				">
 					<label className="block">
@@ -799,7 +800,8 @@ function GrantDialog({ grant, onClose, onSave }) {
 
 				<div className="
 					grid
-					grid-cols-2
+					grid-cols-1
+					sm:grid-cols-2
 					gap-4
 				">
 					<label className="block">
@@ -886,7 +888,7 @@ function ReceiptDialog({ request, onClose }) {
 			note={`${request.who} · ${prettyDate(request.date)} · ${money(request.amount)}`}
 			onClose={() => dismiss(onClose)}
 			closing={closing}
-			width="w-[520px]"
+			width="max-w-[520px]"
 		>
 			{request.image
 				? <img
@@ -1042,7 +1044,7 @@ function DenyDialog({ request, onClose, onSave }) {
 			onClose={close}
 			onSubmit={submit}
 			closing={closing}
-			width="w-[520px]"
+			width="max-w-[520px]"
 		>
 			<div className="mt-6">
 				<label className="block">
@@ -1579,7 +1581,16 @@ export default function TreasurerAnalytics() {
 		// column scrolls, which makes it a clipping box, and with nothing between
 		// a card and its edge the shadow gets sliced off down the sides. py-8
 		// leaves the same air over the first card and under the last one.
-		<DashboardShell className="-my-8 -mr-8 py-8 pr-11 pl-3">
+		<DashboardShell className="
+			lg:-mt-8
+			lg:-mb-8
+			lg:-mr-8
+			py-2
+			lg:py-8
+			pr-3
+			lg:pr-11
+			pl-3
+		">
 			{/* the cards are a level in from the shell, so the stagger is repeated
 			    here — otherwise the whole page would arrive as one block */}
 			<div className="

@@ -40,6 +40,28 @@ function PodiumSpot({ name, medal, height }) {
 	)
 }
 
+// The date written up the corner of one of the upcoming rings. All three rings
+// carry the same one, so it lives here — and it sits closer in on a narrow
+// panel, where 40px from the corner puts it off the ring entirely.
+function RingDate({ children }) {
+	return (
+		<p className="
+			absolute
+			top-[20px]
+			right-[20px]
+			lg:top-[40px]
+			lg:right-[40px]
+			rotate-[45deg]
+			font-handrawn
+			text-[20px]
+			lg:text-[20px]
+			text-black
+		">
+			{children}
+		</p>
+	)
+}
+
 function LeaderRow({ place, name }) {
 	return (
 		<div className="
@@ -67,11 +89,18 @@ export default function OfficerDashboard() {
 		<main className="
 			bg-cream
 			w-full
-			h-screen
-			overflow-hidden
-			p-8
+			min-h-screen
+			xl:h-screen
+			overflow-x-clip
+			xl:overflow-hidden
+			p-4
+			sm:p-6
+			lg:p-8
 			flex
-			gap-6
+			flex-col
+			lg:flex-row
+			gap-4
+			lg:gap-6
 		">
 			<Sidebar
 				items={navFor(currentRole)}
@@ -81,24 +110,35 @@ export default function OfficerDashboard() {
 			{/* 2x2 grid + centered overlay circle. page-enter / page-stagger are
 			    the entrance (see globals.css) — the grid drifts up and the four
 			    quadrants come in one after another, so landing here from the
-			    sidebar reads as movement rather than a swap. */}
+			    sidebar reads as movement rather than a swap.
+
+			    Below `lg` the four quadrants become one column and the circle
+			    stops being an overlay — there's no intersection to sit on once
+			    they're stacked, so it leaves the middle and becomes the heading at
+			    the top instead. */}
 			<section className="
 				page-enter
 				page-stagger
 				flex-1
+				min-w-0
 				relative
 				grid
-				grid-cols-2
-				grid-rows-2
-				gap-10
-                m-10
+				grid-cols-1
+				xl:grid-cols-2
+				xl:grid-rows-2
+				gap-6
+				xl:gap-10
+				m-0
+                xl:m-10
 			">
 				{/* quick actions */}
 				<div className="
 					bg-salmon
-					rounded-tl-[100px]
+					rounded-[30px]
+					xl:rounded-none
+					xl:rounded-tl-[100px]
 					p-6
-                    px-15
+                    xl:px-15
 					flex
 					flex-col
 					items-center
@@ -170,11 +210,18 @@ export default function OfficerDashboard() {
 				</div>
 
 				{/* upcoming */}
+				{/* every layer in here is absolutely positioned, so the panel has no
+				    content to get its height from — the 2x2 grid row used to supply
+				    it. Stacked, it has to bring its own. */}
 				<div className="
 					relative
 					overflow-hidden
 					bg-orange
-					rounded-tr-[100px]
+					rounded-[30px]
+					xl:rounded-none
+					xl:rounded-tr-[100px]
+					min-h-[420px]
+					xl:min-h-0
 				">
                     <h2 className="
 						absolute
@@ -196,7 +243,8 @@ export default function OfficerDashboard() {
 						left-0
 						w-[85%]
 						h-[80%]
-						rounded-tr-[100px]
+						rounded-tr-[60px]
+						xl:rounded-tr-[100px]
 						border-black/10
 						bg-orange-light
 						flex
@@ -208,23 +256,18 @@ export default function OfficerDashboard() {
 						ease-out
                         shadow-[5px_-5px_2px_rgba(0,0,0,0.5)]
 					">
-                        <p className="
-                            absolute
-                            top-[40px]
-                            right-[40px]
-                            rotate-[45deg]
-                            font-handrawn
-                            text-[20px]
-                            text-black
-							
-                        ">
-                            oct 3
-                        </p>
+						<RingDate>oct 3</RingDate>
 							<h2 className="
-								ml-20
+								ml-4
+								sm:ml-8
+								lg:ml-20
+								text-center
+								lg:text-left
 								text-black
 								font-beachday
-								text-[30px]
+								text-[20px]
+								sm:text-[26px]
+								lg:text-[30px]
 								leading-tight
 							">
 								Bubbles and Beakers
@@ -232,9 +275,14 @@ export default function OfficerDashboard() {
 							<h3 className="
 								text-black
 								font-vietnam
+								text-sm
+								sm:text-base
 								mt-1
-								ml-20
-								mb-10
+								ml-4
+								sm:ml-8
+								lg:ml-20
+								mb-6
+								lg:mb-10
 							">
 								Attending: 5/20
 							</h3>
@@ -246,7 +294,8 @@ export default function OfficerDashboard() {
 						left-0
 						w-[75%]
 						h-[70%]
-						rounded-tr-[100px]
+						rounded-tr-[60px]
+						xl:rounded-tr-[100px]
 						border-black/10
 						bg-orange-lighter
 						transition-transform
@@ -256,17 +305,7 @@ export default function OfficerDashboard() {
 						peer-hover/light:translate-y-[45%]
                         shadow-[5px_-5px_2px_rgba(0,0,0,0.5)]
 					">
-                        <p className="
-                            absolute
-                            top-[40px]
-                            right-[40px]
-                            rotate-[45deg]
-                            font-handrawn
-                            text-[20px]
-                            text-black
-                        ">
-                            sep 17
-                        </p>
+						<RingDate>sep 17</RingDate>
 						<div className="
 							absolute
 							inset-0
@@ -280,7 +319,9 @@ export default function OfficerDashboard() {
 							<h2 className="
 								text-black
 								font-beachday
-								text-[30px]
+								text-[20px]
+								sm:text-[26px]
+								lg:text-[30px]
 								leading-tight
 							">
 								Bubbles and Beakers
@@ -288,6 +329,8 @@ export default function OfficerDashboard() {
 							<h3 className="
 								text-black
 								font-vietnam
+								text-sm
+								sm:text-base
 								mt-1
 							">
 								Attending: 5/20
@@ -300,7 +343,8 @@ export default function OfficerDashboard() {
 						left-0
 						w-[65%]
 						h-[60%]
-						rounded-tr-[100px]
+						rounded-tr-[60px]
+						xl:rounded-tr-[100px]
 						border-black/10
 						bg-orange-lightest
 						transition-transform
@@ -312,17 +356,7 @@ export default function OfficerDashboard() {
 						peer-hover/lighter:translate-y-[55%]
                         shadow-[5px_-5px_2px_rgba(0,0,0,0.5)]
 					">
-                        <p className="
-                            absolute
-                            top-[40px]
-                            right-[40px]
-                            rotate-[45deg]
-                            font-handrawn
-                            text-[20px]
-                            text-black
-                        ">
-                            aug 28
-                        </p>
+						<RingDate>aug 28</RingDate>
 						<div className="
 							mt-5
 							mr-5
@@ -338,7 +372,9 @@ export default function OfficerDashboard() {
 							<h2 className="
 								text-black
 								font-beachday
-								text-[30px]
+								text-[20px]
+								sm:text-[26px]
+								lg:text-[30px]
 								leading-tight
 							">
 								Bubbles and Beakers
@@ -346,6 +382,8 @@ export default function OfficerDashboard() {
 							<h3 className="
 								text-black
 								font-vietnam
+								text-sm
+								sm:text-base
 								mt-1
 							">
 								Attending: 5/20
@@ -355,14 +393,32 @@ export default function OfficerDashboard() {
 
 				</div>
 
-				{/* make announcement */}
+				{/* make announcement.
+
+				    The padding is what sets where the message box ends, and so where
+				    the POST button sits against it. On both axes it's half the
+				    button plus the button's own offset from the panel, which puts
+				    the circle's centre on the box's corner:
+
+				      px-10 = right-2  + half of w-16      py: pb-14 = bottom-6 + half of h-16
+
+				    So all three change together with the button's size — w-16/h-16
+				    below `sm`, w-20/h-20 above. */}
 				<div className="
 					relative
 					bg-green
-					rounded-bl-[100px]
+					rounded-[30px]
+					xl:rounded-none
+					xl:rounded-bl-[100px]
 					pt-6
-                    px-20
-                    pb-15
+                    px-10
+                    sm:px-14
+                    xl:px-20
+                    pb-14
+                    sm:pb-16
+                    xl:pb-15
+					min-h-[280px]
+					xl:min-h-0
 					flex
 					flex-col
 				">
@@ -386,7 +442,8 @@ export default function OfficerDashboard() {
 							bg-white
 							p-4
 							font-handrawn
-							text-[25px]
+							text-[20px]
+							sm:text-[25px]
 							text-black
 							outline-none
                             shadow-[-5px_5px_2px_rgba(0,0,0,0.5)]
@@ -395,10 +452,14 @@ export default function OfficerDashboard() {
 					<button className="
 						absolute
 						bottom-6
-						right-9
+						right-2
+						sm:right-4
+						xl:right-9
 						flex
-						h-20
-						w-20
+						h-16
+						w-16
+						sm:h-20
+						sm:w-20
 						flex-col
 						items-center
 						justify-center
@@ -423,7 +484,10 @@ export default function OfficerDashboard() {
 				{/* leaderboard */}
 				<div className="
 					bg-yellow-light
-					rounded-br-[100px]
+					rounded-[30px]
+					xl:rounded-none
+					xl:rounded-br-[100px]
+					overflow-hidden
 					flex
 					flex-col
 				">
@@ -443,33 +507,36 @@ export default function OfficerDashboard() {
 						flex
 						items-end
 						justify-center
-						gap-10
+						gap-4
+						sm:gap-10
 					">
 						<PodiumSpot name="Ting C." medal="🥈" height={50} />
 						<PodiumSpot name="Azu N." medal="🥇" height={70} />
 						<PodiumSpot name="Michelle C." medal="🥉" height={40} />
 					</div>
 
+					{/* no top margin: this is the ground the podium stands on, so its
+					    top edge has to meet the bottom of the three bars */}
 					<div className="
 						w-full
 						h-full
 						bg-yellow
-						p-5
+						p-4
+						sm:p-5
 						flex
 						items-center
 						justify-center
-						rounded-br-[100px]
+						xl:rounded-br-[100px]
 						overflow-hidden
 					">
 						<div className="
 							mt-4
-							flex
-							flex-col
-							gap-4
-							w-full
 							grid
-							grid-cols-2
-							gap-4
+							grid-cols-1
+							sm:grid-cols-2
+							gap-3
+							sm:gap-4
+							w-full
 						">
 							<LeaderRow place="4" name="Toji Fushiguro" />
 							<LeaderRow place="5" name="Yo Mama" />
@@ -482,8 +549,12 @@ export default function OfficerDashboard() {
 					
 				</div>
 
-				{/* centered DASH BOARD circle overlaying the grid intersection */}
+				{/* centered DASH BOARD circle overlaying the grid intersection.
+				    It only exists to fill that intersection, so once the quadrants
+				    stack there's nothing for it to do and it isn't drawn. */}
 				<div className="
+					hidden
+					xl:flex
 					absolute
 					top-1/2
 					left-1/2
@@ -492,7 +563,6 @@ export default function OfficerDashboard() {
 					w-[180px]
 					-translate-x-1/2
 					-translate-y-1/2
-					flex
 					items-center
 					justify-center
 					rounded-full

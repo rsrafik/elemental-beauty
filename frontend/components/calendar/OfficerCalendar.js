@@ -401,7 +401,8 @@ function ConfirmRemoveDialog({ label, onCancel, onConfirm }) {
 				items-center
 				justify-center
 				bg-black/40
-				p-8
+				p-4
+				sm:p-8
 				${closing ? 'dialog-leaving' : 'dialog-open'}
 			`}
 			onClick={cancel}
@@ -413,7 +414,8 @@ function ConfirmRemoveDialog({ label, onCancel, onConfirm }) {
 				aria-modal="true"
 				aria-label="Remove tag"
 				className="
-					w-[420px]
+					w-full
+					max-w-[420px]
 					bg-cream
 					rounded-[20px]
 					p-8
@@ -535,9 +537,17 @@ function Day({ number, inMonth, entries: dayEntries, wave = 0 }) {
 			className="
 				calendar-cell
 				group
-				min-h-[112px]
-				pt-3
-				pr-2
+				min-h-[42px]
+				md:min-h-[90px]
+				lg:min-h-[112px]
+				flex
+				md:block
+				items-center
+				justify-center
+				pt-0
+				md:pt-3
+				pr-0
+				md:pr-2
 			"
 		>
 			<span className={`
@@ -560,8 +570,16 @@ function Day({ number, inMonth, entries: dayEntries, wave = 0 }) {
 				{number}
 			</span>
 
+			{/* A seven-column month on a phone gives each day about 45px, which is
+			    room for the badge and nothing else — so below `md` the cell is just
+			    the badge and its colour, and what's on those days is listed under
+			    the grid instead (see Agenda). */}
 			{dayEntries.map((entry, i) => (
-				<div key={i} className="mt-3">
+				<div key={i} className="
+					hidden
+					md:block
+					mt-3
+				">
 					<p className="
 						font-vietnam
 						text-[10px]
@@ -592,6 +610,106 @@ function Day({ number, inMonth, entries: dayEntries, wave = 0 }) {
 					)}
 				</div>
 			))}
+		</div>
+	)
+}
+
+// What the cells can't say on a narrow screen. Every entry the month holds, in
+// date order, carrying the same badge colour its cell does so the list and the
+// grid read as the same thing.
+function Agenda({ days }) {
+	if (!days.length) return null
+	return (
+		<div className="
+			md:hidden
+			mt-6
+		">
+			<div className="
+				bg-salmon
+				rounded-full
+				py-2
+				text-center
+			">
+				<span className="
+					font-vietnam
+					font-semibold
+					text-cream
+					text-sm
+					uppercase
+					tracking-[0.15em]
+				">
+					this month
+				</span>
+			</div>
+
+			<ul className="
+				mt-4
+				flex
+				flex-col
+				gap-3
+			">
+				{days.map(({ number, entries: dayEntries }) =>
+					dayEntries.map((entry, i) => (
+						<li
+							key={`${number}-${i}`}
+							className="
+								flex
+								items-start
+								gap-3
+							"
+						>
+							{/* the number only rides the first row of a day that holds
+							    several, so a day reads as one block rather than repeating
+							    itself down the list */}
+							<span className={`
+								w-7
+								h-7
+								shrink-0
+								flex
+								items-center
+								justify-center
+								rounded-full
+								font-vietnam
+								font-semibold
+								text-xs
+								${i === 0 ? TRACKS[entry.track].pill : 'opacity-0'}
+							`}>
+								{number}
+							</span>
+							<div className="min-w-0">
+								<p className="
+									font-vietnam
+									text-[10px]
+									uppercase
+									tracking-[0.12em]
+									text-black/45
+								">
+									{entry.type}
+								</p>
+								<p className="
+									font-vietnam
+									text-sm
+									leading-tight
+									text-black
+									mt-0.5
+								">
+									{entry.title}
+								</p>
+								{entry.time && (
+									<p className="
+										font-vietnam
+										text-xs
+										text-black/50
+										mt-0.5
+									">
+										{prettyTime(entry.time)}
+									</p>
+								)}
+							</div>
+						</li>
+					))
+				)}
+			</ul>
 		</div>
 	)
 }
@@ -697,7 +815,8 @@ function EventDialog({ categories, onClose, onSave }) {
 				items-center
 				justify-center
 				bg-black/40
-				p-8
+				p-4
+				sm:p-8
 				${closing ? 'dialog-leaving' : 'dialog-open'}
 			`}
 			onClick={close}
@@ -710,7 +829,10 @@ function EventDialog({ categories, onClose, onSave }) {
 				aria-modal="true"
 				aria-label="New event"
 				className="
-					w-[560px]
+					w-full
+					max-w-[560px]
+					max-h-[90dvh]
+					overflow-y-auto
 					max-h-[85vh]
 					overflow-y-auto
 					bg-cream
@@ -787,7 +909,8 @@ function EventDialog({ categories, onClose, onSave }) {
 
 					<div className="
 						grid
-						grid-cols-2
+						grid-cols-1
+						sm:grid-cols-2
 						gap-4
 					">
 						<label className="block">
@@ -812,7 +935,8 @@ function EventDialog({ categories, onClose, onSave }) {
 
 					<div className="
 						grid
-						grid-cols-2
+						grid-cols-1
+						sm:grid-cols-2
 						gap-4
 					">
 						<label className="block">
@@ -1063,6 +1187,18 @@ export default function OfficerCalendar() {
 	const seeded = entries[stamp] ?? {}
 	const mine = added[stamp] ?? {}
 
+	// The same days the grid draws a badge for, in date order — what the narrow
+	// layout lists under the month.
+	const agendaDays = [
+		...new Set([...Object.keys(seeded), ...Object.keys(mine)].map(Number)),
+	]
+		.sort((a, b) => a - b)
+		.map((number) => ({
+			number,
+			entries: [...listFor(seeded, number), ...listFor(mine, number)],
+		}))
+		.filter(({ entries: dayEntries }) => dayEntries.length)
+
 	return (
 		// my-auto rather than justify-center: it centers the sheet in the page but
 		// still lets a tall month scroll from its top instead of clipping it.
@@ -1076,13 +1212,19 @@ export default function OfficerCalendar() {
 			    the top edge and the legends on the bottom one. */}
 			<div
 				className="
-					my-auto
+					xl:my-auto
 					flex
+					flex-col
+					xl:flex-row
 					items-stretch
-					gap-12
-					pr-2
+					gap-8
+					xl:gap-8
+					2xl:gap-12
+					xl:min-h-[var(--sheet-h)]
+					pr-0
+					xl:pr-2
 				"
-				style={{ minHeight: `${SHEET_H}px` }}
+				style={{ '--sheet-h': `${SHEET_H}px` }}
 			>
 				{/* left column: month and add button up top, legends at the bottom.
 				    calendar-side / calendar-grid bring the two columns in from
@@ -1090,7 +1232,9 @@ export default function OfficerCalendar() {
 				    against each other, with the day cells washing across after. */}
 				<div className="
 					calendar-side
-					w-[340px]
+					w-full
+					xl:w-[280px]
+					2xl:w-[340px]
 					shrink-0
 					flex
 					flex-col
@@ -1098,7 +1242,10 @@ export default function OfficerCalendar() {
 					<h1 className="
 						font-canobis
 						text-black
-						text-[76px]
+						text-[48px]
+						sm:text-[60px]
+						xl:text-[64px]
+						2xl:text-[76px]
 						leading-none
 						select-none
 					">
@@ -1117,7 +1264,10 @@ export default function OfficerCalendar() {
 							font-vietnam
 							font-semibold
 							text-black/35
-							text-[42px]
+							text-[28px]
+							sm:text-[34px]
+							xl:text-[36px]
+							2xl:text-[42px]
 							leading-none
 						">
 							{view.year}
@@ -1181,10 +1331,12 @@ export default function OfficerCalendar() {
 
 					{/* mt-auto drops both legends to the bottom of the column, so they
 					    finish level with the last rule of the grid. pt-12 keeps them off
-					    the button on a short month. */}
+					    the button on a short month. Stacked there's no grid beside them
+					    to finish level with, so they just follow the button. */}
 					<div className="
-						mt-auto
-						pt-12
+						xl:mt-auto
+						pt-8
+						xl:pt-12
 					">
 						<div className="
 							bg-salmon
@@ -1258,7 +1410,8 @@ export default function OfficerCalendar() {
 					<div className="
 						grid
 						grid-cols-7
-						gap-2
+						gap-1
+						sm:gap-2
 					">
 						{WEEKDAYS.map((day, column) => (
 							<div
@@ -1268,17 +1421,22 @@ export default function OfficerCalendar() {
 									calendar-cell
 									bg-salmon
 									rounded-full
-									py-1.5
+									py-1
+									sm:py-1.5
 									text-center
+									overflow-hidden
 								"
 							>
 								<span className="
 									font-vietnam
 									font-semibold
 									text-cream
-									text-sm
+									text-[10px]
+									sm:text-xs
+									lg:text-sm
 									uppercase
-									tracking-[0.15em]
+									tracking-normal
+									sm:tracking-[0.15em]
 								">
 									{day}
 								</span>
@@ -1298,10 +1456,12 @@ export default function OfficerCalendar() {
 							className="
 								grid
 								grid-cols-7
-								gap-2
+								gap-1
+								sm:gap-2
 								border-b
 								border-black/20
-								pb-4
+								pb-2
+								md:pb-4
 							"
 						>
 							{week.map((day, column) => (
@@ -1329,6 +1489,8 @@ export default function OfficerCalendar() {
 						border-b
 						border-black/20
 					" />
+
+					<Agenda days={agendaDays} />
 				</div>
 			</div>
 
