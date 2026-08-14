@@ -17,7 +17,7 @@ export const RANK = {
 	admin: 4,
 }
 
-export const currentRole = 'officer'   // 'user' | 'member' | 'officer' | 'treasurer' | 'admin'
+export const currentRole = 'member'   // 'user' | 'member' | 'officer' | 'treasurer' | 'admin'
 
 // Which member is looking, not just at what rank. Pages that show someone their
 // own rows — an officer's compensation requests, say — filter on this rather
