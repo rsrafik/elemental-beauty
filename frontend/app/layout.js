@@ -1,5 +1,6 @@
 import { Be_Vietnam_Pro } from "next/font/google";
 import { Delicious_Handrawn } from "next/font/google";
+import { Molle } from "next/font/google";
 import localFont from "next/font/local";
 import "./globals.css";
 
@@ -13,6 +14,15 @@ const delicioushandrawn = Delicious_Handrawn({
   variable: "--font-handrawn",
   subsets: ["latin"],
   weight: "400",
+});
+
+// Molle ships in one style only — 400 italic — so the slant is the typeface,
+// not something applied on top of it.
+const molle = Molle({
+  variable: "--font-molle",
+  subsets: ["latin"],
+  weight: "400",
+  style: "italic",
 });
 
 const bumbel = localFont({
@@ -78,6 +88,7 @@ export default function RootLayout({ children }) {
       className={`
         ${bevietnampro.variable}
         ${delicioushandrawn.variable}
+        ${molle.variable}
         ${bumbel.variable}
         ${beachday.variable}
         ${ettamelody.variable}

@@ -14,7 +14,9 @@ export default function Home() {
 		">
 			<ScrollSequence />
 
-			<section className="
+			<section
+				id="about"
+				className="
 				flex
 				min-h-screen
 				flex-col

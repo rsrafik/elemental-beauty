@@ -3,6 +3,7 @@
 import { useEffect, useRef, useState } from 'react'
 import gsap from 'gsap'
 import { ScrollTrigger } from 'gsap/ScrollTrigger'
+import { createFlyText } from '@/lib/flyText'
 
 // Scroll-driven image sequence — 192 stills painted to a <canvas>, scrubbed by
 // scroll position while the section is pinned to the viewport.
@@ -30,13 +31,15 @@ const FRAME_DIR = '/frames/hero'
 // give — either bars or a crop. Every mode below scales width and height by the
 // same factor, so 16:9 stays 16:9; they differ only in which one they pick.
 //
-//   'width'    always spans the full window width. Height follows from the
-//              frame's own ratio: bars above and below on a window taller than
-//              16:9, a centred vertical crop on one wider.
-//   'contain'  whole frame always visible — but that means bars on the left and
-//              right as soon as the window is wider than 16:9.
-//   'cover'    fills the window in both directions, crops whatever overflows.
-const FIT = 'width'
+//   'cover'    fills the window in both directions and crops the overflow, so
+//              the frame reaches all four edges at every window shape. On a
+//              window wider than 16:9 this is identical to 'width'; on a taller
+//              one it fills top to bottom and crops the sides instead.
+//   'width'    always spans the full width, but leaves bars above and below once
+//              the window is taller than 16:9.
+//   'contain'  whole frame always visible, at the cost of bars on whichever axis
+//              has room left over.
+const FIT = 'cover'
 
 // What the bars are painted with under 'contain' — matches --color-cream, so
 // they read as page background rather than as letterboxing.
@@ -51,12 +54,22 @@ const END_DISTANCE = '+=400%'
 // difference nobody sees. Cap it.
 const MAX_DPR = 2
 
+// The title holds over the opening of the sequence, then comes apart. Frame 36
+// is index 35 — the files are numbered from 1, the array is not — and the
+// letters are gone 48 frames later, a quarter of the way through the pin.
+const FLY_START_FRAME = 35
+const FLY_FRAMES = 48
+
+const FLY_FROM = FLY_START_FRAME / (FRAME_COUNT - 1)
+const FLY_TO = (FLY_START_FRAME + FLY_FRAMES) / (FRAME_COUNT - 1)
+
 const frameSrc = (i) => `${FRAME_DIR}/frame_${String(i + 1).padStart(3, '0')}.${FRAME_EXT}`
 
 export default function ScrollSequence() {
 	const rootRef = useRef(null)
 	const pinRef = useRef(null)
 	const canvasRef = useRef(null)
+	const titleRef = useRef(null)
 	const ctxRef = useRef(null)
 	const imagesRef = useRef([])
 
@@ -203,9 +216,21 @@ export default function ScrollSequence() {
 			draw(current)
 		}
 
-		const state = { frame: 0 }
+		// `flow` rides along untouched by the snap, which only applies to `frame`.
+		// The letters need a continuous value: driven off the snapped frame they
+		// would move in 48 visible steps instead of flying.
+		const state = { frame: 0, flow: 0 }
+
+		let flyers = []
+
+		const updateFly = () => {
+			if (!flyers.length) return
+			const t = gsap.utils.clamp(0, 1, (state.flow - FLY_FROM) / (FLY_TO - FLY_FROM))
+			for (const f of flyers) f.progress(t)
+		}
 
 		const render = () => {
+			updateFly()
 			const index = Math.min(FRAME_COUNT - 1, Math.max(0, Math.round(state.frame)))
 			if (index === lastDrawn) return
 			draw(index)
@@ -217,6 +242,7 @@ export default function ScrollSequence() {
 		const gsapCtx = gsap.context(() => {
 			gsap.to(state, {
 				frame: FRAME_COUNT - 1,
+				flow: 1,
 				ease: 'none',
 				snap: 'frame',
 				onUpdate: render,
@@ -234,7 +260,52 @@ export default function ScrollSequence() {
 					invalidateOnRefresh: true
 				}
 			})
+
 		}, rootRef)
+
+		// The letters are measured from their rendered boxes, so this has to wait
+		// for the real typefaces — measured against a fallback, every span would be
+		// pinned to the wrong place the moment Molle swapped in.
+		let flyCancelled = false
+
+		document.fonts.ready.then(() => {
+			const title = titleRef.current
+			if (flyCancelled || !title) return
+
+			const heading = title.querySelector('h1')
+			const tagline = title.querySelector('p')
+			if (!heading || !tagline) return
+
+			// Wind up and to the right, strong enough to clear the tallest viewport
+			// it's likely to run in. The tagline goes on a longer stagger and a
+			// shallower arc so the two lines don't leave as one slab.
+			const strength = Math.max(460, window.innerHeight * 0.9)
+
+			flyers = [
+				createFlyText(heading, {
+					windAngle: 22,
+					windStrength: strength,
+					scatter: 110,
+					maxRotation: 470,
+					depth: 160,
+					stagger: 0.7,
+					seed: 42
+				}),
+				createFlyText(tagline, {
+					windAngle: 32,
+					windStrength: strength * 0.75,
+					scatter: 70,
+					maxRotation: 380,
+					depth: 110,
+					stagger: 1.1,
+					order: 'outward',
+					randomness: 0.25,
+					seed: 7
+				})
+			]
+
+			updateFly()
+		})
 
 		// A pinned element is position:fixed, which detaches it from its parent's
 		// width, so ScrollTrigger writes the width and height it measured onto the
@@ -256,6 +327,9 @@ export default function ScrollSequence() {
 			// refresh() resizes the pinned element, which trips the observer again.
 			if (window.innerWidth !== lastWidth) {
 				lastWidth = window.innerWidth
+				// The title reflows at a new width, so the character boxes measured
+				// against the old one are stale.
+				for (const f of flyers) f.rebuild()
 				ScrollTrigger.refresh()
 			}
 		}
@@ -280,9 +354,14 @@ export default function ScrollSequence() {
 		const settle = requestAnimationFrame(() => ScrollTrigger.refresh())
 
 		return () => {
+			flyCancelled = true
 			cancelAnimationFrame(settle)
 			observer.disconnect()
 			window.removeEventListener('resize', onBoxChange)
+			// Puts the original text back, so a Strict Mode remount measures a clean
+			// element instead of one already split into spans.
+			for (const f of flyers) f.destroy()
+			flyers = []
 			gsapCtx.revert()
 		}
 	}, [ready])
@@ -358,6 +437,7 @@ export default function ScrollSequence() {
 				<div
 					ref={pinRef}
 					className="
+						relative
 						h-[100svh]
 						w-full
 						overflow-hidden
@@ -373,6 +453,46 @@ export default function ScrollSequence() {
 							w-full
 						"
 					/>
+
+					{/* Sits over the opening frame and fades out as the sequence starts
+					    moving. Sized in vw so it holds the same proportion of the frame
+					    it was composed against, rather than growing out of it on a wide
+					    monitor. */}
+					<div
+						ref={titleRef}
+						className="
+							pointer-events-none
+							absolute
+							inset-x-0
+							bottom-0
+							flex
+							flex-col
+							items-center
+							px-6
+							pb-[7svh]
+							text-center
+							text-cream
+							[text-shadow:0_2px_18px_rgba(0,0,0,0.45)]
+						"
+					>
+						<h1 className="
+							font-molle
+							text-[clamp(2.5rem,7.5vw,7.5rem)]
+							leading-[1.05]
+						">
+							Elemental Beauty
+						</h1>
+
+						<p className="
+							font-beachday
+							mt-[1.2vh]
+							text-[clamp(0.9rem,2.3vw,2.2rem)]
+							uppercase
+							tracking-[0.04em]
+						">
+							Where science meets skincare.
+						</p>
+					</div>
 				</div>
 			</section>
 		</>
