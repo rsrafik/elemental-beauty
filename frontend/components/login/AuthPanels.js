@@ -1,8 +1,11 @@
 'use client'
 
-import { useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
+import { useRouter } from 'next/navigation'
 
 import FoldText from '@/components/FoldText'
+import { useDismiss } from '@/lib/dismiss'
+import { setRole } from '@/lib/roles'
 
 const LABEL = `
 	font-beachday
@@ -104,6 +107,10 @@ const UNFOLD = {
 
 export default function AuthPanels() {
 	const [front, setFront] = useState('login')
+
+	// Which flow opened the code dialog, or null for closed. Both flows show the
+	// same code step; the mode is what decides where verifying takes you.
+	const [verifying, setVerifying] = useState(null)
 
 	return (
 		<main className="
@@ -208,15 +215,24 @@ export default function AuthPanels() {
 							<LogIn
 								front={front === 'login'}
 								onCome={() => setFront('login')}
+								onForgot={() => setVerifying('reset')}
 							/>
 							<SignUp
 								front={front === 'signup'}
 								onCome={() => setFront('signup')}
+								onContinue={() => setVerifying('signup')}
 							/>
 						</section>
 					</div>
 				</div>
 			</div>
+
+			{verifying && (
+				<VerifyDialog
+					mode={verifying}
+					onClose={() => setVerifying(null)}
+				/>
+			)}
 		</main>
 	)
 }
@@ -283,7 +299,7 @@ function Bamboo() {
 // In front of the sign-up card, so its shadow falls across it. The square
 // bottom-right corner is what makes the overlap read as one card laid over
 // another rather than two cards that happen to touch.
-function LogIn({ front, onCome }) {
+function LogIn({ front, onCome, onForgot }) {
 	return (
 		<div
 			onClick={onCome}
@@ -331,19 +347,24 @@ function LogIn({ front, onCome }) {
 				className={`${FIELD} mt-[9px] bg-[#FFE9BF]`}
 			/>
 
-			<a
-				href="/reset-password"
+			{/* A button, not the link to /reset-password it used to be: this opens
+			    a dialog rather than going anywhere, and a link that navigates
+			    nowhere is a link a keyboard or a middle click both get wrong. */}
+			<button
+				type="button"
+				onClick={onForgot}
 				className="
 					font-vietnam
 					mt-[9px]
-					inline-block
+					block
+					cursor-pointer
 					text-[13px]
 					leading-none
 					text-[#4066FF]
 				"
 			>
 				forgot password?
-			</a>
+			</button>
 
 			<div className="
 				mt-[13px]
@@ -358,7 +379,7 @@ function LogIn({ front, onCome }) {
 
 // Pulled left so its own edge runs under the log-in card — the gap you see
 // between them is that card's shadow, not background.
-function SignUp({ front, onCome }) {
+function SignUp({ front, onCome, onContinue }) {
 	return (
 		<div
 			onClick={onCome}
@@ -428,7 +449,277 @@ function SignUp({ front, onCome }) {
 				flex
 				justify-center
 			">
-				<Button className="w-[137px]">CONTINUE</Button>
+				<Button className="w-[137px]" onClick={onContinue}>CONTINUE</Button>
+			</div>
+		</div>
+	)
+}
+
+// ---- the code dialog --------------------------------------------------------
+//
+// One dialog, two flows, told apart by `mode`:
+//
+//   reset    forgot password. The code proves it's you, then a second page
+//            takes the new one, and creating it closes the dialog.
+//   signup   the code is the last thing between you and an account, so
+//            verifying goes to the dashboard and there is no second page.
+//
+// Shared rather than written twice because it is the same step — the same
+// heading, the same five boxes, the same resend. Two copies would be two things
+// to keep in step every time one of them changed.
+//
+// The card is a fixed size and both pages are drawn to fit it, so moving from
+// the code to the new password swaps what is inside without the box changing
+// shape underneath. It reads as one thing with two pages, not as two dialogs.
+//
+// The page's content is keyed on the step, which remounts it and so restarts
+// the fade. Without the key React would reuse the same nodes, the animation
+// would already have played, and the second page would appear instantly.
+//
+// `useDismiss` is what lets it animate on the way out: React would otherwise
+// drop the dialog the instant the state went null, leaving the exit nowhere to
+// happen. Everything that ends this — verify on signup, create, the X, the
+// backdrop, Escape — goes through `dismiss`.
+
+const RESET_LABEL = `
+	font-beachday
+	text-[21px]
+	leading-none
+	text-black
+`
+
+const RESET_FIELD = `
+	font-vietnam
+	mt-[4px]
+	h-[31px]
+	w-full
+	rounded-[9px]
+	bg-[#FFCC6E]
+	px-[12px]
+	text-[13px]
+	text-black
+	outline-none
+`
+
+function VerifyDialog({ mode, onClose }) {
+	const { closing, dismiss } = useDismiss()
+	const [step, setStep] = useState('code')
+	const router = useRouter()
+	const close = () => dismiss(onClose)
+
+	// The code step is the same in both flows; what differs is where verifying
+	// lands you. Signing up, the code was the last thing standing between you
+	// and an account, so it goes to the dashboard — through `dismiss`, so the
+	// dialog plays its exit and the page changes under a screen that is already
+	// on its way out rather than one that vanishes mid-animation. Resetting, the
+	// code only proves it's you; the new password is still to come.
+	const onVerify = mode === 'signup'
+		? () => dismiss(() => {
+			setRole('user')
+			router.push('/dashboard')
+		})
+		: () => setStep('password')
+
+	useEffect(() => {
+		const onKey = event => {
+			if (event.key === 'Escape') close()
+		}
+		window.addEventListener('keydown', onKey)
+		return () => window.removeEventListener('keydown', onKey)
+	})
+
+	return (
+		<div
+			onClick={close}
+			className={`
+				fixed
+				inset-0
+				z-[60]
+				flex
+				items-center
+				justify-center
+				bg-black/20
+				p-4
+				${closing ? 'dialog-leaving' : 'dialog-open'}
+			`}
+		>
+			<div
+				onClick={event => event.stopPropagation()}
+				role="dialog"
+				aria-modal="true"
+				aria-label={mode === 'signup' ? 'Verify email' : 'Reset password'}
+				className="
+					relative
+					flex
+					h-[260px]
+					w-[431px]
+					max-w-full
+					flex-col
+					justify-center
+					rounded-[26px]
+					bg-[#FFF6E3]
+					px-[50px]
+					shadow-[0_10px_40px_rgba(0,0,0,0.35)]
+				"
+			>
+				{/* Absolute so it sits in the corner without joining the column —
+				    in the flow it would be a third row for `justify-center` to
+				    balance, and both steps would ride lower to make room for it. */}
+				<button
+					type="button"
+					onClick={close}
+					aria-label="Close"
+					className="
+						absolute
+						top-[14px]
+						right-[16px]
+						flex
+						h-[26px]
+						w-[26px]
+						cursor-pointer
+						items-center
+						justify-center
+						rounded-full
+						text-black/45
+						transition-colors
+						duration-150
+						hover:text-black
+					"
+				>
+					<svg
+						viewBox="0 0 24 24"
+						fill="none"
+						stroke="currentColor"
+						strokeWidth="3"
+						strokeLinecap="round"
+						aria-hidden="true"
+						className="h-[13px] w-[13px]"
+					>
+						<line x1="4" y1="4" x2="20" y2="20" />
+						<line x1="20" y1="4" x2="4" y2="20" />
+					</svg>
+				</button>
+
+				<div className="page-enter" key={step}>
+					{step === 'code'
+						? <CodeStep onVerify={onVerify} />
+						: <PasswordStep onCreate={close} />}
+				</div>
+			</div>
+		</div>
+	)
+}
+
+function CodeStep({ onVerify }) {
+	// One ref per box so a typed digit can hand focus to the next one. A
+	// five-box code that makes you click each box in turn is the kind of thing
+	// nobody reports and everybody resents.
+	const boxes = useRef([])
+
+	const onKeyDown = (event, index) => {
+		if (event.key !== 'Backspace' || event.target.value) return
+		boxes.current[index - 1]?.focus()
+	}
+
+	const onInput = (event, index) => {
+		if (event.target.value) boxes.current[index + 1]?.focus()
+	}
+
+	return (
+		<>
+			<div className="
+				flex
+				items-center
+				justify-center
+				gap-[14px]
+			">
+				<h2 className={RESET_LABEL}>TYPE CODE SENT TO EMAIL</h2>
+				<button
+					type="button"
+					className="
+						font-aalto
+						h-[23px]
+						shrink-0
+						cursor-pointer
+						rounded-full
+						bg-[#FF8A78]
+						px-[11px]
+						text-[22px]
+						leading-none
+						text-[#B3402E]
+					"
+				>
+					RESEND
+				</button>
+			</div>
+
+			<div className="
+				mt-[25px]
+				flex
+				justify-center
+				gap-[14px]
+			">
+				{[0, 1, 2, 3, 4].map(index => (
+					<input
+						key={index}
+						ref={node => { boxes.current[index] = node }}
+						type="text"
+						inputMode="numeric"
+						maxLength={1}
+						aria-label={`Digit ${index + 1} of 5`}
+						onInput={event => onInput(event, index)}
+						onKeyDown={event => onKeyDown(event, index)}
+						className="
+							font-vietnam
+							h-[55px]
+							w-[55px]
+							rounded-full
+							bg-[#FFCC6E]
+							text-center
+							text-[20px]
+							text-black
+							outline-none
+						"
+					/>
+				))}
+			</div>
+
+			<div className="
+				mt-[32px]
+				flex
+				justify-center
+			">
+				<Button className="w-[146px]" onClick={onVerify}>VERIFY</Button>
+			</div>
+		</>
+	)
+}
+
+function PasswordStep({ onCreate }) {
+	return (
+		<div className="px-[22px]">
+			<p className={RESET_LABEL}>NEW PASSWORD</p>
+			<input
+				type="password"
+				name="new-password"
+				autoComplete="new-password"
+				className={RESET_FIELD}
+			/>
+
+			<p className={`${RESET_LABEL} mt-[19px]`}>VERIFY NEW PASSWORD</p>
+			<input
+				type="password"
+				name="verify-password"
+				autoComplete="new-password"
+				className={RESET_FIELD}
+			/>
+
+			<div className="
+				mt-[16px]
+				flex
+				justify-center
+			">
+				<Button className="w-[146px]" onClick={onCreate}>CREATE</Button>
 			</div>
 		</div>
 	)
@@ -442,10 +733,11 @@ function SignUp({ front, onCome }) {
 //
 // `active:` rather than a click handler: it holds while the mouse is down and
 // releases on its own, and the keyboard gets it for free.
-function Button({ className = '', children }) {
+function Button({ className = '', onClick, children }) {
 	return (
 		<button
 			type="button"
+			onClick={onClick}
 			className={`
 				font-dream
 				flex
