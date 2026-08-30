@@ -16,11 +16,12 @@
 // deliberately a little taller than its neighbour. Rounding any of that to the
 // nearest even number is what would make it look like a different page.
 //
-// The comp is drawn at 1440 x 727. Rather than reflow it, the whole block is
-// one fixed-size stage, centred and scaled to whatever room the window has —
-// see `.auth-stage` in globals.css — so the proportions are the comp's at every
-// width. A phone gets a small, correct version of this page; a phone-shaped
-// layout is a different drawing and would need its own composition.
+// The block is drawn at one size and centred in the window by the flex parent.
+// Nothing anywhere records how big it is, so the cards can be resized freely
+// without putting it off centre. What that costs is a window narrower than the
+// drawing: there is no scale-to-fit, so the edges go under the bamboo and are
+// clipped rather than shrinking. A phone-shaped layout is a different drawing
+// and would need its own composition.
 
 const LABEL = `
 	font-beachday
@@ -52,25 +53,26 @@ export default function AuthPanels() {
 	return (
 		<main className="
 			relative
+			flex
 			min-h-svh
 			w-full
+			items-center
+			justify-center
 			overflow-hidden
 			bg-[#FDF4E0]
 		">
 			<Bamboo />
 
+			{/* Centred by the flex parent, not by a transform against a size of its
+			    own. The block carries no width, height or offsets — it is as big as
+			    what's inside it and no bigger — so resizing the cards moves nothing
+			    off centre and there is no measurement anywhere to keep in sync. */}
 			<div className="
-				auth-stage
-				absolute
-				top-1/2
-				left-1/2
+				relative
 				z-10
 				flex
-				h-[727px]
-				w-[857px]
 				flex-col
 				items-center
-				pt-[37px]
 			">
 				{/* the tracking is the point — Aalto is a condensed face, and the
 				    comp opens it up far enough that the word reads as a caption
@@ -323,14 +325,24 @@ function Button({ className = '', children }) {
 				justify-center
 				rounded-full
 				bg-[#4066FF]
-				text-[18px]
+				text-[23px]
 				leading-none
 				text-white
 				shadow-[4px_4px_3px_rgba(0,0,0,0.5)]
 				${className}
 			`}
 		>
-			{children}
+			{/* `items-center` centres the line box, not the letters. Dream Kudos
+			    declares an ascent of 14 and a descent of 8 against an em of 18,
+			    and this label is all caps — so the ink stops at the baseline and
+			    the eight units of unused descender sit under it, hanging the word
+			    3.3px above the middle of a 37px pill.
+
+			    The correction is (cap ascent - (ascent - descent)) / 2, which the
+			    face's own metrics fix at 0.185em. Written in em rather than px
+			    because it falls out of the font, not out of this button — change
+			    the type size and it still lands. */}
+			<span className="translate-y-[0.185em]">{children}</span>
 		</button>
 	)
 }
