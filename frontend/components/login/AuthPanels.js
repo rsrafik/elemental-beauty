@@ -1,3 +1,7 @@
+'use client'
+
+import { useState } from 'react'
+
 // The /login screen.
 //
 // One frame, three layers:
@@ -49,7 +53,48 @@ const HINT = `
 	text-[#2B2B2B]
 `
 
+// ---- the two roles ---------------------------------------------------------
+//
+// Clicking a card hands it the larger shape and the shadow; its neighbour takes
+// the smaller shape and drops the shadow. Only presence changes hands. Each
+// card keeps its side of the panel, its colour, its corners and its padding, so
+// the swap reads as one card coming forward rather than as the pair trading
+// places.
+//
+// The margins swap with the sizes, and that is not cosmetic: it keeps each
+// card's outer height — the margin box the panel measures — at 592 in the big
+// role and 567 in the small one either way round. Swap only the heights and the
+// taller of the two changes mid-move, which walks the panel up and down.
+
+const BIG = `
+	z-10
+	mt-[32px]
+	h-[560px]
+	w-[430px]
+`
+
+const SMALL = `
+	z-0
+	mt-[36px]
+	h-[531px]
+	w-[398px]
+	cursor-pointer
+`
+
+// The "off" shadow is the same shadow with its offset and alpha at zero rather
+// than `shadow-none`. Two shadows of the same shape interpolate; a shadow and
+// no shadow at all is a swap the browser can only do abruptly.
+const NO_SHADOW = 'shadow-[0px_0px_0px_rgba(0,0,0,0)]'
+
+const SWAP = `
+	transition-[width,height,margin-top,box-shadow]
+	duration-500
+	ease-[cubic-bezier(0.22,1,0.36,1)]
+`
+
 export default function AuthPanels() {
+	const [front, setFront] = useState('login')
+
 	return (
 		<main className="
 			relative
@@ -100,9 +145,20 @@ export default function AuthPanels() {
 					ELEMENTAL BEAUTY
 				</h1>
 
+				{/* Pinned, not measured. Left to size itself off the cards, the panel
+				    would breathe through every swap: both cards are mid-size halfway
+				    through the move, so the taller of the two dips ~13px and comes
+				    back, and the inner shadow visibly walks with it.
+
+				    888 x 627 is what the cards add up to at rest — across, 430 + 398
+				    less the 20px overlap, plus the 40px padding either side; down, the
+				    big card's 32 + 560 plus the 35px below it. Resize a card and these
+				    two numbers are what to redo. */}
 				<section className="
 					mt-[37px]
 					flex
+					h-[627px]
+					w-[888px]
 					items-center
 					justify-center
 					rounded-[32px]
@@ -111,8 +167,14 @@ export default function AuthPanels() {
 					pb-[35px]
 					shadow-[inset_0_0_17px_rgba(0,0,0,0.73)]
 				">
-					<LogIn />
-					<SignUp />
+					<LogIn
+						front={front === 'login'}
+						onCome={() => setFront('login')}
+					/>
+					<SignUp
+						front={front === 'signup'}
+						onCome={() => setFront('signup')}
+					/>
 				</section>
 			</div>
 		</main>
@@ -179,23 +241,25 @@ function Bamboo() {
 // In front of the sign-up card, so its shadow falls across it. The square
 // bottom-right corner is what makes the overlap read as one card laid over
 // another rather than two cards that happen to touch.
-function LogIn() {
+function LogIn({ front, onCome }) {
 	return (
-		<div className="
-			relative
-			z-10
-			mt-[32px]
-			h-[560px]
-			w-[430px]
-			shrink-0
-			rounded-[30px]
-			rounded-br-none
-			rounded-tr-none
-			bg-[#FFCC6E]
-			py-[50px]
-			px-[50px]
-			shadow-[7px_0_6px_rgba(0,0,0,0.50)]
-		">
+		<div
+			onClick={onCome}
+			onFocus={onCome}
+			className={`
+				relative
+				shrink-0
+				rounded-[30px]
+				rounded-br-none
+				rounded-tr-none
+				bg-[#FFCC6E]
+				py-[50px]
+				px-[50px]
+				${front ? BIG : SMALL}
+				${front ? 'shadow-[7px_0_6px_rgba(0,0,0,0.50)]' : NO_SHADOW}
+				${SWAP}
+			`}
+		>
 			<h2 className="
 				font-canobis
 				pl-[2px]
@@ -252,20 +316,26 @@ function LogIn() {
 
 // Pulled left so its own edge runs under the log-in card — the gap you see
 // between them is that card's shadow, not background.
-function SignUp() {
+function SignUp({ front, onCome }) {
 	return (
-		<div className="
-			relative
-			-ml-[20px]
-			mt-[36px]
-			h-[531px]
-			w-[398px]
-			shrink-0
-			rounded-[30px]
-			bg-[#FFE9BF]
-			py-[50px]
-			px-[50px]
-		">
+		<div
+			onClick={onCome}
+			onFocus={onCome}
+			className={`
+				relative
+				-ml-[20px]
+				shrink-0
+				rounded-[30px]
+				rounded-bl-none
+				rounded-tl-none
+				bg-[#FFE9BF]
+				py-[50px]
+				px-[50px]
+				${front ? BIG : SMALL}
+				${front ? 'shadow-[-7px_0_6px_rgba(0,0,0,0.50)]' : NO_SHADOW}
+				${SWAP}
+			`}
+		>
 			<h2 className="
 				font-canobis
 				text-center
@@ -313,6 +383,14 @@ function SignUp() {
 	)
 }
 
+// Held down, the pill drops onto the page: the shadow goes out and the button
+// travels exactly the 4px across and 4px down that the shadow was offset by, so
+// it lands in its own shadow's place rather than sliding to an arbitrary spot.
+// That equality is the whole effect — the gap between the two closes to nothing
+// and the button reads as having been pressed flat instead of nudged.
+//
+// `active:` rather than a click handler: it holds while the mouse is down and
+// releases on its own, and the keyboard gets it for free.
 function Button({ className = '', children }) {
 	return (
 		<button
@@ -329,6 +407,12 @@ function Button({ className = '', children }) {
 				leading-none
 				text-white
 				shadow-[4px_4px_3px_rgba(0,0,0,0.5)]
+				transition-[translate,box-shadow]
+				duration-150
+				ease-out
+				active:translate-x-[4px]
+				active:translate-y-[4px]
+				active:shadow-[0px_0px_0px_rgba(0,0,0,0)]
 				${className}
 			`}
 		>
