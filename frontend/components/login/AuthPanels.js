@@ -2,6 +2,8 @@
 
 import { useState } from 'react'
 
+import FoldText from '@/components/FoldText'
+
 const LABEL = `
 	font-beachday
 	text-[17px]
@@ -80,6 +82,26 @@ const PANEL = `
 	w-[888px]
 `
 
+// Both headings unfold on load, character by character, hinged along the top
+// edge. Shared so the caption and the logotype arrive the same way — two sets
+// of numbers drifting apart would read as a mistake rather than as a sequence.
+//
+// `creaseShading` is 0 deliberately. The crease is a gradient laid over each
+// character while it is edge-on, blended with `multiply` — against a dark
+// ground it reads as shadow caught in a fold, but against this cream page it
+// multiplies out to a dusty pink block sitting behind the letters. Nothing is
+// wrong with the effect; it is built for a background this page doesn't have.
+const UNFOLD = {
+	splitBy: 'char',
+	hinge: 'top',
+	trigger: 'mount',
+	duration: 0.65,
+	stagger: 0.045,
+	ease: 'power3.out',
+	perspective: 700,
+	creaseShading: 0
+}
+
 export default function AuthPanels() {
 	const [front, setFront] = useState('login')
 
@@ -119,9 +141,12 @@ export default function AuthPanels() {
 					text-black
 					[-webkit-text-stroke:0.5px_black]
 				">
-					PRESENTING...
+					<FoldText text="PRESENTING..." {...UNFOLD} />
 				</p>
 
+				{/* The logotype keeps every one of its type classes — FoldText is
+				    handed no size, weight or colour, so it inherits all three and
+				    animates the heading rather than restyling it. */}
 				<h1 className="
 					font-reasons
 					mt-[14px]
@@ -130,7 +155,7 @@ export default function AuthPanels() {
 					tracking-[0.01em]
 					text-[#1F4A14]
 				">
-					ELEMENTAL BEAUTY
+					<FoldText text="ELEMENTAL BEAUTY" {...UNFOLD} />
 				</h1>
 
 				{/* Three boxes of the same size, and each one earns its place.
