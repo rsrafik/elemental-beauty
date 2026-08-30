@@ -340,9 +340,84 @@
   .dialog-open > *,
   .dialog-leaving,
   .dialog-leaving > *,
-  .menu-open {
+  .menu-open,
+  .bamboo-open,
+  .panel-open {
     animation: none;
   }
+}
+
+/* ---- the panel opening -----------------------------------------------------
+ *
+ * The slab and its two cards open out of the centre of the page, all four
+ * corners travelling outwards at once until they reach where they belong.
+ *
+ * A clip rather than a size or a scale, because of what has to hold still. The
+ * panel is a flex row; animating its width or height would relay that row on
+ * every frame and the cards would slide and resize the whole way in. Scaling it
+ * keeps the arrangement but not the positions — the contents would start piled
+ * at the centre and spread outwards with the box. Clipping moves nothing at
+ * all: the panel is laid out at its final size from the first frame, the cards
+ * are already where they will end up, and what grows is only how much of it you
+ * can see.
+ *
+ * `round 32px` has to be the panel's own corner radius or the corners square
+ * off while it opens. If that radius changes, this changes with it.
+ *
+ * `backwards` and not `forwards`: the clip holds closed before the first frame,
+ * and once it has finished it stops applying — a clip left on the element for
+ * the rest of the page's life would quietly cut off anything that later grew
+ * past the panel's edge.
+ */
+/* Width and height, not `clip-path`. The clip is the tidier way to write this —
+   one property, one element, no extra boxes — and Chrome would apply both of
+   its endpoints and paint none of the frames in between: the panel vanished,
+   waited out the duration and reappeared. Whatever the cause, the same browser
+   animates `width` without complaint, which is what the bamboo above already
+   proves, so the reveal is built out of that instead.
+
+   No `to` frame, deliberately: with none, the end of the animation is the
+   element's own size, so this keyframe never has to name the panel's
+   dimensions and cannot fall out of step with them. */
+@keyframes panel-open {
+  from {
+    width: 0;
+    height: 0;
+  }
+}
+
+.panel-open {
+  animation: panel-open 700ms cubic-bezier(0.22, 1, 0.36, 1) backwards;
+}
+
+/* ---- the grove opening ----------------------------------------------------
+ *
+ * On load both edges of /login start at no width and grow to whatever their
+ * breakpoint gives them, so the bamboo arrives outward-in.
+ *
+ * Only a `from` frame, deliberately: with no `to`, the end of the animation is
+ * the element's own computed width, so this one keyframe serves the 14vw strip
+ * and the 20vw one without either being written down here. Change the strip
+ * width and the animation follows it.
+ *
+ * `backwards` so the strip holds at zero before the first frame rather than
+ * flashing at full width, and no `forwards` — once it has landed the element's
+ * own width takes over again, which is what keeps it correct across a resize
+ * that crosses the breakpoint.
+ *
+ * The image inside is sized as a percentage of the strip, so it grows with it
+ * instead of standing still behind a moving mask. The artwork scales up out of
+ * the edge, and the grove reads as opening rather than as a curtain pulling
+ * back across a picture that was already there.
+ */
+@keyframes bamboo-open {
+  from {
+    width: 0;
+  }
+}
+
+.bamboo-open {
+  animation: bamboo-open 1500ms cubic-bezier(0.22, 1, 0.36, 1) backwards;
 }
 
 /* filter: drop-shadow(-4px 4px 2 rgba(0,0,0,0.9)); */

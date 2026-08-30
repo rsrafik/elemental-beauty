@@ -2,31 +2,6 @@
 
 import { useState } from 'react'
 
-// The /login screen.
-//
-// One frame, three layers:
-//
-//   1. the bamboo, split down the middle and pinned to both edges
-//   2. the cream page it sits on, carrying the title
-//   3. the panel — a cream slab with an inner shadow — holding the two cards
-//
-// The two cards are deliberately not the same size. Log in is the taller of
-// the pair and sits in front of sign up, casting a shadow sideways onto it, so
-// the page has an obvious primary action without needing a tab or a toggle.
-//
-// Every measurement here is a fixed pixel value taken off the comp rather than
-// a scale step, because the comp is a drawing before it is a layout — the pair
-// of cards sits deliberately left of the panel's centre, and the log-in card is
-// deliberately a little taller than its neighbour. Rounding any of that to the
-// nearest even number is what would make it look like a different page.
-//
-// The block is drawn at one size and centred in the window by the flex parent.
-// Nothing anywhere records how big it is, so the cards can be resized freely
-// without putting it off centre. What that costs is a window narrower than the
-// drawing: there is no scale-to-fit, so the edges go under the bamboo and are
-// clipped rather than shrinking. A phone-shaped layout is a different drawing
-// and would need its own composition.
-
 const LABEL = `
 	font-beachday
 	text-[17px]
@@ -92,6 +67,19 @@ const SWAP = `
 	ease-[cubic-bezier(0.22,1,0.36,1)]
 `
 
+// The panel's size, written once and worn by all three boxes that make up the
+// opening — the frame that holds the space, the clipper that grows, and the
+// panel itself. They have to agree exactly or the reveal ends somewhere other
+// than the panel's own edge.
+//
+// It is what the cards add up to at rest: across, 430 + 398 less the 20px
+// overlap, plus the 40px padding either side; down, the big card's 32 + 560
+// plus the 35px below it. Resize a card and this is the line to redo.
+const PANEL = `
+	h-[627px]
+	w-[888px]
+`
+
 export default function AuthPanels() {
 	const [front, setFront] = useState('login')
 
@@ -145,37 +133,64 @@ export default function AuthPanels() {
 					ELEMENTAL BEAUTY
 				</h1>
 
-				{/* Pinned, not measured. Left to size itself off the cards, the panel
-				    would breathe through every swap: both cards are mid-size halfway
-				    through the move, so the taller of the two dips ~13px and comes
-				    back, and the inner shadow visibly walks with it.
+				{/* Three boxes of the same size, and each one earns its place.
 
-				    888 x 627 is what the cards add up to at rest — across, 430 + 398
-				    less the 20px overlap, plus the 40px padding either side; down, the
-				    big card's 32 + 560 plus the 35px below it. Resize a card and these
-				    two numbers are what to redo. */}
-				<section className="
+				    frame    holds the space in the column. Never animates, so the
+				             title above it cannot be shoved around by the opening.
+				    clipper  the only thing that moves: grows from nothing at the
+				             centre out to full size, hiding whatever it doesn't
+				             cover yet.
+				    section  the panel itself, at full size from the very first
+				             frame and centred on the clipper's centre — which never
+				             moves — so nothing inside it is ever laid out twice.
+
+				    Contents stay frozen because the panel is never the thing being
+				    resized. Give the section the animation directly and it is a flex
+				    row being relaid on every frame, and the two cards slide and
+				    resize the whole way in. */}
+				<div className={`
+					relative
 					mt-[37px]
-					flex
-					h-[627px]
-					w-[888px]
-					items-center
-					justify-center
-					rounded-[32px]
-					bg-[#FDF4E0]
-					px-10
-					pb-[35px]
-					shadow-[inset_0_0_17px_rgba(0,0,0,0.73)]
-				">
-					<LogIn
-						front={front === 'login'}
-						onCome={() => setFront('login')}
-					/>
-					<SignUp
-						front={front === 'signup'}
-						onCome={() => setFront('signup')}
-					/>
-				</section>
+					${PANEL}
+				`}>
+					<div className={`
+						panel-open
+						absolute
+						top-1/2
+						left-1/2
+						-translate-x-1/2
+						-translate-y-1/2
+						overflow-hidden
+						rounded-[32px]
+						${PANEL}
+					`}>
+						<section className={`
+							absolute
+							top-1/2
+							left-1/2
+							flex
+							-translate-x-1/2
+							-translate-y-1/2
+							items-center
+							justify-center
+							rounded-[32px]
+							bg-[#FDF4E0]
+							px-10
+							pb-[35px]
+							shadow-[inset_0_0_17px_rgba(0,0,0,0.73)]
+							${PANEL}
+						`}>
+							<LogIn
+								front={front === 'login'}
+								onCome={() => setFront('login')}
+							/>
+							<SignUp
+								front={front === 'signup'}
+								onCome={() => setFront('signup')}
+							/>
+						</section>
+					</div>
+				</div>
 			</div>
 		</main>
 	)
@@ -190,6 +205,7 @@ function Bamboo() {
 	return (
 		<div aria-hidden="true">
 			<div className="
+				bamboo-open
 				pointer-events-none
 				absolute
 				inset-y-0
@@ -213,6 +229,7 @@ function Bamboo() {
 			</div>
 
 			<div className="
+				bamboo-open
 				pointer-events-none
 				absolute
 				inset-y-0
@@ -364,6 +381,15 @@ function SignUp({ front, onCome }) {
 				className={`${FIELD} mt-[8px] bg-[#FFCC6E]`}
 			/>
 			<p className={`${HINT} mt-[8px]`}>must be 8 characters</p>
+
+			<p className={`${LABEL} mt-[21px]`}>Verify Password</p>
+			<input
+				type="password"
+				name="new-password"
+				autoComplete="new-password"
+				className={`${FIELD} mt-[8px] bg-[#FFCC6E]`}
+			/>
+			<p className={`${HINT} mt-[10px]`}>must be the same password</p>
 
 			<p className={`${LABEL} mt-[23px]`}>INSTA USERNAME (OPTIONAL)</p>
 			<input
