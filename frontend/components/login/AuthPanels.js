@@ -5,7 +5,6 @@ import { useRouter } from 'next/navigation'
 
 import FoldText from '@/components/FoldText'
 import { useDismiss } from '@/lib/dismiss'
-import { setRole } from '@/lib/roles'
 
 const LABEL = `
 	font-beachday
@@ -514,10 +513,7 @@ function VerifyDialog({ mode, onClose }) {
 	// on its way out rather than one that vanishes mid-animation. Resetting, the
 	// code only proves it's you; the new password is still to come.
 	const onVerify = mode === 'signup'
-		? () => dismiss(() => {
-			setRole('user')
-			router.push('/dashboard')
-		})
+		? () => dismiss(() => router.push('/dashboard'))
 		: () => setStep('password')
 
 	useEffect(() => {

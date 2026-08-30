@@ -17,27 +17,7 @@ export const RANK = {
 	admin: 4,
 }
 
-export let currentRole = 'officer'   // 'user' | 'member' | 'officer' | 'treasurer' | 'admin'
-
-// Change who is looking, at runtime. The sign-up flow calls this with 'user'
-// once the emailed code checks out, because somebody who just made an account
-// has one but no member row yet.
-//
-// A `let` and a setter rather than a store: every module here imports the
-// binding rather than copying it, and ES modules make those live, so a page
-// that reads `currentRole` while rendering picks up the new value with no
-// wiring. Nothing reads it at module scope, which is what would go stale.
-//
-// In memory only, and deliberately. It lasts as long as the tab does and resets
-// on reload — the same lifetime the hardcoded constant already had. Persisting
-// it properly means a cookie, not localStorage: the pages that branch on the
-// role render on the server, and a value only the browser knows would disagree
-// with what the server sent. That belongs with the session read this whole
-// module is waiting on.
-export function setRole(role) {
-	if (!(role in RANK)) return
-	currentRole = role
-}
+export const currentRole = 'officer'   // 'user' | 'member' | 'officer' | 'treasurer' | 'admin'
 
 // Which member is looking, not just at what rank. Pages that show someone their
 // own rows — an officer's compensation requests, say — filter on this rather
