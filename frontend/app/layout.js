@@ -30,6 +30,11 @@ const bumbel = localFont({
   variable: "--font-bumbel",
 });
 
+const dream = localFont({
+  src: "./fonts/DreamKudos.woff2",
+  variable: "--font-dream",
+});
+
 const beachday = localFont({
   src: "./fonts/Beachday.woff2",
   variable: "--font-beachday",
@@ -98,6 +103,7 @@ export default function RootLayout({ children }) {
         ${beautifulbg.variable}
         ${canobis.variable}
         ${reasons.variable}
+        ${dream.variable}
         h-full antialiased`}
     >
       <body className="min-h-full flex flex-col" suppressHydrationWarning>

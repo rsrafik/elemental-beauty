@@ -49,6 +49,7 @@
   --font-beautifulbg: var(--font-beautifulbg);
   --font-canobis: var(--font-canobis);
   --font-reasons: var(--font-reasons);
+  --font-dream: var(--font-dream);
 }
 
 @media (prefers-color-scheme: dark) {
@@ -344,10 +345,338 @@
   }
 }
 
+/* ---- the login stage ------------------------------------------------------
+ *
+ * /login is a drawing at a fixed size — 1440 x 727 — rather than a layout that
+ * reflows. Below that it is scaled down whole instead of rearranged, so the two
+ * cards keep the exact overlap, the exact off-centre placement and the exact
+ * difference in height the comp gives them at every width.
+ *
+ * Written here rather than as breakpoint utilities because the steps have to
+ * resolve in a known order — a `scale-*` at one breakpoint and another at a
+ * custom one are two rules of equal weight, and which one lands is then down to
+ * how they happen to sort.
+ *
+ * The last pair are the short-window case: a wide but shallow window has room
+ * across and none down, and without them the bottom of the panel is simply cut
+ * off by the page's own clip.
+ */
+.auth-stage {
+	--auth-scale: 0.32;
+	transform: translate(-50%, -50%) scale(var(--auth-scale));
+}
+
+@media (min-width: 640px) {
+	.auth-stage {
+		--auth-scale: 0.53;
+	}
+}
+
+@media (min-width: 1024px) {
+	.auth-stage {
+		--auth-scale: 0.71;
+	}
+}
+
+@media (min-width: 1280px) {
+	.auth-stage {
+		--auth-scale: 0.89;
+	}
+}
+
+@media (min-width: 1440px) {
+	.auth-stage {
+		--auth-scale: 1;
+	}
+}
+
+/* A wide but shallow window has room across and none down. Each of these pairs
+   a width with the height that width's step actually needs — 0.89 of a 727-tall
+   stage is 647px — so a short window drops back a step rather than having the
+   bottom of the panel cut off by the page's own clip. They come last because
+   they have to win over the width step they're correcting, and they're written
+   as the exact heights that step needs so a tall window never hits them. */
+@media (min-width: 1440px) and (max-height: 726px) {
+	.auth-stage {
+		--auth-scale: 0.89;
+	}
+}
+
+@media (min-width: 1280px) and (max-height: 646px) {
+	.auth-stage {
+		--auth-scale: 0.71;
+	}
+}
+
+@media (min-width: 1024px) and (max-height: 516px) {
+	.auth-stage {
+		--auth-scale: 0.53;
+	}
+}
+
 /* filter: drop-shadow(-4px 4px 2 rgba(0,0,0,0.9)); */
 
 body {
   background: var(--background);
   color: var(--foreground);
   font-family: Arial, Helvetica, sans-serif;
+}
+
+/* The card strip that interrupts the frame sequence.
+ *
+ * A flex accordion: every card is a flex item, and opening one is just a very
+ * large flex-grow on it. The neighbours give up their width to it in the same
+ * transition, which is what makes the whole row move as one piece rather than a
+ * panel expanding over its neighbours.
+ *
+ * The strip's own arrival and exit are separate from that, driven by
+ * `data-phase` on the wrapper — ScrollSequence sets it from the scroll position.
+ * Arriving overshoots slightly; leaving doesn't, because a bounce on the way out
+ * reads as indecision.
+ */
+
+.seq-cards {
+	position: absolute;
+	inset: 0;
+	display: flex;
+	align-items: center;
+	justify-content: center;
+	padding: 0 clamp(1rem, 4vw, 3rem);
+	/* Scroll-driven only — see SequenceCards.jsx */
+	pointer-events: none;
+}
+
+/* Layout only. The strip itself never moves — each column travels on its own,
+   which is what stops the row reading as one board sliding in. */
+.seq-cards__strip {
+	display: flex;
+	align-items: stretch;
+	justify-content: center;
+	gap: 12px;
+	width: min(1040px, 100%);
+	height: min(58svh, 460px);
+}
+
+.seq-card {
+	position: relative;
+	overflow: hidden;
+	/* Minimised is the resting state, and it is genuinely narrow — the same slim
+	   column you see beside an open card. Growing from 0 basis instead would
+	   split the strip five ways whenever nothing is open, so "minimised" would
+	   silently mean 200px wide on the way in and on the way out. */
+	min-width: 58px;
+	flex-grow: 0;
+	flex-basis: 58px;
+	border-radius: 28px;
+	/* The reference fills each card with a photograph. With flat brand colour
+	   instead, a card this tall reads as an unfinished slab, so the tone carries
+	   a light raking gradient to give it a surface. */
+	background-color: var(--card-tone, #e6e9ed);
+	background-image: linear-gradient(
+		165deg,
+		rgba(255, 255, 255, 0.26) 0%,
+		rgba(255, 255, 255, 0) 42%,
+		rgba(0, 0, 0, 0.14) 100%
+	);
+	box-shadow: 0 18px 40px -20px rgba(0, 0, 0, 0.55);
+
+	/* Parked off the right. A viewport-relative distance rather than a
+	   percentage: a column is only a fifth of the strip wide, so its own 125%
+	   would barely clear its neighbour instead of starting off-screen. The
+	   pinned section clips, so this costs no horizontal scroll. */
+	transform: translateX(105vw);
+	opacity: 0;
+
+	/* Delays are attached to transform and opacity alone. Put a blanket
+	   transition-delay on the element and the accordion inherits it too — each
+	   column would then take its stagger before opening, which reads as lag
+	   rather than as choreography. */
+	transition:
+		flex-grow 0.6s cubic-bezier(0.05, 0.61, 0.41, 0.95),
+		border-radius 0.6s cubic-bezier(0.05, 0.61, 0.41, 0.95),
+		transform 0.8s cubic-bezier(0.22, 1.35, 0.36, 1) var(--fly-delay, 0ms),
+		opacity 0.4s ease var(--fly-delay, 0ms);
+}
+
+/* Leftmost leads. It has the furthest to travel, so starting it first lands the
+   row left to right and finishes with the column that had least distance. */
+.seq-card:nth-child(1) {
+	--fly-delay: 0ms;
+}
+.seq-card:nth-child(2) {
+	--fly-delay: 80ms;
+}
+.seq-card:nth-child(3) {
+	--fly-delay: 160ms;
+}
+.seq-card:nth-child(4) {
+	--fly-delay: 240ms;
+}
+.seq-card:nth-child(5) {
+	--fly-delay: 320ms;
+}
+
+.seq-cards[data-phase='in'] .seq-card,
+.seq-cards[data-phase='cycle'] .seq-card {
+	transform: none;
+	opacity: 1;
+}
+
+/* Out the other side, same stagger, no overshoot — a bounce on the way out reads
+   as indecision.
+ *
+ * The collapse is deliberately quicker than the flight and carries no delay, so
+ * the last open card is back to a narrow column before it has travelled far.
+ * Left on the same 0.6s as the accordion it would still be shrinking halfway
+ * across the screen, and the row leaves as five smears of different widths
+ * rather than as five columns. */
+.seq-cards[data-phase='out'] .seq-card {
+	transform: translateX(-105vw);
+	opacity: 0;
+	transition:
+		flex-grow 0.3s cubic-bezier(0.4, 0, 0.2, 1),
+		border-radius 0.3s cubic-bezier(0.4, 0, 0.2, 1),
+		transform 0.7s cubic-bezier(0.5, 0, 0.75, 0) var(--fly-delay, 0ms),
+		opacity 0.45s ease var(--fly-delay, 0ms);
+}
+
+/* The only card allowed to grow. Its siblings sit at flex-grow 0, so this one
+   absorbs every pixel the row has left over and they stay at their 58px. */
+.seq-card[data-open='true'] {
+	flex-grow: 10000;
+	border-radius: 36px;
+}
+
+/* Darkens the bottom so the white label stays readable on the paler tones. */
+.seq-card__shade {
+	position: absolute;
+	right: 0;
+	bottom: 0;
+	left: 0;
+	/* A gradient, not an inset box-shadow. The shadow trick needs its blur to
+	   fall outside its own box to fade out, and an inset one is clipped by that
+	   box — which drew a hard horizontal seam right across the card where the
+	   130px element ended. A gradient fades where it's told to. */
+	height: 62%;
+	background: linear-gradient(
+		to top,
+		rgba(0, 0, 0, 0.78) 0%,
+		rgba(0, 0, 0, 0.45) 38%,
+		rgba(0, 0, 0, 0) 100%
+	);
+	opacity: 0;
+	transition: opacity 0.6s cubic-bezier(0.05, 0.61, 0.41, 0.95);
+}
+
+/* Minimised, the card is only its icon — a white disc that needs no help
+   standing out. The wash is for the label, so it arrives with the label. */
+.seq-card[data-open='true'] .seq-card__shade {
+	opacity: 1;
+}
+
+.seq-card__label {
+	position: absolute;
+	right: 0;
+	bottom: 10px;
+	left: 0;
+	display: flex;
+	align-items: center;
+	gap: 10px;
+	/* Centres the 40px disc in the minimised column. Hard-coding a left inset
+	   left it 10px from one edge and 8px from the other, which is small but
+	   reads as crooked once five of them line up. */
+	padding: 0 var(--card-pad, 9px);
+	/* Inherits Arial from the body otherwise, which is the one font on the page
+	   that belongs to nothing. */
+	font-family: var(--font-vietnam), system-ui, sans-serif;
+	transition:
+		bottom 0.6s cubic-bezier(0.05, 0.61, 0.41, 0.95),
+		padding 0.6s cubic-bezier(0.05, 0.61, 0.41, 0.95);
+}
+
+.seq-card[data-open='true'] .seq-card__label {
+	bottom: 22px;
+	padding: 0 22px;
+}
+
+.seq-card__icon {
+	display: flex;
+	align-items: center;
+	justify-content: center;
+	flex: 0 0 40px;
+	width: 40px;
+	height: 40px;
+	border-radius: 100%;
+	background: #ffffff;
+	color: var(--card-tone, #1a1917);
+	box-shadow: 0 2px 8px rgba(0, 0, 0, 0.18);
+}
+
+/* No fixed height: two lines of type are taller than the 40px disc beside it,
+   and pinning the row to 40px pushed the text proud of its own container. */
+.seq-card__info {
+	display: flex;
+	flex-direction: column;
+	justify-content: center;
+	min-width: 0;
+	color: #ffffff;
+	white-space: pre;
+	text-shadow: 0 1px 6px rgba(0, 0, 0, 0.4);
+}
+
+/* Held off to the right and transparent until the card opens, so a minimised
+   card is only ever its icon. */
+.seq-card__info > span {
+	position: relative;
+	left: 20px;
+	opacity: 0;
+	transition:
+		left 0.6s cubic-bezier(0.05, 0.61, 0.41, 0.95),
+		opacity 0.5s ease-out;
+}
+
+.seq-card[data-open='true'] .seq-card__info > span {
+	left: 0;
+	opacity: 1;
+}
+
+.seq-card__title {
+	font-weight: 700;
+	font-size: 1.15rem;
+	line-height: 1.2;
+}
+
+.seq-card__sub {
+	font-size: 0.9rem;
+	opacity: 0.85;
+	transition-delay: 0.1s;
+}
+
+@media (max-width: 640px) {
+	.seq-cards__strip {
+		gap: 8px;
+		height: min(52svh, 400px);
+	}
+
+	.seq-card {
+		min-width: 44px;
+		flex-basis: 44px;
+		border-radius: 22px;
+		/* (44 - 40) / 2 — keeps the disc centred at the narrower column width */
+		--card-pad: 2px;
+	}
+
+	.seq-card__sub {
+		display: none;
+	}
+}
+
+@media (prefers-reduced-motion: reduce) {
+	.seq-cards__strip,
+	.seq-card,
+	.seq-card__shade,
+	.seq-card__label,
+	.seq-card__info > span {
+		transition-duration: 0.01ms;
+	}
 }
