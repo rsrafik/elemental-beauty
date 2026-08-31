@@ -31,6 +31,16 @@ export function longDate(value) {
 	})
 }
 
+// '2026-10-03' -> 'oct 3'. The short form the dashboard's upcoming rings wear
+// up their corner, where there's room for about seven characters.
+export function shortDate(value) {
+	const [year, month, day] = isoDate(value).split('-').map(Number)
+	if (!year || !month || !day) return ''
+	return new Date(year, month - 1, day)
+		.toLocaleDateString('en-US', { month: 'short', day: 'numeric' })
+		.toLowerCase()
+}
+
 // '18:00' -> '6:00 PM'. Null and '' both come back empty, so a row with no
 // clock time on it just prints nothing.
 export function prettyTime(value) {

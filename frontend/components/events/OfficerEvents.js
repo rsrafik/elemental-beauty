@@ -1,6 +1,7 @@
 'use client'
 
 import { useEffect, useState } from 'react'
+import { useRouter } from 'next/navigation'
 import { useDismiss } from '@/lib/dismiss'
 import DashboardShell from '@/components/dashboards/DashboardShell'
 import { eventCategories, events as eventsApi } from '@/lib/api'
@@ -796,14 +797,24 @@ function EventDialog({ event, categories, onClose, onSave, onDelete }) {
 
 // ---- page ------------------------------------------------------------------
 
-export default function OfficerEvents() {
+export default function OfficerEvents({ openNew = false }) {
+	const router = useRouter()
 	const [events, setEvents] = useState([])
 	const [categories, setCategories] = useState([])
 	const [error, setError] = useState(null)
 
 	// null = closed. { event: null } opens an empty dialog, { event } loads that
 	// row into it — one dialog serving both the + and the dots.
-	const [editing, setEditing] = useState(null)
+	const [editing, setEditing] = useState(openNew ? { event: null } : null)
+
+	// Closing the form takes `?new` back off the URL, so a refresh doesn't
+	// reopen something you just dismissed. Done on close rather than on arrival
+	// because the parameter is what seeds the state above — stripping it the
+	// moment the page mounts would race that.
+	const closeEditor = () => {
+		setEditing(null)
+		if (openNew) router.replace('/events')
+	}
 
 	useEffect(() => {
 		let live = true
@@ -832,7 +843,7 @@ export default function OfficerEvents() {
 		} catch (err) {
 			setError(err.message)
 		}
-		setEditing(null)
+		closeEditor()
 	}
 
 	// `type` is what the club scores attendance on — official events are worth
@@ -863,7 +874,7 @@ export default function OfficerEvents() {
 		} catch (err) {
 			setError(err.message)
 		}
-		setEditing(null)
+		closeEditor()
 	}
 
 	return (
@@ -962,7 +973,7 @@ export default function OfficerEvents() {
 				<EventDialog
 					event={editing.event}
 					categories={categories}
-					onClose={() => setEditing(null)}
+					onClose={closeEditor}
 					onSave={saveEvent}
 					onDelete={editing.event ? deleteEvent : undefined}
 				/>

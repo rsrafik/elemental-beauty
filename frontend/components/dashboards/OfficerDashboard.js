@@ -5,7 +5,8 @@ import { useRouter } from 'next/navigation'
 import Sidebar from '@/components/dashboards/Sidebar'
 import { useRole, useSignOut } from '@/lib/session'
 import { navFor, showInstagramFor } from '@/lib/nav'
-import { announcements as announcementsApi, members } from '@/lib/api'
+import { announcements as announcementsApi, events as eventsApi, labs as labsApi, members } from '@/lib/api'
+import { isoDate, shortDate, today } from '@/lib/dates'
 
 // Shown to officer / treasurer / admin.
 // Sidebar + a 2x2 grid (quick actions / upcoming / announcement / leaderboard)
@@ -99,6 +100,11 @@ export default function OfficerDashboard() {
 	// so it can't disagree with the roster on /students.
 	const [board, setBoard] = useState([])
 
+	// The next three things on the calendar, labs and events together — the club
+	// doesn't think of them as separate queues, and neither does this panel.
+	// Soonest first: [0] is drawn on the front ring, [2] on the one at the back.
+	const [upcoming, setUpcoming] = useState([])
+
 	// what's in the announcement box, and what the POST button is doing about it
 	const [draft, setDraft] = useState('')
 	const [posting, setPosting] = useState(false)
@@ -127,8 +133,49 @@ export default function OfficerDashboard() {
 				)
 			})
 			.catch(() => {})
+
+		// Today counts as upcoming — a lab running this afternoon is the most
+		// upcoming thing there is — so the cut is made here rather than with the
+		// API's ?when=upcoming, which measures from the current instant and would
+		// drop anything dated today.
+		Promise.all([labsApi.list(), eventsApi.list()])
+			.then(([labs, events]) => {
+				if (!live) return
+				const now = today()
+				const soon = [
+					...labs.map((lab) => ({
+						id: `lab-${lab.labId}`,
+						date: isoDate(lab.date),
+						time: '',
+						title: lab.title,
+						taken: lab.taken,
+						capacity: lab.capacity,
+					})),
+					...events.map((event) => ({
+						id: `event-${event.eventId}`,
+						date: isoDate(event.date),
+						time: event.startTime ?? '',
+						title: event.title,
+						taken: event.taken,
+						capacity: event.capacity,
+					})),
+				]
+					.filter((row) => row.date >= now)
+					// same day: the earlier start time comes first, and something
+					// with no time on it sorts ahead of something with one
+					.sort((a, b) => a.date.localeCompare(b.date) || a.time.localeCompare(b.time))
+					.slice(0, 3)
+				setUpcoming(soon)
+			})
+			.catch(() => {})
+
 		return () => { live = false }
 	}, [])
+
+	// An event with no cap is uncapped, not 0 — the label drops the denominator
+	// rather than inventing one.
+	const attending = (row) =>
+		row.capacity == null ? `Attending: ${row.taken}` : `Attending: ${row.taken}/${row.capacity}`
 
 	const post = async () => {
 		const body = draft.trim()
@@ -223,7 +270,8 @@ export default function OfficerDashboard() {
 					{/* Two of the three go where the thing is actually made rather
 					    than opening a dialog here — the event and lab forms live on
 					    their own pages, and a second copy of either would be a second
-					    form to keep in step.
+					    form to keep in step. `?new` asks that page to open its form
+					    on arrival, so it's still one click from here.
 
 					    "Email All" has no endpoint behind it yet: the club mails
 					    through Resend for password resets, but there's no route that
@@ -248,7 +296,7 @@ export default function OfficerDashboard() {
 					</button>
 					<button
 						type="button"
-						onClick={() => router.push('/events')}
+						onClick={() => router.push('/events?new=1')}
 						className="
 						w-full
 						rounded-full
@@ -270,7 +318,7 @@ export default function OfficerDashboard() {
 					</button>
 					<button
 						type="button"
-						onClick={() => router.push('/labs')}
+						onClick={() => router.push('/labs?new=1')}
 						className="
 						w-full
 						rounded-full
@@ -339,7 +387,7 @@ export default function OfficerDashboard() {
 						ease-out
                         shadow-[5px_-5px_2px_rgba(0,0,0,0.5)]
 					">
-						<RingDate>oct 3</RingDate>
+						<RingDate>{upcoming[2] ? shortDate(upcoming[2].date) : ''}</RingDate>
 							<h2 className="
 								ml-4
 								sm:ml-8
@@ -353,7 +401,7 @@ export default function OfficerDashboard() {
 								lg:text-[30px]
 								leading-tight
 							">
-								Bubbles and Beakers
+								{upcoming[2]?.title ?? ''}
 							</h2>
 							<h3 className="
 								text-black
@@ -367,7 +415,7 @@ export default function OfficerDashboard() {
 								mb-6
 								lg:mb-10
 							">
-								Attending: 5/20
+								{upcoming[2] ? attending(upcoming[2]) : ''}
 							</h3>
                     </div>
 					<div className="
@@ -388,7 +436,7 @@ export default function OfficerDashboard() {
 						peer-hover/light:translate-y-[45%]
                         shadow-[5px_-5px_2px_rgba(0,0,0,0.5)]
 					">
-						<RingDate>sep 17</RingDate>
+						<RingDate>{upcoming[1] ? shortDate(upcoming[1].date) : ''}</RingDate>
 						<div className="
 							absolute
 							inset-0
@@ -407,7 +455,7 @@ export default function OfficerDashboard() {
 								lg:text-[30px]
 								leading-tight
 							">
-								Bubbles and Beakers
+								{upcoming[1]?.title ?? ''}
 							</h2>
 							<h3 className="
 								text-black
@@ -416,7 +464,7 @@ export default function OfficerDashboard() {
 								sm:text-base
 								mt-1
 							">
-								Attending: 5/20
+								{upcoming[1] ? attending(upcoming[1]) : ''}
 							</h3>
 						</div>
                     </div>
@@ -439,7 +487,7 @@ export default function OfficerDashboard() {
 						peer-hover/lighter:translate-y-[55%]
                         shadow-[5px_-5px_2px_rgba(0,0,0,0.5)]
 					">
-						<RingDate>aug 28</RingDate>
+						<RingDate>{upcoming[0] ? shortDate(upcoming[0].date) : ''}</RingDate>
 						<div className="
 							mt-5
 							mr-5
@@ -460,7 +508,7 @@ export default function OfficerDashboard() {
 								lg:text-[30px]
 								leading-tight
 							">
-								Bubbles and Beakers
+								{upcoming[0]?.title ?? ''}
 							</h2>
 							<h3 className="
 								text-black
@@ -469,7 +517,7 @@ export default function OfficerDashboard() {
 								sm:text-base
 								mt-1
 							">
-								Attending: 5/20
+								{upcoming[0] ? attending(upcoming[0]) : ''}
 							</h3>
 						</div>
                     </div>

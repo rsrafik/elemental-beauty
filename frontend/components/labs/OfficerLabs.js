@@ -1,6 +1,7 @@
 'use client'
 
 import { useEffect, useState } from 'react'
+import { useRouter } from 'next/navigation'
 import { useDismiss } from '@/lib/dismiss'
 import DashboardShell from '@/components/dashboards/DashboardShell'
 import { labs as labsApi } from '@/lib/api'
@@ -708,13 +709,23 @@ function LabDialog({ lab, onClose, onSave, onDelete }) {
 
 // ---- page ------------------------------------------------------------------
 
-export default function OfficerLabs() {
+export default function OfficerLabs({ openNew = false }) {
+	const router = useRouter()
 	const [labs, setLabs] = useState([])
 	const [error, setError] = useState(null)
 
 	// null = closed. { lab: null } opens an empty dialog, { lab } loads that row
 	// into it — one dialog serving both the + and the dots.
-	const [editing, setEditing] = useState(null)
+	const [editing, setEditing] = useState(openNew ? { lab: null } : null)
+
+	// Closing the form takes `?new` back off the URL, so a refresh doesn't
+	// reopen something you just dismissed. Done on close rather than on arrival
+	// because the parameter is what seeds the state above — stripping it the
+	// moment the page mounts would race that.
+	const closeEditor = () => {
+		setEditing(null)
+		if (openNew) router.replace('/labs')
+	}
 
 	useEffect(() => {
 		let live = true
@@ -737,10 +748,10 @@ export default function OfficerLabs() {
 		try {
 			await labsApi.remove(target.id)
 			setLabs((prev) => prev.filter((lab) => lab.id !== target.id))
-			setEditing(null)
+			closeEditor()
 		} catch (err) {
 			setError(err.message)
-			setEditing(null)
+			closeEditor()
 		}
 	}
 
@@ -764,10 +775,10 @@ export default function OfficerLabs() {
 				const created = await labsApi.create(body)
 				setLabs((prev) => [...prev, toCard(created)])
 			}
-			setEditing(null)
+			closeEditor()
 		} catch (err) {
 			setError(err.message)
-			setEditing(null)
+			closeEditor()
 		}
 	}
 
@@ -866,7 +877,7 @@ export default function OfficerLabs() {
 			{editing && (
 				<LabDialog
 					lab={editing.lab}
-					onClose={() => setEditing(null)}
+					onClose={closeEditor}
 					onSave={saveLab}
 					onDelete={editing.lab ? deleteLab : undefined}
 				/>
