@@ -1,10 +1,5 @@
-import ScrollSequence from '@/components/home/ScrollSequence'
-
-// The landing page stays a Server Component — only the sequence needs the
-// browser, so only the sequence ships as a client bundle. Everything below it
-// is ordinary flow content: ScrollTrigger's pin spacer reserves the scroll the
-// sequence consumes, so these sections arrive on their own with no offsets to
-// compensate for and no knowledge that the pin above them exists.
+// A Server Component, and nothing here needs the browser — it is ordinary flow
+// content all the way down.
 
 export default function Home() {
 	return (
@@ -12,8 +7,6 @@ export default function Home() {
 			bg-cream
 			text-orange-dark
 		">
-			<ScrollSequence />
-
 			<section
 				id="about"
 				className="
