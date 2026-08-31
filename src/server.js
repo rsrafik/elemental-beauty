@@ -6,6 +6,9 @@ import authRoutes from './routes/authRoutes.js'
 import memberRoutes from './routes/memberRoutes.js'
 import labRoutes from './routes/labRoutes.js'
 import eventRoutes from './routes/eventRoutes.js'
+import eventCategoryRoutes from './routes/eventCategoryRoutes.js'
+import announcementRoutes from './routes/announcementRoutes.js'
+import yearTargetRoutes from './routes/yearTargetRoutes.js'
 import grantRoutes from './routes/grantRoutes.js'
 import reimbursementRoutes from './routes/reimbursementRoutes.js'
 import transactionRoutes from './routes/transactionRoutes.js'
@@ -58,9 +61,19 @@ app.use('/api/auth', authLimiter, authRoutes)
 app.use('/api/members', authMiddleware, requireRole('member'), memberRoutes)
 app.use('/api/labs', authMiddleware, requireRole('member'), labRoutes)
 app.use('/api/events', authMiddleware, requireRole('member'), eventRoutes)
+// the calendar's tag list and the club's announcements: every member reads
+// them, officers write them — that split is inside the routers
+app.use('/api/event-categories', authMiddleware, requireRole('member'), eventCategoryRoutes)
+app.use('/api/announcements', authMiddleware, requireRole('member'), announcementRoutes)
+// the income goal and spending budget: on the summary cards every officer
+// sees, set by the treasurer alone (enforced inside the router)
+app.use('/api/year-targets', authMiddleware, requireRole('officer'), yearTargetRoutes)
 app.use('/api/reimbursements', authMiddleware, requireRole('officer'), reimbursementRoutes)
 app.use('/api/transactions', authMiddleware, requireRole('officer'), transactionRoutes)
-app.use('/api/grants', authMiddleware, requireRole('treasurer'), grantRoutes)
+// Same split as transactions: every officer reads the books — the grant
+// tracker is on the analytics page they all see — and only the treasurer
+// writes to them. The write gate is inside the router.
+app.use('/api/grants', authMiddleware, requireRole('officer'), grantRoutes)
 
 // Mark RSVP'd no-shows absent once a lab/event's day has passed —
 // on boot, then hourly.

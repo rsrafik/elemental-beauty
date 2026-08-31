@@ -3,6 +3,8 @@
 import { useEffect, useState } from 'react'
 import { useDismiss } from '@/lib/dismiss'
 import DashboardShell from '@/components/dashboards/DashboardShell'
+import { labs as labsApi } from '@/lib/api'
+import { isoDate } from '@/lib/dates'
 
 // /labs for officer / treasurer / admin: every lab on one sheet, each one
 // editable from the dots in its corner.
@@ -13,27 +15,26 @@ import DashboardShell from '@/components/dashboards/DashboardShell'
 
 // ---- data ------------------------------------------------------------------
 
-// Placeholder rows until /labs is wired to the API. `date` is stored the way
-// the date input wants it ('YYYY-MM-DD') and formatted for the card, so editing
-// a lab prefills instead of re-parsing prose. `image` is a path under public/ —
-// cards fall back to a blank tile while those don't exist yet.
-const seedLabs = [
-	{ id: 1, title: 'Bronzer', date: '2026-08-30', image: null, description: '' },
-	{ id: 2, title: 'Lipstick', date: '2026-08-30', image: null, description: '' },
-	{ id: 3, title: 'Lip Gloss', date: '2026-08-30', image: null, description: '' },
-	{ id: 4, title: 'Lip Gloss', date: '2026-08-30', image: null, description: '' },
-	{ id: 5, title: 'Bronzer', date: '2026-09-06', image: null, description: '' },
-	{ id: 6, title: 'Lipstick', date: '2026-09-06', image: null, description: '' },
-	{ id: 7, title: 'Lip Gloss', date: '2026-09-06', image: null, description: '' },
-	{ id: 8, title: 'Lip Gloss', date: '2026-09-06', image: null, description: '' },
-]
+// GET /api/labs, flattened for the cards. `date` is kept the way the date
+// input wants it ('YYYY-MM-DD') so editing a lab prefills instead of re-parsing
+// what the card prints.
+function toCard(lab) {
+	return {
+		id: lab.labId,
+		title: lab.title,
+		date: isoDate(lab.date),
+		image: lab.image,
+		description: lab.description ?? '',
+	}
+}
 
 // '2026-08-30' -> 'August 30, 2026'. Split by hand rather than through Date,
 // which reads a bare date string as UTC and can hand back the day before
 // depending on the timezone.
 function prettyDate(value) {
 	if (!value) return ''
-	const [year, month, day] = value.split('-').map(Number)
+	const [year, month, day] = String(value).slice(0, 10).split('-').map(Number)
+	if (!year || !month || !day) return ''
 	return new Date(year, month - 1, day).toLocaleDateString('en-US', {
 		month: 'long',
 		day: 'numeric',
@@ -386,10 +387,20 @@ function LabDialog({ lab, onClose, onSave, onDelete }) {
 		return () => window.removeEventListener('keydown', onKey)
 	})
 
+	// Read as a data URL rather than an object URL. An object URL only exists
+	// for as long as this tab does, so a picture saved that way would come back
+	// broken on the next load — a data URL is the actual bytes and survives.
+	//
+	// It's a stopgap: a photo inlined into a TEXT column is a big row and a big
+	// response. It becomes a path the moment there's somewhere to upload to.
 	const pickImage = (event) => {
 		const file = event.target.files?.[0]
 		if (!file) return
-		setImage(URL.createObjectURL(file))
+		const reader = new FileReader()
+		reader.onload = () => setImage(reader.result)
+		reader.readAsDataURL(file)
+		// so picking the same file twice still fires a change
+		event.target.value = ''
 	}
 
 	const ready = form.title.trim() !== '' && form.date !== ''
@@ -698,27 +709,66 @@ function LabDialog({ lab, onClose, onSave, onDelete }) {
 // ---- page ------------------------------------------------------------------
 
 export default function OfficerLabs() {
-	const [labs, setLabs] = useState(seedLabs)
+	const [labs, setLabs] = useState([])
+	const [error, setError] = useState(null)
 
 	// null = closed. { lab: null } opens an empty dialog, { lab } loads that row
 	// into it — one dialog serving both the + and the dots.
 	const [editing, setEditing] = useState(null)
 
+	useEffect(() => {
+		let live = true
+		labsApi
+			.list()
+			.then((rows) => live && setLabs(rows.map(toCard)))
+			.catch((err) => live && setError(err.message))
+		return () => { live = false }
+	}, [])
+
 	// Confirming a delete takes the lab out and closes both layers at once,
 	// since the dialog it was opened from no longer has anything to edit.
-	const deleteLab = () => {
-		setLabs((prev) => prev.filter((lab) => lab.id !== editing.lab.id))
-		setEditing(null)
+	//
+	// The API goes first here rather than the card: deleting takes every
+	// sign-up and quiz result with it, so a row vanishing from the sheet and
+	// then coming back because the call was refused is worse than a beat's wait.
+	const deleteLab = async () => {
+		const target = editing.lab
+		setError(null)
+		try {
+			await labsApi.remove(target.id)
+			setLabs((prev) => prev.filter((lab) => lab.id !== target.id))
+			setEditing(null)
+		} catch (err) {
+			setError(err.message)
+			setEditing(null)
+		}
 	}
 
-	const saveLab = (values) => {
+	// Capacity isn't on the form, so a new lab takes the schema's default (20)
+	// and an edit leaves whatever it already had alone.
+	const saveLab = async (values) => {
 		const target = editing.lab
-		setLabs((prev) =>
-			target
-				? prev.map((lab) => (lab.id === target.id ? { ...lab, ...values } : lab))
-				: [...prev, { ...values, id: Math.max(0, ...prev.map((l) => l.id)) + 1 }]
-		)
-		setEditing(null)
+		const body = {
+			title: values.title,
+			date: values.date,
+			description: values.description,
+			image: values.image,
+		}
+
+		setError(null)
+		try {
+			if (target) {
+				const saved = await labsApi.update(target.id, body)
+				setLabs((prev) => prev.map((lab) => (lab.id === target.id ? toCard(saved) : lab)))
+			} else {
+				const created = await labsApi.create(body)
+				setLabs((prev) => [...prev, toCard(created)])
+			}
+			setEditing(null)
+		} catch (err) {
+			setError(err.message)
+			setEditing(null)
+		}
 	}
 
 	return (
@@ -746,6 +796,16 @@ export default function OfficerLabs() {
 				">
 					ALL LABS
 				</h1>
+				{error && (
+					<span className="
+						font-vietnam
+						text-xs
+						text-salmon-dark
+						max-w-[240px]
+					">
+						{error}
+					</span>
+				)}
 				<button
 					type="button"
 					onClick={() => setEditing({ lab: null })}

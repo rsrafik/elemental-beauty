@@ -7,10 +7,22 @@ import { eventPoints } from '../points.js'
 const router = express.Router()
 
 const EVENT_TYPES = ['official', 'social']
+const EVENT_TRACKS = ['members', 'officers', 'open', 'online']
+
+// 'HH:MM' — what <input type="time"> hands back, and what the calendar prints.
+const TIME = /^([01][0-9]|2[0-3]):[0-5][0-9]$/
+
+// Seats spoken for. A waitlisted row is NOT one of them — that's the whole
+// point of the waitlist — so the count is what fills the cap and nothing else.
+const TAKEN = { attendanceStatus: { in: ['rsvped', 'attended'] } }
 
 // ---- member-visible reads ----
 
-// ?when=upcoming|past and ?type=official|social both optional, combinable
+// ?when=upcoming|past and ?type=official|social both optional, combinable.
+//
+// Officers-only events never reach a plain member. The member calendar filters
+// them out on its own too, but that's the view side of the rule — this is the
+// one that matters, because a page can't hide what it was never sent.
 router.get('/', async (req, res) => {
     const { when, type } = req.query
 
@@ -23,13 +35,30 @@ router.get('/', async (req, res) => {
         }
         where.type = type
     }
+    if (req.role === 'member') { where.track = { not: 'officers' } }
 
     try {
         const events = await prisma.event.findMany({
             where,
-            orderBy: { date: when === 'past' ? 'desc' : 'asc' }
+            include: {
+                category: { select: { name: true } },
+                // at most one row — the pair is the primary key
+                members: {
+                    where: { memberId: req.userId },
+                    select: { attendanceStatus: true }
+                },
+                _count: { select: { members: { where: TAKEN } } }
+            },
+            orderBy: [{ date: when === 'past' ? 'desc' : 'asc' }, { startTime: 'asc' }]
         })
-        res.json(events)
+
+        // Same two extras the lab list carries: how many seats are gone, and
+        // where the person asking stands on it.
+        res.json(events.map(({ members, _count, ...event }) => ({
+            ...event,
+            taken: _count.members,
+            mine: members[0]?.attendanceStatus ?? null
+        })))
     } catch (err) {
         console.error(err.message)
         res.sendStatus(500)
@@ -41,8 +70,16 @@ router.get('/:id', async (req, res) => {
     if (isNaN(eventId)) { return res.status(400).json({ message: 'Invalid event id' }) }
 
     try {
-        const event = await prisma.event.findUnique({ where: { eventId } })
+        const event = await prisma.event.findUnique({
+            where: { eventId },
+            include: { category: { select: { name: true } } }
+        })
         if (!event) { return res.status(404).json({ message: 'Event not found' }) }
+        // an officers-only event doesn't exist as far as a member is concerned —
+        // 404, not 403, so the reply doesn't confirm there's something there
+        if (event.track === 'officers' && req.role === 'member') {
+            return res.status(404).json({ message: 'Event not found' })
+        }
 
         res.json(event)
     } catch (err) {
@@ -54,7 +91,7 @@ router.get('/:id', async (req, res) => {
 // ---- officer+ event management ----
 
 router.post('/', requireRole('officer'), async (req, res) => {
-    const { title, type, description, date, image, capacity } = req.body
+    const { title, type, track, categoryId, description, date, startTime, image, capacity } = req.body
 
     if (!title || !date) {
         return res.status(400).json({ message: 'title and date are required' })
@@ -62,9 +99,15 @@ router.post('/', requireRole('officer'), async (req, res) => {
     if (!EVENT_TYPES.includes(type)) {
         return res.status(400).json({ message: 'type must be official or social' })
     }
+    if (track !== undefined && !EVENT_TRACKS.includes(track)) {
+        return res.status(400).json({ message: `track must be one of: ${EVENT_TRACKS.join(', ')}` })
+    }
     const eventDate = new Date(date)
     if (isNaN(eventDate.getTime())) {
         return res.status(400).json({ message: 'date must be a valid date (YYYY-MM-DD)' })
+    }
+    if (startTime !== undefined && startTime !== null && startTime !== '' && !TIME.test(startTime)) {
+        return res.status(400).json({ message: 'startTime must be HH:MM' })
     }
     if (capacity !== undefined && capacity !== null && (!Number.isInteger(capacity) || capacity < 1)) {
         return res.status(400).json({ message: 'capacity must be a positive integer (or omitted for unlimited)' })
@@ -72,10 +115,22 @@ router.post('/', requireRole('officer'), async (req, res) => {
 
     try {
         const event = await prisma.event.create({
-            data: { title, type, description, date: eventDate, image, capacity }
+            data: {
+                title,
+                type,
+                track,
+                categoryId: categoryId ?? null,
+                description,
+                date: eventDate,
+                startTime: startTime || null,
+                image,
+                capacity
+            }
         })
         res.status(201).json(event)
     } catch (err) {
+        // categoryId naming a tag that isn't on the calendar's legend
+        if (err.code === 'P2003') { return res.status(400).json({ message: 'Unknown categoryId' }) }
         console.error(err.message)
         res.sendStatus(500)
     }
@@ -96,6 +151,19 @@ router.put('/:id', requireRole('officer'), async (req, res) => {
         }
         data.type = req.body.type
     }
+    if (req.body.track !== undefined) {
+        if (!EVENT_TRACKS.includes(req.body.track)) {
+            return res.status(400).json({ message: `track must be one of: ${EVENT_TRACKS.join(', ')}` })
+        }
+        data.track = req.body.track
+    }
+    if (req.body.categoryId !== undefined) { data.categoryId = req.body.categoryId }
+    if (req.body.startTime !== undefined) {
+        if (req.body.startTime && !TIME.test(req.body.startTime)) {
+            return res.status(400).json({ message: 'startTime must be HH:MM' })
+        }
+        data.startTime = req.body.startTime || null
+    }
     if (req.body.date !== undefined) {
         const eventDate = new Date(req.body.date)
         if (isNaN(eventDate.getTime())) {
@@ -115,6 +183,7 @@ router.put('/:id', requireRole('officer'), async (req, res) => {
         res.json(event)
     } catch (err) {
         if (err.code === 'P2025') { return res.status(404).json({ message: 'Event not found' }) }
+        if (err.code === 'P2003') { return res.status(400).json({ message: 'Unknown categoryId' }) }
         console.error(err.message)
         res.sendStatus(500)
     }

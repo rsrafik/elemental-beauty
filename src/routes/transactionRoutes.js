@@ -39,6 +39,18 @@ router.get('/', async (req, res) => {
     try {
         const transactions = await prisma.transaction.findMany({
             where,
+            // A row that came from settling a receipt says who it was paid back
+            // to — the ledger prints "reimbursed to Ada White · #12", and
+            // deleting one of those is really unpicking somebody's payout, so
+            // the name has to be on the row rather than looked up per click.
+            include: {
+                reimbursement: {
+                    select: {
+                        reimbursementId: true,
+                        member: { select: { user: { select: { firstName: true, lastName: true } } } }
+                    }
+                }
+            },
             orderBy: { date: 'desc' }
         })
         res.json(transactions)

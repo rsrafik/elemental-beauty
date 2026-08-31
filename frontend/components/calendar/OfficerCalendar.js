@@ -3,6 +3,8 @@
 import { useEffect, useState } from 'react'
 import { useDismiss } from '@/lib/dismiss'
 import DashboardShell from '@/components/dashboards/DashboardShell'
+import { eventCategories, events as eventsApi, labs as labsApi } from '@/lib/api'
+import { buildMonths, typesIn } from '@/lib/calendar'
 
 // /calendar for officer / treasurer / admin: the member month view, plus the
 // button that puts something new on it.
@@ -42,11 +44,12 @@ const TYPES = [
 	'Deadline',
 ]
 
-// What the new-event dropdown offers: the current tag list minus labs, which
-// are scheduled from /labs. The list is editable on this page, so this runs
-// against the live tags rather than the constant above.
-function categoriesFrom(types) {
-	return types.filter((type) => type !== 'Lab')
+// What the new-event dropdown offers: the club's tag rows. Labs can't be one
+// of them — /api/event-categories refuses the name — so there's nothing to
+// filter out any more; this is here so the dialog is handed a list rather than
+// reaching for the page's state.
+function categoriesFrom(categories) {
+	return categories
 }
 
 // Who the day is for. This is the colour dimension: the badge on the day and
@@ -62,44 +65,10 @@ const TRACKS = {
 // This page shows all four tracks, since officers are the ones scheduling them.
 const TRACK_KEYS = Object.keys(TRACKS)
 
-// Keyed 'YYYY-MM', then by day of the month. Placeholder rows until /calendar
-// is wired to the API. A day holds either one entry or a list of them.
-const entries = {
-	'2026-08': {
-		1: { type: 'Social', title: 'Kickoff Mixer', track: 'open' },
-		4: { type: 'GBM', title: 'First Meeting', track: 'members' },
-		6: { type: 'Lab', title: 'Bubbles & Beakers', track: 'members' },
-		8: { type: 'Pop-Up', title: 'Vendor Booth', track: 'open' },
-		11: { type: 'Lab', title: 'Lip Gloss', track: 'members' },
-		13: { type: 'Workshop', title: 'Skincare 101', track: 'online' },
-		15: { type: 'Social', title: 'Glow Night', track: 'members' },
-		18: { type: 'Lab', title: 'Bronzer', track: 'members' },
-		20: { type: 'Deadline', title: 'Dues Due', track: 'online' },
-		21: { type: 'GBM', title: 'Officer Sync', track: 'officers' },
-		23: { type: 'Volunteering', title: 'Beach Cleanup', track: 'open' },
-		25: { type: 'Photoshoot', title: 'Member Portraits', track: 'members' },
-		27: { type: 'Fundraiser', title: 'Bake Sale', track: 'open' },
-		29: { type: 'Lab', title: 'Lipstick', track: 'members' },
-		31: { type: 'GBM', title: 'Month Recap', track: 'members' },
-	},
-	'2026-09': {
-		2: { type: 'GBM', title: 'Fall Kickoff', track: 'members' },
-		5: { type: 'Lab', title: 'Blush', track: 'members' },
-		9: { type: 'Workshop', title: 'Brush Care', track: 'online' },
-		12: { type: 'Lab', title: 'Highlighter', track: 'members' },
-		17: { type: 'Fundraiser', title: 'Bake Sale', track: 'open' },
-		19: { type: 'Lab', title: 'Body Butter', track: 'members' },
-		24: { type: 'Photoshoot', title: 'Officer Headshots', track: 'officers' },
-		26: { type: 'Lab', title: 'Lip Scrub', track: 'members' },
-		30: { type: 'Deadline', title: 'Points Due', track: 'online' },
-	},
-	'2026-07': {
-		4: { type: 'Social', title: 'Summer Meetup', track: 'open' },
-		15: { type: 'Workshop', title: 'Ingredient Basics', track: 'online' },
-		22: { type: 'Lab', title: 'Sunscreen', track: 'members' },
-		29: { type: 'GBM', title: 'Planning Session', track: 'officers' },
-	},
-}
+// Where the days come from now: labs and events, folded into one month map by
+// lib/calendar. This page shows all four tracks, since officers are the ones
+// scheduling them — the member calendar is what drops the officers-only ones.
+
 
 // ---- dates -----------------------------------------------------------------
 
@@ -763,7 +732,7 @@ function EventDialog({ categories, onClose, onSave }) {
 		title: '',
 		date: '',
 		time: '',
-		category: categories[0] ?? '',
+		categoryId: categories[0]?.categoryId ?? '',
 		track: 'members',
 		description: '',
 	})
@@ -942,13 +911,13 @@ function EventDialog({ categories, onClose, onSave }) {
 						<label className="block">
 							<Label>category</Label>
 							<select
-								value={form.category}
-								onChange={set('category')}
+								value={form.categoryId}
+								onChange={set('categoryId')}
 								className={`${FIELD} cursor-pointer`}
 							>
 								{categories.map((category) => (
-									<option key={category} value={category}>
-										{category}
+									<option key={category.categoryId} value={category.categoryId}>
+										{category.name}
 									</option>
 								))}
 							</select>
@@ -1116,17 +1085,42 @@ export default function OfficerCalendar() {
 	const [view, setView] = useState({ year: YEAR, month: MONTH })
 	const [dialogOpen, setDialogOpen] = useState(false)
 
-	// Everything added from this page, in the same 'YYYY-MM' -> day shape as the
-	// seeded rows. Local only until /calendar is wired to the API.
-	const [added, setAdded] = useState({})
+	// Every lab and event, keyed by month then day. Fetched once and stepped
+	// through locally — the club's calendar is small enough that a request per
+	// month would be more round trips than rows.
+	const [months, setMonths] = useState({})
 
-	// The tag list is editable here: TYPES is only its starting point. Removing
-	// one takes it out of the row and out of the category dropdown; days already
-	// captioned with it keep their caption. Local until there's an API.
+	// The tag list, as rows in event_categories. `types` is what the legend
+	// draws (names, including 'Lab' and anything an event still carries whose
+	// tag has since been deleted); `categories` is the editable list itself,
+	// which is what the dropdown and the remove button work on.
+	const [categories, setCategories] = useState([])
 	const [types, setTypes] = useState(TYPES)
 	const [adding, setAdding] = useState(false)
 	const [draft, setDraft] = useState('')
 	const [pendingRemoval, setPendingRemoval] = useState(null)
+	const [error, setError] = useState(null)
+
+	// Everything on the page comes off these three, so a change to any of them
+	// reloads all three rather than trying to patch three shapes by hand.
+	const load = () =>
+		Promise.all([labsApi.list(), eventsApi.list(), eventCategories.list()])
+			.then(([labs, events, tags]) => {
+				const built = buildMonths(labs, events)
+				setMonths(built)
+				setCategories(tags)
+				setTypes(typesIn(built, tags))
+				return true
+			})
+
+	useEffect(() => {
+		let live = true
+		load()
+			.catch((err) => live && setError(err.message))
+		// the fetch outlives a fast navigation away; nothing above runs if the
+		// page has gone, because `load` only sets state through these closures
+		return () => { live = false }
+	}, [])
 
 	const startAdding = () => {
 		setDraft('')
@@ -1135,12 +1129,23 @@ export default function OfficerCalendar() {
 
 	// A blank name or one already on the list closes the input without adding
 	// anything, so Enter on an empty pill is a cancel rather than a dead end.
-	const commitDraft = () => {
+	// Anything else goes to the API — the tag is a row, and the duplicate check
+	// runs there too against a unique index.
+	const commitDraft = async () => {
 		const name = draft.trim()
 		const taken = types.some((type) => type.toLowerCase() === name.toLowerCase())
-		if (name && !taken) setTypes((prev) => [...prev, name])
 		setDraft('')
 		setAdding(false)
+		if (!name || taken) return
+
+		setError(null)
+		try {
+			const created = await eventCategories.add(name)
+			setCategories((prev) => [...prev, created])
+			setTypes((prev) => [...prev, created.name])
+		} catch (err) {
+			setError(err.message)
+		}
 	}
 
 	const cancelDraft = () => {
@@ -1148,9 +1153,22 @@ export default function OfficerCalendar() {
 		setAdding(false)
 	}
 
-	const removeType = () => {
-		setTypes((prev) => prev.filter((type) => type !== pendingRemoval))
+	// Removing a tag doesn't remove the events filed under it — the column is
+	// ON DELETE SET NULL, so they stay on the grid and stop being tagged. That's
+	// why the whole lot is reloaded afterwards: those days' captions change.
+	const removeType = async () => {
+		const target = categories.find((category) => category.name === pendingRemoval)
 		setPendingRemoval(null)
+		// 'Lab' and any orphaned caption aren't rows, so there's nothing to delete
+		if (!target) return
+
+		setError(null)
+		try {
+			await eventCategories.remove(target.categoryId)
+			await load()
+		} catch (err) {
+			setError(err.message)
+		}
 	}
 
 	const step = (delta) =>
@@ -1159,44 +1177,44 @@ export default function OfficerCalendar() {
 			return { year: moved.getFullYear(), month: moved.getMonth() }
 		})
 
-	// Drop the new event on its day and jump the view to the month it landed in,
+	// Post the event, then reload and jump the view to the month it landed in,
 	// so it's never saved out of sight.
-	const saveEvent = ({ title, date, time, category, track, description, image }) => {
-		const { key, day, year, month } = splitDateInput(date)
-		const entry = {
-			type: category,
-			title,
-			track,
-			time,
-			description,
-			image,
+	//
+	// `type` — official or social, which is what attendance is scored on — isn't
+	// on this form, so a new event takes 'social'. Change it from /events, where
+	// the same event has a full editor.
+	const saveEvent = async ({ title, date, time, categoryId, track, description, image }) => {
+		setError(null)
+		try {
+			await eventsApi.create({
+				title,
+				date,
+				startTime: time || null,
+				categoryId: categoryId === '' ? null : Number(categoryId),
+				track,
+				description,
+				image,
+				type: 'social',
+			})
+			await load()
+			const { year, month } = splitDateInput(date)
+			setView({ year, month: month - 1 })
+		} catch (err) {
+			setError(err.message)
 		}
-		setAdded((prev) => ({
-			...prev,
-			[key]: {
-				...(prev[key] ?? {}),
-				[day]: [...listFor(prev[key] ?? {}, day), entry],
-			},
-		}))
-		setView({ year, month: month - 1 })
 		setDialogOpen(false)
 	}
 
 	const weeks = monthWeeks(view.year, view.month)
 	const stamp = monthKey(view.year, view.month)
-	const seeded = entries[stamp] ?? {}
-	const mine = added[stamp] ?? {}
+	const monthEntries = months[stamp] ?? {}
 
 	// The same days the grid draws a badge for, in date order — what the narrow
 	// layout lists under the month.
-	const agendaDays = [
-		...new Set([...Object.keys(seeded), ...Object.keys(mine)].map(Number)),
-	]
+	const agendaDays = Object.keys(monthEntries)
+		.map(Number)
 		.sort((a, b) => a - b)
-		.map((number) => ({
-			number,
-			entries: [...listFor(seeded, number), ...listFor(mine, number)],
-		}))
+		.map((number) => ({ number, entries: listFor(monthEntries, number) }))
 		.filter(({ entries: dayEntries }) => dayEntries.length)
 
 	return (
@@ -1251,6 +1269,19 @@ export default function OfficerCalendar() {
 					">
 						{monthName(view.year, view.month)}
 					</h1>
+
+					{/* whatever the last write was refused with, under the month
+					    rather than over the grid it's about */}
+					{error && (
+						<p className="
+							font-vietnam
+							mt-2
+							text-xs
+							text-salmon-dark
+						">
+							{error}
+						</p>
+					)}
 
 					{/* year and the two steppers share a line under the title */}
 					<div className="
@@ -1470,14 +1501,7 @@ export default function OfficerCalendar() {
 									wave={i + column + 1}
 									number={day.number}
 									inMonth={day.inMonth}
-									entries={
-										day.inMonth
-											? [
-												...listFor(seeded, day.number),
-												...listFor(mine, day.number),
-											]
-											: []
-									}
+									entries={day.inMonth ? listFor(monthEntries, day.number) : []}
 								/>
 							))}
 						</div>
@@ -1496,7 +1520,7 @@ export default function OfficerCalendar() {
 
 			{dialogOpen && (
 				<EventDialog
-					categories={categoriesFrom(types)}
+					categories={categoriesFrom(categories)}
 					onClose={() => setDialogOpen(false)}
 					onSave={saveEvent}
 				/>

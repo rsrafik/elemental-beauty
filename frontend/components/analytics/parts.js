@@ -1,7 +1,7 @@
 'use client'
 
 import { useEffect, useRef, useState } from 'react'
-import { STATUS_PILL, money, prettyDate, sum } from '@/lib/finances'
+import { STATUS_PILL, money, prettyDate, statusLabel, sum } from '@/lib/finances'
 import { useDismiss } from '@/lib/dismiss'
 
 // The pieces both analytics pages are built out of — the card, the pills, the
@@ -303,7 +303,7 @@ export function StatusPill({ status }) {
 			whitespace-nowrap
 			${STATUS_PILL[status] ?? 'bg-black/10 text-black/60'}
 		`}>
-			{status}
+			{statusLabel(status)}
 		</span>
 	)
 }
@@ -1664,7 +1664,7 @@ export function GrantTracker({ grants, onEdit, onAdd }) {
 	const requested = sum(grants.map((grant) => grant.amount))
 	const waiting = sum(
 		grants
-			.filter((grant) => grant.status === 'under review' || grant.status === 'drafting')
+			.filter((grant) => grant.status === 'under_review' || grant.status === 'drafting')
 			.map((grant) => grant.amount)
 	)
 

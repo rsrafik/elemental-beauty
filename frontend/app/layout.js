@@ -2,6 +2,7 @@ import { Be_Vietnam_Pro } from "next/font/google";
 import { Delicious_Handrawn } from "next/font/google";
 import { Molle } from "next/font/google";
 import localFont from "next/font/local";
+import { SessionProvider } from "@/lib/session";
 import "./globals.css";
 
 const bevietnampro = Be_Vietnam_Pro({
@@ -106,8 +107,11 @@ export default function RootLayout({ children }) {
         ${dream.variable}
         h-full antialiased`}
     >
+      {/* One session for the whole app: it asks GET /api/auth/me once on load
+          and every page reads the answer off the context, rather than each of
+          them fetching the same thing on every navigation. */}
       <body className="min-h-full flex flex-col" suppressHydrationWarning>
-        {children}
+        <SessionProvider>{children}</SessionProvider>
       </body>
     </html>
   );

@@ -9,6 +9,8 @@
     "dev:frontend": "npm run dev --prefix frontend",
     "build:frontend": "npm run build --prefix frontend && rm -rf public && cp -R frontend/out public",
     "start": "node --experimental-strip-types ./src/server.js",
+    "db:reset": "npx prisma migrate reset --force --skip-generate && npm run db:seed",
+    "db:seed": "node --env-file=.env --experimental-strip-types prisma/seed.js",
     "test": "echo \"Error: no test specified\" && exit 1"
   },
   "repository": {

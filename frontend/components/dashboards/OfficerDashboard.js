@@ -1,6 +1,11 @@
+'use client'
+
+import { useEffect, useState } from 'react'
+import { useRouter } from 'next/navigation'
 import Sidebar from '@/components/dashboards/Sidebar'
-import { currentRole } from '@/lib/roles'
+import { useRole, useSignOut } from '@/lib/session'
 import { navFor, showInstagramFor } from '@/lib/nav'
+import { announcements as announcementsApi, members } from '@/lib/api'
 
 // Shown to officer / treasurer / admin.
 // Sidebar + a 2x2 grid (quick actions / upcoming / announcement / leaderboard)
@@ -85,6 +90,68 @@ function LeaderRow({ place, name }) {
 // ---- page ------------------------------------------------------------------
 
 export default function OfficerDashboard() {
+	const role = useRole()
+	const signOut = useSignOut()
+	const router = useRouter()
+
+	// The roster, sorted by points — the podium takes the top three and the
+	// grid under it the next six. Read off /members rather than kept anywhere,
+	// so it can't disagree with the roster on /students.
+	const [board, setBoard] = useState([])
+
+	// what's in the announcement box, and what the POST button is doing about it
+	const [draft, setDraft] = useState('')
+	const [posting, setPosting] = useState(false)
+	const [posted, setPosted] = useState(false)
+	const [error, setError] = useState(null)
+
+	useEffect(() => {
+		let live = true
+		members
+			.list()
+			.then((rows) => {
+				if (!live) return
+				setBoard(
+					[...rows]
+						.sort((a, b) =>
+							b.points - a.points ||
+							(a.user?.firstName ?? '').localeCompare(b.user?.firstName ?? '')
+						)
+						.map((row) => ({
+							id: row.userId,
+							// "Ada W." — the podium and the rows are narrow, and a full
+							// surname is what overflows them
+							name: `${row.user?.firstName ?? ''} ${(row.user?.lastName ?? '').charAt(0)}.`.trim(),
+							points: row.points,
+						}))
+				)
+			})
+			.catch(() => {})
+		return () => { live = false }
+	}, [])
+
+	const post = async () => {
+		const body = draft.trim()
+		if (!body || posting) return
+
+		setPosting(true)
+		setError(null)
+		try {
+			await announcementsApi.post(body)
+			setDraft('')
+			setPosted(true)
+			// the confirmation is a receipt, not a state — it clears itself
+			setTimeout(() => setPosted(false), 2500)
+		} catch (err) {
+			setError(err.message)
+		} finally {
+			setPosting(false)
+		}
+	}
+
+	const podium = board.slice(0, 3)
+	const rest = board.slice(3, 9)
+
 	return (
 		<main className="
 			bg-cream
@@ -103,8 +170,9 @@ export default function OfficerDashboard() {
 			lg:gap-6
 		">
 			<Sidebar
-				items={navFor(currentRole)}
-				showInstagram={showInstagramFor(currentRole)}
+				items={navFor(role)}
+				showInstagram={showInstagramFor(role)}
+				onLogout={signOut}
 			/>
 
 			{/* 2x2 grid + centered overlay circle. page-enter / page-stagger are
@@ -152,7 +220,19 @@ export default function OfficerDashboard() {
 					">
 						quick actions
 					</h2>
-					<button className="
+					{/* Two of the three go where the thing is actually made rather
+					    than opening a dialog here — the event and lab forms live on
+					    their own pages, and a second copy of either would be a second
+					    form to keep in step.
+
+					    "Email All" has no endpoint behind it yet: the club mails
+					    through Resend for password resets, but there's no route that
+					    fans a message out to the roster. Left inert on purpose rather
+					    than wired to something that would half-work. */}
+					<button
+						type="button"
+						title="Not built yet — there's no send-to-everyone endpoint"
+						className="
                         mt-6
 						w-full
 						rounded-full
@@ -160,18 +240,16 @@ export default function OfficerDashboard() {
 						py-3
 						font-handrawn
 						text-[26px]
-						text-black
+						text-black/40
 						shadow-[inset_-5px_-5px_2px_rgba(0,0,0,0.5)]
-						transition
-						duration-200
-						ease-out
-						hover:-translate-y-0.5
-						hover:shadow-[inset_0px_0px_0px_rgba(0,0,0,0.5)]
-						active:brightness-105
+						cursor-not-allowed
 					">
 						Email All
 					</button>
-					<button className="
+					<button
+						type="button"
+						onClick={() => router.push('/events')}
+						className="
 						w-full
 						rounded-full
 						bg-salmon-light
@@ -180,6 +258,7 @@ export default function OfficerDashboard() {
 						text-[26px]
 						text-black
 						shadow-[inset_-5px_-5px_2px_rgba(0,0,0,0.5)]
+						cursor-pointer
 						transition
 						duration-200
 						ease-out
@@ -189,7 +268,10 @@ export default function OfficerDashboard() {
 					">
 						New Event
 					</button>
-					<button className="
+					<button
+						type="button"
+						onClick={() => router.push('/labs')}
+						className="
 						w-full
 						rounded-full
 						bg-[#FFA799]
@@ -198,6 +280,7 @@ export default function OfficerDashboard() {
 						text-[26px]
 						text-black
 						shadow-[inset_-5px_-5px_2px_rgba(0,0,0,0.5)]
+						cursor-pointer
 						transition
 						duration-200
 						ease-out
@@ -429,9 +512,16 @@ export default function OfficerDashboard() {
 						text-black
 						text-center
 					">
-						make announcement
+						{/* the heading doubles as the receipt: posting is instant and a
+						    separate toast would land somewhere nobody is looking */}
+						{posted ? 'posted!' : error ? error : 'make announcement'}
 					</h2>
 					<textarea
+						value={draft}
+						onChange={(event) => {
+							setDraft(event.target.value)
+							setError(null)
+						}}
 						placeholder="type message here..."
 						className="
 							mt-4
@@ -449,7 +539,12 @@ export default function OfficerDashboard() {
                             shadow-[-5px_5px_2px_rgba(0,0,0,0.5)]
 						"
 					/>
-					<button className="
+					<button
+						type="button"
+						onClick={post}
+						disabled={draft.trim() === '' || posting}
+						aria-label="Post announcement"
+						className={`
 						absolute
 						bottom-6
 						right-2
@@ -464,7 +559,6 @@ export default function OfficerDashboard() {
 						items-center
 						justify-center
 						rounded-full
-						bg-blue-med
 						font-beachday
 						text-[28px]
 						leading-none
@@ -473,9 +567,13 @@ export default function OfficerDashboard() {
 						transition
 						duration-200
 						ease-out
-						hover:brightness-110
-						active:shadow-[0px_0px_0px_rgba(0,0,0,0.5)]
-					">
+						${draft.trim() === '' || posting
+							? 'bg-blue-med/40 cursor-not-allowed'
+							: `bg-blue-med
+							   cursor-pointer
+							   hover:brightness-110
+							   active:shadow-[0px_0px_0px_rgba(0,0,0,0.5)]`}
+					`}>
 						<span>PO</span>
 						<span>ST</span>
 					</button>
@@ -510,9 +608,11 @@ export default function OfficerDashboard() {
 						gap-4
 						sm:gap-10
 					">
-						<PodiumSpot name="Ting C." medal="🥈" height={50} />
-						<PodiumSpot name="Azu N." medal="🥇" height={70} />
-						<PodiumSpot name="Michelle C." medal="🥉" height={40} />
+						{/* second, first, third — the tallest bar in the middle is
+						    what makes it a podium rather than a bar chart */}
+						<PodiumSpot name={podium[1]?.name ?? '—'} medal="🥈" height={50} />
+						<PodiumSpot name={podium[0]?.name ?? '—'} medal="🥇" height={70} />
+						<PodiumSpot name={podium[2]?.name ?? '—'} medal="🥉" height={40} />
 					</div>
 
 					{/* no top margin: this is the ground the podium stands on, so its
@@ -538,12 +638,15 @@ export default function OfficerDashboard() {
 							sm:gap-4
 							w-full
 						">
-							<LeaderRow place="4" name="Toji Fushiguro" />
-							<LeaderRow place="5" name="Yo Mama" />
-							<LeaderRow place="6" name="Raia Rafiki" />
-							<LeaderRow place="7" name="Elijah Leone" />
-							<LeaderRow place="8" name="Miadora Bilanicz" />
-							<LeaderRow place="9" name="Yoyo Qin" />
+							{/* fourth place down. The index is the place because the
+							    list was already sorted and sliced from three. */}
+							{rest.map((person, index) => (
+								<LeaderRow
+									key={person.id}
+									place={index + 4}
+									name={person.name}
+								/>
+							))}
 						</div>
 					</div>
 					

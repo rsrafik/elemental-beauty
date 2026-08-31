@@ -1,8 +1,19 @@
-import { currentRole, hasRole } from '@/lib/roles'
-import UserEventView from '@/components/events/MemberEventView'
+'use client'
+
+import { Gate } from '@/lib/session'
+import { hasRole } from '@/lib/roles'
+import NoAccess from '@/components/NoAccess'
+import MemberEventView from '@/components/events/MemberEventView'
 import OfficerEventView from '@/components/events/OfficerEventView'
 
 export default function EventView() {
-	if (hasRole('officer', currentRole)) return <OfficerEventView />
-	return <UserEventView />
+	return (
+		<Gate
+			require="member"
+			fallback={<NoAccess message="Events are for members." />}
+			render={(user) =>
+				hasRole('officer', user.role) ? <OfficerEventView /> : <MemberEventView />
+			}
+		/>
+	)
 }

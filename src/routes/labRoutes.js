@@ -14,8 +14,16 @@ const PREVIEW_SELECT = {
 
 // ---- member-visible reads ----
 
+// Seats spoken for. A waitlisted row is NOT one of them — that's the whole
+// point of the waitlist — so the count is what fills the cap and nothing else.
+const TAKEN = { attendanceStatus: { in: ['rsvped', 'attended'] } }
+
 // List labs. Always preview fields — full content is unlocked per-lab.
 // ?when=upcoming|past derived against today at query time, never stored.
+//
+// Every row carries two things the cards can't work out for themselves: how
+// many seats are gone, and where the person asking stands on it. Both come off
+// the junction table in the same query rather than as a request per card.
 router.get('/', async (req, res) => {
     const { when } = req.query
 
@@ -26,10 +34,27 @@ router.get('/', async (req, res) => {
     try {
         const labs = await prisma.lab.findMany({
             where,
-            select: PREVIEW_SELECT,
+            select: {
+                ...PREVIEW_SELECT,
+                // at most one row — the pair is the primary key
+                members: {
+                    where: { memberId: req.userId },
+                    select: { attendanceStatus: true, quizPassed: true }
+                },
+                _count: { select: { members: { where: TAKEN } } }
+            },
             orderBy: { date: when === 'past' ? 'desc' : 'asc' }
         })
-        res.json(labs)
+
+        res.json(labs.map(({ members, _count, ...lab }) => ({
+            ...lab,
+            // the true total, this person included — the card doesn't have to
+            // add itself back in
+            taken: _count.members,
+            // null when they have nothing to do with it
+            mine: members[0]?.attendanceStatus ?? null,
+            quizPassed: members[0]?.quizPassed ?? null
+        })))
     } catch (err) {
         console.error(err.message)
         res.sendStatus(500)

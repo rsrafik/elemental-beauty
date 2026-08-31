@@ -1,7 +1,11 @@
+'use client'
+
+import { useEffect, useState } from 'react'
 import Sidebar from '@/components/dashboards/Sidebar'
 import ElementistPass from '@/components/dashboards/ElementistPass'
-import { currentRole } from '@/lib/roles'
+import { useRole, useSession, useSignOut } from '@/lib/session'
 import { navFor, showInstagramFor } from '@/lib/nav'
+import { announcements as announcementsApi, members } from '@/lib/api'
 
 function StatCard({ title, value, bg, valueColor }) {
 	return (
@@ -156,26 +160,90 @@ function Stamp({ day, date, note, style, rotate = 0 }) {
 //            (0 = centered, negative = left, positive = right).
 //   rotate = tilt in degrees.
 //
-// The stamps sit as far out as the group will hold them — |center| tops out at
-// GROUP_W/2 - STAMP_W/2, which is a stamp against the edge — so the pile fills
-// the panel's width rather than huddling in the middle with a band of green
-// spare down each side.
+// The stamps sit as far out as the group will hold them — the pile fills the
+// panel's width rather than huddling in the middle with a band of green spare
+// down each side.
+//
+// The group is deliberately bigger than the pile drawn in it, and the padding
+// is not decoration — it's what stops a hover from moving anything else on the
+// page.
+//
+// A stamp is tilted, and hovering grows it 5%. A rotated box's rendered
+// footprint is wider and taller than the box itself, so the pile spills past
+// the group's edges, and hovering makes it spill further — measured at the
+// widest: 35.4px left, 11.3px right, 20.5px below, with 5.9px to spare on top.
+// Anything a transform paints outside its container still counts toward the
+// scrollable overflow of every ancestor, so that spill is not free: it changes
+// the scroll geometry of the box the sidebar is `sticky` inside, and a sticky
+// element re-pins when its scroll container's geometry moves. That's a hover on
+// the far right of the page nudging the menu on the far left.
+//
+// PAD_X / PAD_Y are the fix. They make the group big enough to contain the pile
+// at its hovered size, so the footprint is the group's own — fixed — and hover
+// changes nothing outside itself.
+//
+// The padding has to be symmetric. The group is centred in the panel, so
+// growing it by p on one side moves its centre by p/2 and drags every stamp
+// with it; growing both sides leaves the centre where it was. That's also why
+// `center` values below are untouched (they're measured from the centre, which
+// hasn't moved) while every `top` gains PAD_Y (measured from the top edge,
+// which has).
 const STAMP_W = 200
 const STAMP_H = 262
-const GROUP_W = 430
-const GROUP_H = 880
+
+// enough for the widest spill on each axis, with a little margin
+const PAD_X = 40
+const PAD_Y = 24
+
+const GROUP_W = 430 + PAD_X * 2      // 510
+const GROUP_H = 880 + PAD_Y * 2      // 928
 
 const upcoming = [
-	{ day: 'Mon.', date: '27', note: 'none', style: { top: '30px', center: -95 }, rotate: -11 },
-	{ day: 'Tues.', date: '28', note: 'bubbles & beakers p.1', style: { top: '160px', center: 100 }, rotate: 7 },
-	{ day: 'Wed.', date: '29', note: 'none', style: { top: '320px', center: -100 }, rotate: -23 },
-	{ day: 'Thurs.', date: '30', note: 'bubbles & beakers p.2', style: { top: '480px', center: 112 }, rotate: 4 },
-	{ day: 'Fri.', date: '31', note: 'none', style: { top: '625px', center: -70 }, rotate: -4 },
+	{ day: 'Mon.', date: '27', note: 'none', style: { top: `${30 + PAD_Y}px`, center: -95 }, rotate: -11 },
+	{ day: 'Tues.', date: '28', note: 'bubbles & beakers p.1', style: { top: `${160 + PAD_Y}px`, center: 100 }, rotate: 7 },
+	{ day: 'Wed.', date: '29', note: 'none', style: { top: `${320 + PAD_Y}px`, center: -100 }, rotate: -23 },
+	{ day: 'Thurs.', date: '30', note: 'bubbles & beakers p.2', style: { top: `${480 + PAD_Y}px`, center: 112 }, rotate: 4 },
+	{ day: 'Fri.', date: '31', note: 'none', style: { top: `${625 + PAD_Y}px`, center: -70 }, rotate: -4 },
 ]
 
 // ---- page ------------------------------------------------------------------
 
 export default function MemberDashboard() {
+	const role = useRole()
+	const signOut = useSignOut()
+	const { user } = useSession()
+
+	// The banner shows the latest announcement and nothing else, so the API is
+	// asked for exactly one. `undefined` is still loading and `null` is loaded
+	// with nothing to show — two different things, and the panel shouldn't flash
+	// "nothing new" on its way to the real one.
+	const [announcement, setAnnouncement] = useState(undefined)
+
+	// points + the four counts behind them. GET /members/me computes the counts
+	// off the junction tables, so this is one call rather than four.
+	const [profile, setProfile] = useState(null)
+
+	useEffect(() => {
+		let live = true
+
+		announcementsApi
+			.list(1)
+			.then((rows) => live && setAnnouncement(rows[0] ?? null))
+			.catch(() => {})
+
+		members
+			.me()
+			.then((me) => live && setProfile(me))
+			.catch(() => {})
+
+		// the fetches outlive a fast navigation away; this is what stops them
+		// setting state on a component that's already gone
+		return () => { live = false }
+	}, [])
+
+	const stats = profile?.stats
+	const points = profile?.points ?? user?.points ?? 0
+
 	return (
 		// Three widths, and the layout gives up a column at each one.
 		//
@@ -203,8 +271,9 @@ export default function MemberDashboard() {
 			2xl:gap-15
 		">
 			<Sidebar
-				items={navFor(currentRole)}
-				showInstagram={showInstagramFor(currentRole)}
+				items={navFor(role)}
+				showInstagram={showInstagramFor(role)}
+				onLogout={signOut}
 			/>
 
 			{/* everything that isn't the menu. It's one column of its own so the
@@ -265,7 +334,12 @@ export default function MemberDashboard() {
 						text-black
 						mt-2
 					">
-						Welcome to Elemental Beauty!
+						{/* undefined is still loading; null is loaded and empty. The
+						    two say different things and the panel shouldn't flash the
+						    empty one on its way to the real one. */}
+						{announcement === null
+							? 'Nothing new right now.'
+							: announcement?.body ?? ' '}
 					</p>
 				</div>
 
@@ -289,10 +363,12 @@ export default function MemberDashboard() {
 						gap-y-4
 						lg:gap-y-6
 					">
-						<StatCard title="past labs" value="10" bg="bg-green" valueColor="text-green-dark" />
-						<StatCard title="rsvp'd labs" value="1" bg="bg-yellow-light" valueColor="text-yellow-dark" />
-						<StatCard title="past events" value="2" bg="bg-salmon-light" valueColor="text-salmon-dark" />
-						<StatCard title="rsvp'd events" value="3" bg="bg-orange" valueColor="text-orange-dark" />
+						{/* an em dash until the counts land, so the four cards keep
+						    their size instead of popping from 0 to the real number */}
+						<StatCard title="past labs" value={stats?.pastLabs ?? '—'} bg="bg-green" valueColor="text-green-dark" />
+						<StatCard title="rsvp'd labs" value={stats?.rsvpLabs ?? '—'} bg="bg-yellow-light" valueColor="text-yellow-dark" />
+						<StatCard title="past events" value={stats?.pastEvents ?? '—'} bg="bg-salmon-light" valueColor="text-salmon-dark" />
+						<StatCard title="rsvp'd events" value={stats?.rsvpEvents ?? '—'} bg="bg-orange" valueColor="text-orange-dark" />
 					</div>
 					{/* cloud overlapping the grid center */}
 					<div className="
@@ -343,7 +419,7 @@ export default function MemberDashboard() {
 									text-salmon-med
 									leading-none
 								">
-									20
+									{points}
 								</p>
 							</div>
 						</div>
@@ -403,35 +479,53 @@ export default function MemberDashboard() {
 				">
 					{/* The stamps are placed by hand in a GROUP_W × GROUP_H box, so
 					    the group can't reflow — it scales to the width it's been
-					    given instead. The box outside it carries the scaled size at
-					    each step, because a transform doesn't change the space an
-					    element takes up and the panel would otherwise keep reserving
-					    the full 430 × 880 whatever the scale.
+					    given instead. The box outside it has to carry the scaled
+					    size, because a transform doesn't change the space an element
+					    takes up and the panel would otherwise keep reserving the full
+					    unscaled group whatever the scale.
+
+					    One number drives both: --s is the scale, the inner group
+					    wears it, and the outer box is the group's size times it. They
+					    were six hand-written pixel values that had to be recomputed
+					    together every time the group changed size — and silently drew
+					    a box of the wrong size if anyone forgot.
 
 					    0.79 is what fits a 390px phone edge to edge; the wider the
 					    panel gets before it becomes a column of its own at 2xl, the
 					    larger the pile is drawn, so the green never ends up as a
 					    broad empty margin either side of it. */}
-					<div className="
-						relative
-						w-[340px]
-						h-[695px]
-						sm:w-[495px]
-						sm:h-[1012px]
-						2xl:w-[430px]
-						2xl:h-[880px]
-					">
+					{/* shrink-0 because this box is now wider than the column it sits
+					    in — the padding that keeps the hovered pile inside it is
+					    padding, and a flex item that shrinks would give exactly that
+					    back. Shrinking it also drags the pile sideways: the stamps are
+					    placed at 50% of the group, so a narrower box moves the edge
+					    the group is pinned to without moving the group's own centre.
+					    What overflows is empty padding, and `main` clips it. */}
+					<div
+						className="
+							relative
+							shrink-0
+							[--s:0.79]
+							sm:[--s:1.15]
+							2xl:[--s:1]
+						"
+						style={{
+							width: `calc(${GROUP_W}px * var(--s))`,
+							height: `calc(${GROUP_H}px * var(--s))`,
+						}}
+					>
 						<div
 							className="
 								absolute
 								top-0
 								left-0
 								origin-top-left
-								scale-[0.79]
-								sm:scale-[1.15]
-								2xl:scale-100
 							"
-							style={{ width: `${GROUP_W}px`, height: `${GROUP_H}px` }}
+							style={{
+								width: `${GROUP_W}px`,
+								height: `${GROUP_H}px`,
+								scale: 'var(--s)',
+							}}
 						>
 							{upcoming.map((s) => (
 								<Stamp key={s.day} {...s} />

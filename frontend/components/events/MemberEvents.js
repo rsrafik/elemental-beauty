@@ -1,7 +1,9 @@
 'use client'
 
-import { useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import DashboardShell from '@/components/dashboards/DashboardShell'
+import { events as eventsApi } from '@/lib/api'
+import { isoDate, longDate, prettyTime, today } from '@/lib/dates'
 
 // /events for a user or member: browse what's running now and rsvp to what's
 // coming up.
@@ -67,7 +69,37 @@ function CheckIcon({ className = '' }) {
 // `waitlist` means every seat is already spoken for, so a seat taken here sits
 // past the cap — the event still accepts you, the counter just runs over
 // (21/20). Nothing is ever disabled: a full event offers the waitlist instead.
-function RsvpButton({ going, waitlist, onClick }) {
+// `attended` is not a state of this button, it's the absence of one: once you've
+// been checked in there is no RSVP left to cancel, so the card says so instead
+// of offering a toggle the API would refuse.
+function RsvpButton({ going, waitlist, attended, onClick }) {
+	if (attended) {
+		return (
+			<span
+				title="You were checked in to this event"
+				className="
+					flex
+					items-center
+					justify-center
+					gap-1
+					min-w-[110px]
+					rounded-full
+					px-4
+					py-1.5
+					font-vietnam
+					font-semibold
+					text-sm
+					bg-green
+					text-green-dark
+					select-none
+				"
+			>
+				<CheckIcon className="w-4 h-4 text-green-dark" />
+				attended
+			</span>
+		)
+	}
+
 	const label = going
 		? waitlist ? 'waitlisted' : 'going'
 		: waitlist ? 'waitlist' : 'rsvp'
@@ -77,6 +109,12 @@ function RsvpButton({ going, waitlist, onClick }) {
 			? 'bg-green text-green-dark hover:brightness-95'
 			: 'bg-blue text-white hover:brightness-105'
 	return (
+		// No busy state on the button, deliberately. The card is updated the
+		// instant you click — the request that follows is a formality you should
+		// never have to look at — so a spinner or a wait cursor would only ever
+		// flash for a frame and read as a stutter. Double-clicks are already
+		// handled in toggleRsvp, which ignores a second press while the first
+		// call is still out.
 		<button
 			type="button"
 			onClick={onClick}
@@ -120,27 +158,81 @@ function RsvpButton({ going, waitlist, onClick }) {
 
 // ---- data ------------------------------------------------------------------
 
-// Placeholder rows until /events is wired to the API. `image` is a path under
-// public/ — cards fall back to a blank tile while those don't exist yet.
-const current = [
-	{ id: 1, title: 'Vendor Pop-Up', date: 'August 30, 2026', image: null },
-	{ id: 2, title: 'Glow Social', date: 'August 30, 2026', image: null },
-	{ id: 3, title: 'Sunset Picnic', date: 'August 31, 2026', image: null },
-	{ id: 4, title: 'Vendor Pop-Up', date: 'September 1, 2026', image: null },
-	{ id: 5, title: 'Glow Social', date: 'September 1, 2026', image: null },
-	{ id: 6, title: 'Sunset Picnic', date: 'September 2, 2026', image: null },
-]
+// GET /api/events hands back every event this member is allowed to see —
+// officers-only ones are filtered out server-side, not here — each with two
+// extras: `taken`, the seats gone, and `mine`, this member's own attendance row
+// (null when they have nothing to do with it).
+//
+// One list in state, both panels derived from it. That's what makes an RSVP
+// show up in "current" the instant you press the button: the same row feeds
+// both sides, so patching `mine` moves the card without a second request.
+function toCard(event) {
+	return {
+		id: event.eventId,
+		title: event.title,
+		// kept as 'YYYY-MM-DD' so it compares against today as plain text; the
+		// time rides along separately and the card joins them for display
+		date: isoDate(event.date),
+		time: event.startTime ?? '',
+		image: event.image,
+		taken: event.taken,
+		capacity: event.capacity,
+		mine: event.mine,
+	}
+}
 
-// `taken` / `capacity` are the rsvp count and the seat cap. Only the upcoming
-// events carry them — one that's already running has nothing left to sign up
-// for, so its cards leave the counter off. `taken` counts everyone but you;
-// your own seat comes from `going`, so the count moves when you tap rsvp.
-const upcoming = [
-	{ id: 7, title: 'Fall Formal', date: 'September 6, 2026', image: null, taken: 0, capacity: 20, going: false },
-	{ id: 8, title: 'Volunteer Day', date: 'September 13, 2026', image: null, taken: 11, capacity: 20, going: true },
-	{ id: 9, title: 'Sip & Swatch', date: 'September 20, 2026', image: null, taken: 3, capacity: 15, going: false },
-	{ id: 10, title: 'Winter Market', date: 'September 27, 2026', image: null, taken: 20, capacity: 20, going: false },
-]
+// Which panel an event belongs to. No icons here — unlike a lab there's nothing
+// to check into, so the current cards are just the photo, the name and the date.
+//
+//   current   anything that is yours or has happened: an event you're confirmed
+//             for, one running today, and every one already past. A waitlist
+//             place is NOT yours yet, so it doesn't qualify.
+//   upcoming  everything still ahead, whether or not you're going — it's the
+//             browse-and-sign-up side, and one you've joined stays on it so you
+//             can still change your mind.
+function panels(rows) {
+	const now = today()
+	const current = []
+	const upcoming = []
+
+	for (const event of rows) {
+		const isToday = event.date === now
+		const past = event.date < now
+		// a confirmed seat. 'waitlisted' deliberately isn't one — you don't have
+		// a place until somebody drops out
+		const going = event.mine === 'rsvped' || event.mine === 'attended'
+
+		// Listed field by field rather than pushing the row: a current card is a
+		// photo, a name and a date. Carrying `taken` and `capacity` across would
+		// put a seat counter on it — there's nothing left to sign up for here,
+		// so the number would only be noise.
+		if (past || isToday || going) {
+			current.push({
+				id: event.id,
+				title: event.title,
+				date: event.date,
+				time: event.time,
+				image: event.image,
+			})
+		}
+
+		if (!past && !isToday) {
+			upcoming.push({
+				...event,
+				going,
+				waitlisted: event.mine === 'waitlisted',
+				attended: event.mine === 'attended',
+			})
+		}
+	}
+
+	// current reads newest first, so the event you just signed up for — or the
+	// one running today — is at the front rather than buried under the club's
+	// back catalogue. Upcoming is soonest first, the order you'd sign up in.
+	current.sort((a, b) => b.date.localeCompare(a.date))
+	upcoming.sort((a, b) => a.date.localeCompare(b.date))
+	return { current, upcoming }
+}
 
 // ---- card ------------------------------------------------------------------
 
@@ -276,7 +368,10 @@ function EventGrid({ items, renderAction }) {
 					<EventCard
 						key={event.id}
 						title={event.title}
-						date={event.date}
+						/* the row carries 'YYYY-MM-DD' and the time separately so
+						   the date can be compared against today; the card is
+						   where the two become one line of prose */
+						date={[longDate(event.date), prettyTime(event.time)].filter(Boolean).join(' · ')}
 						image={event.image}
 						action={renderAction?.(event)}
 						availability={
@@ -369,32 +464,83 @@ function PanelHeading({ children }) {
 export default function MemberEvents() {
 	const [showUpcoming, setShowUpcoming] = useState(false)
 
-	// Which events you're down for. Local only until /events is wired to the
-	// API — the button and the seat count both read off this, so tapping rsvp
-	// moves the count with it.
-	const [rsvpd, setRsvpd] = useState(
-		() => new Set(upcoming.filter((event) => event.going).map((event) => event.id))
-	)
+	// Every event, once. Both panels are derived from this — see `panels` — so a
+	// change to one row is a change to both sides at the same instant.
+	const [rows, setRows] = useState([])
+	// ids with a request in flight, so a button can't be pressed twice into two
+	// opposite calls that then race each other
+	const [busy, setBusy] = useState(() => new Set())
+	// What the API refused the last change with. A revert on its own looks like
+	// the click missed; the reason is the only thing that makes it make sense.
+	const [error, setError] = useState(null)
 
-	const toggleRsvp = (id) =>
-		setRsvpd((prev) => {
-			const next = new Set(prev)
-			next.has(id) ? next.delete(id) : next.add(id)
-			return next
-		})
+	useEffect(() => {
+		let live = true
+		eventsApi
+			.list()
+			.then((list) => live && setRows(list.map(toCard)))
+			.catch((err) => live && setError(err.message))
+		return () => { live = false }
+	}, [])
 
-	// `taken` in the data leaves you out, so add your own seat back in here.
-	// Everyone else already filling the cap means your seat is a waitlist one,
-	// which is what tips the count past the cap (21/20).
-	const upcomingRows = upcoming.map((event) => {
-		const going = rsvpd.has(event.id)
-		return {
-			...event,
-			going,
-			waitlist: event.taken >= event.capacity,
-			taken: event.taken + (going ? 1 : 0),
+	const { current, upcoming } = useMemo(() => panels(rows), [rows])
+
+	// Applied to the row first and rolled back if the call is refused. Because
+	// both panels read off that one row, an RSVP does two things at once with no
+	// extra work: the button turns green, and the event appears in "current".
+	//
+	// Whether the seat taken is a real one or a waitlist place is the server's
+	// call: `code` in the reply says which. A waitlist place is not a seat, so
+	// it neither moves the counter nor puts the event in "current".
+	const toggleRsvp = async (event) => {
+		if (busy.has(event.id)) return
+		setBusy((prev) => new Set(prev).add(event.id))
+		setError(null)
+
+		const leaving = event.going || event.waitlisted
+		const patch = (changes) =>
+			setRows((prev) =>
+				prev.map((row) => (row.id === event.id ? { ...row, ...changes } : row))
+			)
+
+		// what the row said before, to put back if the call is refused
+		const before = { mine: event.mine, taken: event.taken }
+
+		patch(
+			leaving
+				? { mine: null, taken: event.taken - (event.going ? 1 : 0) }
+				: { mine: 'rsvped', taken: event.taken + 1 }
+		)
+
+		try {
+			if (leaving) {
+				await eventsApi.unrsvp(event.id)
+			} else {
+				const reply = await eventsApi.rsvp(event.id)
+				if (reply?.code === 'WAITLISTED' || reply?.code === 'ALREADY_WAITLISTED') {
+					patch({ mine: 'waitlisted', taken: event.taken })
+				}
+			}
+		} catch (err) {
+			patch(before)
+			setError(err.message)
+		} finally {
+			setBusy((prev) => {
+				const next = new Set(prev)
+				next.delete(event.id)
+				return next
+			})
 		}
-	})
+	}
+
+	// An event is full when every seat is gone and none of them is yours. One
+	// with no cap at all is never full, which is what the null check is for.
+	const upcomingRows = upcoming.map((event) => ({
+		...event,
+		waitlist:
+			event.waitlisted ||
+			(!event.going && event.capacity != null && event.taken >= event.capacity),
+	}))
 
 	// Both the slide and the hover peek move the same panel, so they share one
 	// transform — and the duration rides along with whichever one set it, so a
@@ -498,13 +644,27 @@ export default function MemberEvents() {
 						"
 					>
 						<PanelHeading>UPCOMING</PanelHeading>
+						{error && (
+							<p className="
+								font-vietnam
+								-mt-2
+								mb-2
+								px-3
+								text-center
+								text-sm
+								text-white
+							">
+								{error}
+							</p>
+						)}
 						<EventGrid
 							items={upcomingRows}
 							renderAction={(event) => (
 								<RsvpButton
-									going={event.going}
+									going={event.going || event.waitlisted}
 									waitlist={event.waitlist}
-									onClick={() => toggleRsvp(event.id)}
+									attended={event.attended}
+									onClick={() => toggleRsvp(event)}
 								/>
 							)}
 						/>

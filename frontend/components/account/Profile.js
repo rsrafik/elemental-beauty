@@ -2,7 +2,9 @@
 
 import { useEffect, useRef, useState } from 'react'
 import DashboardShell from '@/components/dashboards/DashboardShell'
-import { currentRole, currentUser, hasRole } from '@/lib/roles'
+import { hasRole } from '@/lib/roles'
+import { useRole, useSession } from '@/lib/session'
+import { members as membersApi, auth } from '@/lib/api'
 import { useDismiss } from '@/lib/dismiss'
 
 // /account — the one page that's about the person looking at it rather than
@@ -31,47 +33,26 @@ import { useDismiss } from '@/lib/dismiss'
 
 // ---- data ------------------------------------------------------------------
 
-// Placeholder until this is wired to GET /members/me. Name and id come from
-// lib/roles so the preview switch drives this page too; the rest is what that
-// endpoint returns alongside them (users.username, members.points,
-// members.date_joined, members.profile_picture).
+// The counter's four numbers before GET /members/me answers. Zeroes rather
+// than blanks: the strip is five cells wide either way, and a member who really
+// has done nothing yet sees the same thing.
 //
-// No email field: the username *is* the purdue username, so the address is it
-// with the domain on the end. users.email should agree with that — it's the
-// same account — and the page derives it rather than showing a second copy
-// that could say something different.
-const seedProfile = {
-	username: 'isabel887',
-	emailVerified: true,
-	photo: null,
-	joined: '2025-09-02',
-	stats: {
-		pastLabs: 10,
-		rsvpLabs: 1,
-		pastEvents: 2,
-		rsvpEvents: 3,
-	},
-}
+// No email field anywhere on this page: the username *is* the purdue username,
+// so the address is it with the domain on the end. users.email agrees with that
+// — PUT /members/me moves the two together — and the page derives it rather
+// than showing a second copy that could say something different.
+const NO_STATS = { pastLabs: 0, rsvpLabs: 0, pastEvents: 0, rsvpEvents: 0 }
 
-// The board, until it's a GET /members read sorted by points. Same people the
-// roster on /students carries, so a place here and a points column there can't
-// disagree.
-const seedBoard = [
-	{ id: 12281, first: 'Molly', last: 'White', points: 310 },
-	{ id: 12278, first: 'Nadia', last: 'Okafor', points: 240 },
-	{ id: 12283, first: 'Lauren', last: 'Martin', points: 205 },
-	{ id: 12288, first: 'Isabel', last: 'Harris', points: 155 },
-	{ id: 12286, first: 'Debra', last: 'Nelson', points: 130 },
-	{ id: 12280, first: 'Priya', last: 'Anand', points: 115 },
-	{ id: 12285, first: 'Vera', last: 'Cooper', points: 90 },
-	{ id: 12277, first: 'Sofia', last: 'Reyes', points: 75 },
-	{ id: 12282, first: 'Milton', last: 'Smith', points: 65 },
-	{ id: 12276, first: 'Hana', last: 'Yamada', points: 50 },
-	{ id: 12289, first: 'Daisy', last: 'Scott', points: 40 },
-	{ id: 12287, first: 'Dan', last: 'Thomas', points: 25 },
-	{ id: 12279, first: 'Grace', last: 'Kim', points: 15 },
-	{ id: 12284, first: 'Brian', last: 'Miller', points: 0 },
-]
+// GET /members returns the roster with the user row nested under it. The board
+// only wants the four fields it ranks and prints.
+function toBoard(rows) {
+	return rows.map((row) => ({
+		id: row.userId,
+		first: row.user?.firstName ?? '',
+		last: row.user?.lastName ?? '',
+		points: row.points,
+	}))
+}
 
 // The role, written on the banner as a stamped rosette. 'user' is the one the
 // roster has no row for: an account with no membership behind it yet.
@@ -119,9 +100,13 @@ function initials(first, last) {
 
 // '2025-09-02' -> 'Sep 2, 2025'. Split by hand rather than through Date, which
 // reads a bare date string as UTC and can hand back the day before.
+//
+// The API sends dates as full ISO timestamps ('2025-09-02T00:00:00.000Z'), so
+// the date half is taken off the front first — splitting the whole string on
+// '-' would make the day '02T00:00:00.000Z' and the whole thing NaN.
 function prettyDate(value) {
 	if (!value) return ''
-	const [year, month, day] = value.split('-').map(Number)
+	const [year, month, day] = String(value).slice(0, 10).split('-').map(Number)
 	return new Date(year, month - 1, day).toLocaleDateString('en-US', {
 		month: 'short',
 		day: 'numeric',
@@ -455,7 +440,7 @@ function RoleStamp({ role }) {
 // otherwise be laid out underneath the circle. Stacked, the name is below the
 // photo rather than beside it, so a circle pulled downward would land on top of
 // it — there the photo sits inside the banner and nothing overhangs.
-function Masthead({ profile, draft, onPick, onClear }) {
+function Masthead({ role, profile, draft, onPick, onClear }) {
 	return (
 		// Only the wide layout hangs the circle out of the banner, so only it
 		// needs room reserved underneath.
@@ -528,7 +513,7 @@ function Masthead({ profile, draft, onPick, onClear }) {
 					items-end
 					gap-2
 				">
-					<RoleStamp role={currentRole} />
+					<RoleStamp role={role} />
 					{/* a member joined the club on this date; somebody without a
 					    member row only opened an account */}
 					<span className="
@@ -539,7 +524,7 @@ function Masthead({ profile, draft, onPick, onClear }) {
 						tracking-[0.14em]
 						text-black/45
 					">
-						{hasRole('member', currentRole) ? 'joined' : 'account since'}
+						{hasRole('member', role) ? 'joined' : 'account since'}
 						{' '}
 						{prettyDate(profile.joined)}
 					</span>
@@ -731,7 +716,7 @@ function Line({ label, value, onChange, placeholder, autoComplete = 'off' }) {
 	)
 }
 
-function DetailsCard({ draft, dirty, ready, saved, verified, onChange, onSave, onRevert }) {
+function DetailsCard({ draft, dirty, ready, saved, saving, error, verified, onChange, onSave, onRevert }) {
 	return (
 		<section className="
 			rounded-[26px]
@@ -869,13 +854,19 @@ function DetailsCard({ draft, dirty, ready, saved, verified, onChange, onSave, o
 					mr-auto
 					font-vietnam
 					text-xs
-					${saved ? 'text-green-dark' : 'text-black/40'}
+					${error ? 'text-salmon-dark' : saved ? 'text-green-dark' : 'text-black/40'}
 				`}>
-					{saved
-						? 'saved'
-						: dirty
-							? 'unsaved changes'
-							: 'everything up to date'}
+					{/* one line, four things it can say — an error outranks the rest,
+					    because it's the only one that needs doing something about */}
+					{error
+						? error
+						: saving
+							? 'saving…'
+							: saved
+								? 'saved'
+								: dirty
+									? 'unsaved changes'
+									: 'everything up to date'}
 				</p>
 
 				<button
@@ -1115,7 +1106,7 @@ function RailGap({ skipped }) {
 // Where you stand, as a line rather than a leaderboard: the top of the club at
 // the top of the card, you somewhere down it, and the distance between drawn
 // as distance.
-function RankRail({ board, place, points }) {
+function RankRail({ board, place, points, meId }) {
 	const rows = railRows(board, place)
 
 	return (
@@ -1188,7 +1179,7 @@ function RankRail({ board, place, points }) {
 							<RailStop
 								key={row.key}
 								person={row.person}
-								mine={row.person.id === currentUser.id}
+								mine={row.person.id === meId}
 							/>
 						) : (
 							<RailGap key={row.key} skipped={row.skipped} />
@@ -1253,6 +1244,25 @@ function ResetPasswordDialog({ email, onClose }) {
 	const { closing, dismiss } = useDismiss()
 	const close = () => dismiss(onClose)
 	const [sent, setSent] = useState(false)
+	const [busy, setBusy] = useState(false)
+
+	// POST /auth/forgot-password answers the same way whether or not the address
+	// is registered — no enumeration — so there's nothing to report back but
+	// "it's on its way", which is what the second page already says.
+	const send = async () => {
+		if (busy) return
+		setBusy(true)
+		try {
+			await auth.forgotPassword(email)
+		} catch {
+			// A link that didn't send is indistinguishable from one that did
+			// until the inbox says otherwise, and the panel already tells them
+			// to ask for another if it doesn't arrive.
+		} finally {
+			setBusy(false)
+			setSent(true)
+		}
+	}
 
 	useEffect(() => {
 		const onKey = (event) => {
@@ -1421,7 +1431,7 @@ function ResetPasswordDialog({ email, onClose }) {
 					)}
 					<button
 						type="button"
-						onClick={() => (sent ? close() : setSent(true))}
+						onClick={() => (sent ? close() : send())}
 						className="
 							rounded-full
 							bg-black
@@ -1442,7 +1452,7 @@ function ResetPasswordDialog({ email, onClose }) {
 							active:shadow-none
 						"
 					>
-						{sent ? 'done' : 'send link'}
+						{sent ? 'done' : busy ? 'sending…' : 'send link'}
 					</button>
 				</div>
 			</div>
@@ -1453,29 +1463,71 @@ function ResetPasswordDialog({ email, onClose }) {
 // ---- page ------------------------------------------------------------------
 
 export default function Profile() {
-	const isMember = hasRole('member', currentRole)
+	const role = useRole()
+	const { user, refresh } = useSession()
+	const isMember = hasRole('member', role)
 
 	// Points and places are a member's business. Officers run the board rather
 	// than compete on it — they can see the whole thing on the dashboard and the
 	// roster — so their profile is the masthead and the form, nothing else.
-	const onTheBoard = isMember && !hasRole('officer', currentRole)
+	const onTheBoard = isMember && !hasRole('officer', role)
 
 	// What the server has, and what the form is doing to it. The photo is in the
 	// draft rather than saved on the spot, so one save covers the masthead and
 	// the form under it.
+	//
+	// Seeded from the session, which the app already loaded — so the masthead
+	// draws with a name on it immediately and only the counter and the rail wait
+	// on a fetch.
 	const [profile, setProfile] = useState(() => ({
-		...seedProfile,
-		first: currentUser.first,
-		last: currentUser.last,
+		first: user?.firstName ?? '',
+		last: user?.lastName ?? '',
+		username: user?.username ?? '',
+		photo: user?.profilePicture ?? null,
+		emailVerified: user?.emailVerified ?? false,
+		joined: user?.dateJoined ?? user?.createdAt ?? null,
+		points: user?.points ?? 0,
+		stats: NO_STATS,
 	}))
 	const [draft, setDraft] = useState(() => ({
-		first: currentUser.first,
-		last: currentUser.last,
-		username: seedProfile.username,
-		photo: seedProfile.photo,
+		first: user?.firstName ?? '',
+		last: user?.lastName ?? '',
+		username: user?.username ?? '',
+		photo: user?.profilePicture ?? null,
 	}))
 	const [saved, setSaved] = useState(false)
+	const [error, setError] = useState(null)
+	const [saving, setSaving] = useState(false)
 	const [resetting, setResetting] = useState(false)
+	const [board, setBoard] = useState([])
+
+	// The counter's four counts, which only /members/me computes. Officers and
+	// 'user' accounts don't draw the counter, so neither asks for them — and a
+	// 'user' has no member row for that endpoint to find in the first place.
+	useEffect(() => {
+		if (!onTheBoard) return
+		let live = true
+
+		membersApi
+			.me()
+			.then((me) => {
+				if (!live) return
+				setProfile((previous) => ({
+					...previous,
+					stats: me.stats ?? NO_STATS,
+					points: me.points ?? previous.points,
+					joined: me.dateJoined ?? previous.joined,
+				}))
+			})
+			.catch(() => {})
+
+		membersApi
+			.list()
+			.then((rows) => live && setBoard(toBoard(rows)))
+			.catch(() => {})
+
+		return () => { live = false }
+	}, [onTheBoard])
 
 	// the "saved" line is a receipt, not a state — it clears itself
 	useEffect(() => {
@@ -1487,11 +1539,13 @@ export default function Profile() {
 	const set = (field) => (event) => {
 		setDraft((prev) => ({ ...prev, [field]: event.target.value }))
 		setSaved(false)
+		setError(null)
 	}
 
 	const setPhoto = (photo) => {
 		setDraft((prev) => ({ ...prev, photo }))
 		setSaved(false)
+		setError(null)
 	}
 
 	const dirty =
@@ -1507,40 +1561,63 @@ export default function Profile() {
 		draft.last.trim() !== '' &&
 		draft.username.trim() !== ''
 
-	// Local until this is wired up: the names and the username belong to the
-	// user row and the photo to members.profile_picture, so saving becomes a
-	// PUT /members/me once that route accepts them — today it whitelists
-	// instagram and the picture — plus somewhere to upload the file itself.
-	const save = () => {
-		if (!dirty || !filled) return
+	// PUT /members/me takes all four: the names, the username (which moves the
+	// email with it) and the picture. The picture is still a data URL held in
+	// the browser — there's nowhere to upload a file to yet — so what's stored
+	// is whatever the picker produced.
+	//
+	// The session is refreshed afterwards rather than patched by hand: the
+	// sidebar, the pass and the masthead all read the same user off it, and
+	// re-reading is what keeps them from disagreeing.
+	const save = async () => {
+		if (!dirty || !filled || saving) return
+
 		const clean = {
-			...draft,
 			first: draft.first.trim(),
 			last: draft.last.trim(),
 			username: draft.username.trim(),
+			photo: draft.photo,
 		}
-		setDraft(clean)
-		setProfile((prev) => ({ ...prev, ...clean }))
-		setSaved(true)
+
+		setSaving(true)
+		setError(null)
+		try {
+			await membersApi.update({
+				firstName: clean.first,
+				lastName: clean.last,
+				username: clean.username,
+				profilePicture: clean.photo,
+			})
+			setDraft(clean)
+			setProfile((prev) => ({ ...prev, ...clean }))
+			setSaved(true)
+			await refresh()
+		} catch (err) {
+			setError(err.message)
+		} finally {
+			setSaving(false)
+		}
 	}
 
-	const revert = () =>
+	const revert = () => {
 		setDraft({
 			first: profile.first,
 			last: profile.last,
 			username: profile.username,
 			photo: profile.photo,
 		})
+		setError(null)
+	}
 
-	const board = onTheBoard ? ranked(seedBoard) : []
-	const mine = board.find((person) => person.id === currentUser.id)
+	const ranking = onTheBoard ? ranked(board) : []
+	const mine = ranking.find((person) => person.id === user?.userId)
 
 	// What sits beside the form, if anything: your place for a member, the
 	// invitation for somebody who isn't one yet, and nothing for an officer —
 	// whose form then stops widening rather than stretching a four-field paper
 	// form across the whole window.
 	const beside = onTheBoard
-		? <RankRail board={board} place={mine?.place} points={mine?.points ?? 0} />
+		? <RankRail board={ranking} place={mine?.place} points={mine?.points ?? 0} meId={user?.userId} />
 		: isMember ? null : <JoinCard />
 
 	const narrow = beside ? '' : 'xl:max-w-[900px]'
@@ -1587,6 +1664,7 @@ export default function Profile() {
 				pb-2
 			">
 				<Masthead
+					role={role}
 					profile={profile}
 					draft={draft}
 					onPick={setPhoto}
@@ -1594,7 +1672,7 @@ export default function Profile() {
 				/>
 
 				{onTheBoard && (
-					<Counter points={mine?.points ?? 0} stats={profile.stats} />
+					<Counter points={profile.points ?? mine?.points ?? 0} stats={profile.stats} />
 				)}
 
 				{/* the form and whatever's beside it pair off from xl — below that
@@ -1618,8 +1696,10 @@ export default function Profile() {
 						<DetailsCard
 							draft={draft}
 							dirty={dirty}
-							ready={dirty && filled}
+							ready={dirty && filled && !saving}
 							saved={saved}
+							saving={saving}
+							error={error}
 							verified={profile.emailVerified && draft.username === profile.username}
 							onChange={set}
 							onSave={save}

@@ -65,137 +65,133 @@ export const STATUS_PILL = {
 	reimbursed: 'bg-green text-green-dark',
 	denied: 'bg-salmon-lightest text-salmon-dark',
 	awarded: 'bg-green text-green-dark',
-	'under review': 'bg-blue-light text-blue-med',
+	under_review: 'bg-blue-light text-blue-med',
 	drafting: 'bg-yellow-light text-yellow-dark',
 }
 
 export const REQUEST_STATUSES = ['pending', 'approved', 'reimbursed', 'denied']
-export const GRANT_STATUSES = ['drafting', 'under review', 'awarded', 'denied']
+export const GRANT_STATUSES = ['drafting', 'under_review', 'awarded', 'denied']
+
+// What a status is called on screen. The values above are what the API stores
+// and compares on — Postgres enum labels, so no spaces — and this is the only
+// place that turns one back into the phrase a person reads.
+export function statusLabel(status) {
+	return String(status ?? '').replace(/_/g, ' ')
+}
 
 // What the year was budgeted at. The starting figures — the treasurer edits
 // them from the summary cards, which is why the pages hold them in state.
 export const INCOME_GOAL = { '2025–26': 10000, '2024–25': 6000 }
 export const EXPENSE_BUDGET = { '2025–26': 9500, '2024–25': 6000 }
 
-// What was in the account before the first row below. Everything else is this
-// plus what came in, less what went out.
+// What was in the account before the earliest row in the ledger. Nothing here
+// stores a running total — every figure on both pages is a sum over the
+// transaction rows — so this is the offset that makes "current balance" match
+// the actual bank statement rather than only the rows anyone has typed in.
+//
+// Set it to 0 if the ledger genuinely starts from nothing.
 export const OPENING_BALANCE = 980
 
-// ---- seeds -----------------------------------------------------------------
+// ---- what the API sends, in the shape these pages read ----------------------
 
-// Money in. `source` is what the treasurer would write on the deposit.
-export const seedIncome = [
-	{ id: 5101, date: '2024-08-27', source: 'Fall dues', category: 'dues', amount: 615 },
-	{ id: 5102, date: '2024-09-19', source: 'Campus Micro-Grant award', category: 'grants', amount: 900 },
-	{ id: 5103, date: '2024-10-22', source: 'Bake sale', category: 'fundraisers', amount: 296.25 },
-	{ id: 5104, date: '2024-11-12', source: 'Local salon sponsorship', category: 'sponsors', amount: 400 },
-	{ id: 5105, date: '2025-01-21', source: 'Spring dues', category: 'dues', amount: 720 },
-	{ id: 5106, date: '2025-02-18', source: "Valentine's gram sale", category: 'fundraisers', amount: 318 },
-	{ id: 5107, date: '2025-03-11', source: 'Student Org Fund award', category: 'grants', amount: 1100 },
-	{ id: 5108, date: '2025-04-08', source: 'Spring merch drop', category: 'fundraisers', amount: 305 },
-	{ id: 5109, date: '2025-05-06', source: 'Alumni gift', category: 'sponsors', amount: 200 },
-
-	{ id: 5110, date: '2025-08-25', source: 'Fall dues — first wave', category: 'dues', amount: 690 },
-	{ id: 5111, date: '2025-09-10', source: 'Fall dues — late sign-ups', category: 'dues', amount: 420 },
-	{ id: 5112, date: '2025-09-22', source: 'Student Org Fund award', category: 'grants', amount: 1500 },
-	{ id: 5113, date: '2025-10-08', source: 'Glow Bar sponsorship', category: 'sponsors', amount: 600 },
-	{ id: 5114, date: '2025-10-27', source: 'Bake sale', category: 'fundraisers', amount: 385.5 },
-	{ id: 5115, date: '2025-11-14', source: 'Lip gloss pop-up', category: 'fundraisers', amount: 512 },
-	{ id: 5116, date: '2025-12-05', source: 'Winter merch drop', category: 'fundraisers', amount: 268 },
-	{ id: 5117, date: '2026-01-20', source: 'Spring dues — first wave', category: 'dues', amount: 810 },
-	{ id: 5118, date: '2026-01-28', source: 'STEM Outreach Mini-Grant', category: 'grants', amount: 1200 },
-	{ id: 5119, date: '2026-02-11', source: "Valentine's gram sale", category: 'fundraisers', amount: 341 },
-	{ id: 5120, date: '2026-02-26', source: 'Sephora Collegiate sponsorship', category: 'sponsors', amount: 600 },
-	{ id: 5121, date: '2026-03-09', source: 'Campus Life Programming award', category: 'grants', amount: 800 },
-	{ id: 5122, date: '2026-03-24', source: 'Spring dues — late sign-ups', category: 'dues', amount: 420 },
-	{ id: 5123, date: '2026-04-15', source: 'Spring fling table', category: 'fundraisers', amount: 274 },
-	{ id: 5124, date: '2026-06-12', source: 'Summer pop-up market', category: 'fundraisers', amount: 236 },
-	{ id: 5125, date: '2026-07-08', source: 'Alumni sponsor gift', category: 'sponsors', amount: 300 },
-]
-
-// Money out. `requestId` marks a row that came from settling an officer's
-// receipt rather than from the treasurer paying something directly — those two
-// are the only ways a row gets in here, and the difference matters when someone
-// asks why a line exists.
-export const seedExpenses = [
-	{ id: 6201, date: '2024-09-12', title: 'Bath bomb lab supplies', category: 'lab', amount: 388.5 },
-	{ id: 6202, date: '2024-09-26', title: 'Flyer printing', category: 'marketing', amount: 96.3 },
-	{ id: 6203, date: '2024-10-17', title: 'Welcome social — food', category: 'events', amount: 284 },
-	{ id: 6204, date: '2024-11-07', title: 'Candle lab supplies', category: 'lab', amount: 452.75 },
-	{ id: 6205, date: '2024-12-04', title: 'Winter social — venue', category: 'events', amount: 415 },
-	{ id: 6206, date: '2025-01-29', title: 'Lip balm lab supplies', category: 'lab', amount: 398.2 },
-	{ id: 6207, date: '2025-02-20', title: 'Guest esthetician honorarium', category: 'guests', amount: 300 },
-	{ id: 6208, date: '2025-03-13', title: 'Sticker printing', category: 'marketing', amount: 142 },
-	{ id: 6209, date: '2025-03-27', title: 'Scrub lab supplies', category: 'lab', amount: 471.05 },
-	{ id: 6210, date: '2025-04-24', title: 'Spring banquet — catering', category: 'events', amount: 520 },
-	{ id: 6211, date: '2025-05-15', title: 'Photo prints', category: 'marketing', amount: 88 },
-
-	{ id: 6212, date: '2025-08-28', title: 'Welcome social — food', category: 'events', amount: 318 },
-	{ id: 6213, date: '2025-09-04', title: 'Flyer printing', category: 'marketing', amount: 128.4 },
-	{ id: 6214, date: '2025-09-18', title: 'Bath bomb lab supplies', category: 'lab', amount: 412.6 },
-	{ id: 6215, date: '2025-10-03', title: 'Bubbles and Beakers — supplies', category: 'events', amount: 264.5 },
-	{ id: 6216, date: '2025-10-15', title: 'Instagram ad boost', category: 'marketing', amount: 90 },
-	{ id: 6217, date: '2025-10-21', title: 'Lip gloss lab base + pigments', category: 'lab', amount: 528.4 },
-	{ id: 6218, date: '2025-11-06', title: 'Guest esthetician honorarium', category: 'guests', amount: 350 },
-	{ id: 6219, date: '2025-11-19', title: 'Body butter lab jars', category: 'lab', amount: 366.15 },
-	{ id: 6220, date: '2025-12-06', title: 'Winter formal — venue deposit', category: 'events', amount: 600 },
-	{ id: 6221, date: '2026-01-09', title: 'Sticker + button printing', category: 'marketing', amount: 186 },
-	{ id: 6222, date: '2026-01-15', title: 'Industry panel — speaker travel', category: 'guests', amount: 275 },
-	{ id: 6223, date: '2026-01-27', title: 'Bronzer lab mica set', category: 'lab', amount: 489.9 },
-	{ id: 6224, date: '2026-02-13', title: "Galentine's night — decor + food", category: 'events', amount: 372.4 },
-	{ id: 6225, date: '2026-02-18', title: 'Sugar scrub lab supplies', category: 'lab', amount: 434.25 },
-	{ id: 6226, date: '2026-02-24', title: 'Tabling banner', category: 'marketing', amount: 210 },
-	{ id: 6227, date: '2026-03-05', title: 'Makeup artist workshop fee', category: 'guests', amount: 400 },
-	{ id: 6228, date: '2026-03-19', title: 'Perfume lab oils', category: 'lab', amount: 561.3 },
-	{ id: 6229, date: '2026-04-10', title: 'Spring banquet — catering', category: 'events', amount: 595.1 },
-	{ id: 6230, date: '2026-04-22', title: 'Face mask lab clays', category: 'lab', amount: 448.15 },
-	{ id: 6231, date: '2026-04-30', title: 'Guest speaker gift baskets', category: 'guests', amount: 75 },
-	{ id: 6232, date: '2026-05-06', title: 'End-of-year photo booth prints', category: 'marketing', amount: 166 },
-	{ id: 6233, date: '2026-06-25', title: 'Summer social — cookout', category: 'events', amount: 182.5 },
-	{ id: 6234, date: '2026-07-16', title: 'Officer retreat supplies', category: 'events', amount: 96 },
-
-	// settled receipts — each one is the payout for the request it names
-	{ id: 6235, date: '2026-05-09', title: 'Body butter jars', category: 'lab', amount: 92.15, requestId: 8803, who: 'Isabel Harris' },
-	{ id: 6236, date: '2026-05-28', title: 'Banner reprint', category: 'marketing', amount: 88, requestId: 8805, who: 'Molly White' },
-	{ id: 6237, date: '2026-06-13', title: 'Bronzer lab jars', category: 'lab', amount: 145.6, requestId: 8807, who: 'Nadia Okafor' },
-	{ id: 6238, date: '2026-06-26', title: 'Bake sale supplies', category: 'events', amount: 118.72, requestId: 8809, who: 'Isabel Harris' },
-	{ id: 6239, date: '2026-07-10', title: 'Guest speaker gift', category: 'guests', amount: 55, requestId: 8811, who: 'Debra Nelson' },
-	{ id: 6240, date: '2026-07-17', title: 'GBM snacks', category: 'events', amount: 63.8, requestId: 8812, who: 'Nadia Okafor' },
-]
-
-export const seedGrants = [
-	{ id: 7301, name: 'Campus Micro-Grant', org: 'Student Government', amount: 900, status: 'awarded', due: '2024-09-01' },
-	{ id: 7302, name: 'Student Org Fund', org: 'Student Government', amount: 1100, status: 'awarded', due: '2025-02-14' },
-	{ id: 7303, name: 'Student Org Fund', org: 'Student Government', amount: 1500, status: 'awarded', due: '2025-09-01' },
-	{ id: 7304, name: 'STEM Outreach Mini-Grant', org: 'College of Sciences', amount: 1200, status: 'awarded', due: '2026-01-15' },
-	{ id: 7305, name: 'Campus Life Programming', org: 'Dean of Students', amount: 800, status: 'awarded', due: '2026-03-02' },
-	{ id: 7306, name: 'Wellness Programming', org: 'Health Center', amount: 900, status: 'denied', due: '2026-04-20' },
-	{ id: 7307, name: 'Beauty Industry Fund', org: 'Glow Foundation', amount: 2000, status: 'under review', due: '2026-09-12' },
-	{ id: 7308, name: 'Sustainability Micro-Grant', org: 'Green Campus', amount: 650, status: 'drafting', due: '2026-10-05' },
-]
-
-// A receipt an officer handed in, which is the same row the treasurer settles.
-// `memberId` is who's owed the money; `image` is the photo, held as an object
-// URL until there's somewhere to upload it to.
+// Every one of the four lists below arrives from its own endpoint and is
+// reshaped here rather than in the pages, so both analytics pages agree on what
+// a row is called. The pages then do all their arithmetic over these — nothing
+// on either page is a stored total.
 //
-// A denial carries `denialReason` — the treasurer has to say why, and it's what
-// the officer answers when they fix the request and send it back. A request
-// that's been round once keeps the old objection as `previousDenial`, so the
-// treasurer can see it's a second attempt and at what.
-export const seedRequests = [
-	{ id: 8803, memberId: 12288, who: 'Isabel Harris', what: 'Body butter jars', reason: 'jars for the body butter lab', category: 'lab', date: '2026-05-08', amount: 92.15, image: null, status: 'reimbursed' },
-	{ id: 8804, memberId: 12288, who: 'Isabel Harris', what: 'Mixing bowls', reason: 'replacements after the scrub lab', category: 'lab', date: '2026-05-20', amount: 39.99, image: null, status: 'denied', denialReason: 'There are six bowls in the supply closet — check there before buying more. If they were all cracked, say so and send it back.' },
-	{ id: 8805, memberId: 12281, who: 'Molly White', what: 'Banner reprint', reason: 'the tabling banner tore', category: 'marketing', date: '2026-05-27', amount: 88, image: null, status: 'reimbursed' },
-	{ id: 8806, memberId: 12288, who: 'Isabel Harris', what: 'Lab goggles + gloves', reason: 'safety kit for the bronzer lab', category: 'lab', date: '2026-06-04', amount: 52.3, image: null, status: 'approved' },
-	{ id: 8807, memberId: 12278, who: 'Nadia Okafor', what: 'Bronzer lab jars', reason: 'packaging for 20 attendees', category: 'lab', date: '2026-06-11', amount: 145.6, image: null, status: 'reimbursed' },
-	{ id: 8808, memberId: 12283, who: 'Lauren Martin', what: 'Sticker printing', reason: 'giveaways for tabling', category: 'marketing', date: '2026-06-18', amount: 74.25, image: null, status: 'denied', denialReason: 'No photo of the receipt attached, and marketing was already at budget in june. Attach it and I can move it to next year.' },
-	{ id: 8809, memberId: 12288, who: 'Isabel Harris', what: 'Bake sale supplies', reason: 'flour, sugar, packaging', category: 'events', date: '2026-06-24', amount: 118.72, image: null, status: 'reimbursed' },
-	{ id: 8810, memberId: 12288, who: 'Isabel Harris', what: 'Instagram ad boost', reason: 'promoting the summer pop-up', category: 'marketing', date: '2026-07-02', amount: 30, image: null, status: 'approved' },
-	{ id: 8811, memberId: 12286, who: 'Debra Nelson', what: 'Guest speaker gift', reason: 'thank-you basket for the panel', category: 'guests', date: '2026-07-09', amount: 55, image: null, status: 'reimbursed' },
-	{ id: 8812, memberId: 12278, who: 'Nadia Okafor', what: 'GBM snacks', reason: 'refreshments for the july GBM', category: 'events', date: '2026-07-15', amount: 63.8, image: null, status: 'reimbursed' },
-	{ id: 8813, memberId: 12283, who: 'Lauren Martin', what: 'Photoshoot props', reason: 'props for the merch shoot', category: 'marketing', date: '2026-07-22', amount: 42.15, image: null, status: 'approved' },
-	{ id: 8814, memberId: 12288, who: 'Isabel Harris', what: 'Lip gloss base + pigments', reason: 'restock for the august lab', category: 'lab', date: '2026-07-28', amount: 86.4, image: null, status: 'pending' },
-]
+// Amounts come back from Postgres NUMERIC as strings, so every one of them goes
+// through Number() on the way in. Miss one and `a + b` silently concatenates.
+//
+// Dates arrive as full ISO timestamps and are cut back to 'YYYY-MM-DD', which
+// is what the date inputs want, what these functions compare on, and what sorts
+// correctly as plain text.
+
+function day(value) {
+	return String(value ?? '').slice(0, 10)
+}
+
+function name(user) {
+	return `${user?.firstName ?? ''} ${user?.lastName ?? ''}`.trim()
+}
+
+// GET /transactions, split by the ledger it belongs to. Income rows call their
+// description `source`, expense rows call it `title` — the two tables label
+// that column differently, and the ledger card's config is written against
+// those names.
+export function toIncome(transactions) {
+	return transactions
+		.filter((row) => row.type === 'income')
+		.map((row) => ({
+			id: row.transactionId,
+			date: day(row.date),
+			source: row.source,
+			category: row.category,
+			amount: Number(row.amount),
+		}))
+}
+
+export function toExpenses(transactions) {
+	return transactions
+		.filter((row) => row.type === 'expense')
+		.map((row) => ({
+			id: row.transactionId,
+			date: day(row.date),
+			title: row.source,
+			category: row.category,
+			amount: Number(row.amount),
+			// only on a row that came from settling a receipt — that's what the
+			// ledger flags as somebody's reimbursement
+			requestId: row.reimbursementId ?? undefined,
+			who: row.reimbursement ? name(row.reimbursement.member?.user) : undefined,
+		}))
+}
+
+// GET /grants. `amount` is what was asked for, and `due` is the application
+// deadline — an application that isn't awarded yet has no other date on it.
+export function toGrants(grants) {
+	return grants.map((row) => ({
+		id: row.grantId,
+		name: row.name,
+		org: row.org,
+		amount: Number(row.amountRequested),
+		status: row.status,
+		due: day(row.deadline),
+	}))
+}
+
+// GET /reimbursements (the treasurer's queue) or /reimbursements/mine.
+// `what` is the title, `reason` is what it was bought for — the form asks for
+// both and the row keeps them apart.
+export function toRequests(rows) {
+	return rows.map((row) => ({
+		id: row.reimbursementId,
+		memberId: row.memberId,
+		who: name(row.member?.user),
+		what: row.title,
+		reason: row.explanation ?? '',
+		category: row.category,
+		date: day(row.date),
+		amount: Number(row.amountRequested),
+		// the receipt photo, stored as a data URL until there's somewhere to
+		// upload a file to. The dialogs read `image.preview`.
+		image: row.receipt ? { preview: row.receipt } : null,
+		status: row.status,
+		denialReason: row.denialExplanation ?? null,
+		previousDenial: row.previousDenial ?? null,
+	}))
+}
+
+// GET /year-targets -> { '2025–26': 10000 }, one map per figure, which is the
+// shape the summary cards index into.
+export function toTargets(rows) {
+	const goals = {}
+	const budgets = {}
+	for (const row of rows) {
+		goals[row.schoolYear] = Number(row.incomeGoal)
+		budgets[row.schoolYear] = Number(row.expenseBudget)
+	}
+	return { goals, budgets }
+}
 
 // ---- numbers ---------------------------------------------------------------
 

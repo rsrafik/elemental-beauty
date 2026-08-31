@@ -16,14 +16,28 @@ async function authMiddleware(req, res, next) {
     }
 
     try {
+        // The account is looked up, not just the membership, and the difference
+        // matters: a token can outlive the row it names — the account was
+        // deleted, or the database was reseeded underneath it. Reading only the
+        // members table can't tell that apart from "signed in, hasn't joined
+        // yet", so a token for a user who no longer exists used to sail through
+        // here and get refused further down as 403 'Membership required'. A 403
+        // says "you're signed in but not allowed", so the client kept the dead
+        // token and every page stayed broken until storage was cleared by hand.
+        //
+        // 401 is the honest answer, and it's the one the client acts on: it
+        // clears the token and sends them to /login.
+        //
         // Role is looked up fresh on every request — promotions apply instantly,
-        // and users with no members row get role = null (blocked by requireRole)
-        const member = await prisma.member.findUnique({
-            where: { userId: decoded.id }
+        // and a user with no members row gets role = null (blocked by requireRole)
+        const user = await prisma.user.findUnique({
+            where: { userId: decoded.id },
+            select: { userId: true, member: { select: { role: true } } }
         })
+        if (!user) { return res.status(401).json({ message: 'Invalid token' }) }
 
-        req.userId = decoded.id
-        req.role = member?.role ?? null
+        req.userId = user.userId
+        req.role = user.member?.role ?? null
         next()
     } catch (err) {
         console.error(err.message)

@@ -1,5 +1,7 @@
+'use client'
+
 import Sidebar from '@/components/dashboards/Sidebar'
-import { currentRole } from '@/lib/roles'
+import { useRole, useSignOut } from '@/lib/session'
 import { navFor, showInstagramFor } from '@/lib/nav'
 
 // Sidebar + content frame shared by every logged-in page that isn't the
@@ -11,13 +13,17 @@ import { navFor, showInstagramFor } from '@/lib/nav'
 //   </DashboardShell>
 //
 // The sidebar figures out which item is active from the URL, so there's
-// nothing to pass in for that.
+// nothing to pass in for that. The menu it's given comes from the signed-in
+// role, so it can't offer a page the API would then refuse.
 
 export default function DashboardShell({
 	children,
-	showInstagram = showInstagramFor(currentRole),
+	showInstagram,
 	className = '',
 }) {
+	const role = useRole()
+	const signOut = useSignOut()
+
 	return (
 		// Above `lg` this is a fixed-height two-column frame and the content
 		// column is what scrolls. Below it the columns stack — menu bar on top,
@@ -41,8 +47,9 @@ export default function DashboardShell({
 			lg:gap-6
 		">
 			<Sidebar
-				items={navFor(currentRole)}
-				showInstagram={showInstagram}
+				items={navFor(role)}
+				showInstagram={showInstagram ?? showInstagramFor(role)}
+				onLogout={signOut}
 			/>
 
 			{/* page-enter / page-stagger are the entrance (see globals.css): the

@@ -1,7 +1,9 @@
 'use client'
 
-import { useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import DashboardShell from '@/components/dashboards/DashboardShell'
+import { labs as labsApi } from '@/lib/api'
+import { isoDate, longDate, today } from '@/lib/dates'
 
 // /labs for a user or member: browse upcoming labs, RSVP, look back at the
 // ones they've attended.
@@ -84,6 +86,28 @@ function CalendarIcon({ className = '' }) {
 	)
 }
 
+// The lock with its shackle swung open — same body, so the two read as one
+// object in two states rather than two different icons. Only the left leg still
+// meets the body; the right end floats, which is the whole of "open".
+function UnlockIcon({ className = '' }) {
+	return (
+		<svg
+			viewBox="0 0 24 24"
+			className={className}
+			aria-hidden="true"
+		>
+			<path
+				d="M8 10.5V7a4 4 0 0 1 8 0"
+				fill="none"
+				stroke="currentColor"
+				strokeWidth="2.5"
+				strokeLinecap="round"
+			/>
+			<rect x="4" y="10" width="16" height="11" rx="3" fill="currentColor" />
+		</svg>
+	)
+}
+
 function CheckIcon({ className = '' }) {
 	return (
 		<svg
@@ -115,11 +139,19 @@ const ICON_CLASS = `
 	group-hover:scale-110
 `
 
+// The corner icon says where you stand with this lab, and there are only three
+// answers:
+//
+//   attended  you were checked in, so the lab is yours — green, and the only
+//             one of the three that's open
+//   open      it's happening today, so check-in is live: bring the QR on your
+//             pass and an officer scans you in
+//   locked    yours, but shut — either it hasn't come round yet (you're RSVP'd
+//             for a future date) or it's been and gone without you
 const currentIcons = {
-	// check-in closed for the day
-	locked: <LockIcon className={`${ICON_CLASS} text-red`} />,
-	// check-in open — tap the lab to scan in
+	attended: <UnlockIcon className={`${ICON_CLASS} text-green-dark`} />,
 	open: <CalendarIcon className={`${ICON_CLASS} text-blue`} />,
+	locked: <LockIcon className={`${ICON_CLASS} text-red`} />,
 }
 
 // The upcoming section has no status icon — it gets the rsvp button instead.
@@ -129,7 +161,37 @@ const currentIcons = {
 // `waitlist` means every seat is already spoken for, so a seat taken here sits
 // past the cap — the lab still accepts you, the counter just runs over (21/20).
 // Nothing is ever disabled: a full lab offers the waitlist instead.
-function RsvpButton({ going, waitlist, onClick }) {
+// `attended` is not a state of this button, it's the absence of one: once you've
+// been checked in there is no RSVP left to cancel, so the card says so instead
+// of offering a toggle the API would refuse. Everything else is a real control.
+function RsvpButton({ going, waitlist, attended, onClick }) {
+	if (attended) {
+		return (
+			<span
+				title="You were checked in to this lab"
+				className="
+					flex
+					items-center
+					justify-center
+					gap-1
+					min-w-[110px]
+					rounded-full
+					px-4
+					py-1.5
+					font-vietnam
+					font-semibold
+					text-sm
+					bg-green
+					text-green-dark
+					select-none
+				"
+			>
+				<CheckIcon className="w-4 h-4 text-green-dark" />
+				attended
+			</span>
+		)
+	}
+
 	const label = going
 		? waitlist ? 'waitlisted' : 'going'
 		: waitlist ? 'waitlist' : 'rsvp'
@@ -139,6 +201,12 @@ function RsvpButton({ going, waitlist, onClick }) {
 			? 'bg-green text-green-dark hover:brightness-95'
 			: 'bg-blue text-white hover:brightness-105'
 	return (
+		// No busy state on the button, deliberately. The card is updated the
+		// instant you click — the request that follows is a formality you should
+		// never have to look at — so a spinner or a wait cursor would only ever
+		// flash for a frame and read as a stutter. Double-clicks are already
+		// handled in toggleRsvp, which ignores a second press while the first
+		// call is still out.
 		<button
 			type="button"
 			onClick={onClick}
@@ -182,27 +250,83 @@ function RsvpButton({ going, waitlist, onClick }) {
 
 // ---- data ------------------------------------------------------------------
 
-// Placeholder rows until /labs is wired to the API. `image` is a path under
-// public/ — cards fall back to a blank tile while those don't exist yet.
-const current = [
-	{ id: 1, title: 'Bronzer', date: 'August 30, 2026', image: null, status: 'locked' },
-	{ id: 2, title: 'Lipstick', date: 'August 30, 2026', image: null, status: 'locked' },
-	{ id: 3, title: 'Lip Gloss', date: 'August 30, 2026', image: null, status: 'open' },
-	{ id: 4, title: 'Bronzer', date: 'August 30, 2026', image: null, status: 'locked' },
-	{ id: 5, title: 'Lipstick', date: 'August 30, 2026', image: null, status: 'locked' },
-	{ id: 6, title: 'Lip Gloss', date: 'August 30, 2026', image: null, status: 'open' },
-]
+// GET /api/labs hands back every lab with two extras worked out server-side:
+// `taken`, the seats gone, and `mine`, this member's own attendance row on it
+// (null when they have nothing to do with it).
+//
+// One list in state, both panels derived from it. That's what makes an RSVP
+// show up in "current" the instant you press the button: the same row feeds
+// both sides, so patching `mine` moves the card without a second request.
+function toCard(lab) {
+	return {
+		id: lab.labId,
+		title: lab.title,
+		// kept as 'YYYY-MM-DD' — it compares against today as plain text, and
+		// the card formats it for display
+		date: isoDate(lab.date),
+		image: lab.image,
+		taken: lab.taken,
+		capacity: lab.capacity,
+		mine: lab.mine,
+	}
+}
 
-// `taken` / `capacity` are the rsvp count and the seat cap. Only the upcoming
-// labs carry them — a lab that's already running has nothing left to sign up
-// for, so its cards leave the counter off. `taken` counts everyone but you;
-// your own seat comes from `going`, so the count moves when you tap rsvp.
-const upcoming = [
-	{ id: 7, title: 'Blush', date: 'September 6, 2026', image: null, taken: 0, capacity: 20, going: false },
-	{ id: 8, title: 'Highlighter', date: 'September 13, 2026', image: null, taken: 11, capacity: 20, going: true },
-	{ id: 9, title: 'Body Butter', date: 'September 20, 2026', image: null, taken: 3, capacity: 15, going: false },
-	{ id: 10, title: 'Lip Scrub', date: 'September 27, 2026', image: null, taken: 20, capacity: 20, going: false },
-]
+// Which panel a lab belongs to, and what its corner icon says.
+//
+//   current   anything that is yours or is happening: a lab you're confirmed
+//             for, one running today, and every one that has already been. A
+//             waitlist place is NOT yours yet, so it doesn't qualify.
+//   upcoming  everything still ahead, whether or not you're going — it's the
+//             browse-and-sign-up side, and a lab you've joined stays on it so
+//             you can still change your mind.
+//
+// A lab can be on both, and usually is once you've RSVP'd: it's yours (current)
+// and it hasn't happened yet (upcoming).
+function panels(rows) {
+	const now = today()
+	const current = []
+	const upcoming = []
+
+	for (const lab of rows) {
+		const isToday = lab.date === now
+		const past = lab.date < now
+		// a confirmed seat. 'waitlisted' deliberately isn't one — you don't have
+		// a place until somebody drops out
+		const going = lab.mine === 'rsvped' || lab.mine === 'attended'
+
+		// Listed field by field rather than spread: a current card is a photo, a
+		// name, a date and the icon, and nothing else. Carrying `taken` and
+		// `capacity` across would put a seat counter on it — there's nothing
+		// left to sign up for here, so the number would only be noise.
+		if (past || isToday || going) {
+			current.push({
+				id: lab.id,
+				title: lab.title,
+				date: lab.date,
+				image: lab.image,
+				status: lab.mine === 'attended'
+					? 'attended'
+					: isToday ? 'open' : 'locked',
+			})
+		}
+
+		if (!past && !isToday) {
+			upcoming.push({
+				...lab,
+				going,
+				waitlisted: lab.mine === 'waitlisted',
+				attended: lab.mine === 'attended',
+			})
+		}
+	}
+
+	// current reads newest first, so the lab you just signed up for — or the one
+	// running today — is at the front rather than buried under the club's back
+	// catalogue. Upcoming is soonest first, which is the order you'd sign up in.
+	current.sort((a, b) => b.date.localeCompare(a.date))
+	upcoming.sort((a, b) => a.date.localeCompare(b.date))
+	return { current, upcoming }
+}
 
 // ---- pieces ----------------------------------------------------------------
 
@@ -360,7 +484,9 @@ function LabGrid({ items, icons, renderAction }) {
 					<LabCard
 						key={lab.id}
 						title={lab.title}
-						date={lab.date}
+						/* the row carries 'YYYY-MM-DD' so it can be compared
+						   against today; the card is where it becomes prose */
+						date={longDate(lab.date)}
 						image={lab.image}
 						icon={icons?.[lab.status]}
 						action={renderAction?.(lab)}
@@ -452,32 +578,82 @@ function PanelHeading({ children }) {
 export default function MemberLabs() {
 	const [showUpcoming, setShowUpcoming] = useState(false)
 
-	// Which labs you're down for. Local only until /labs is wired to the API —
-	// the button and the seat count both read off this, so tapping rsvp moves
-	// the count with it.
-	const [rsvpd, setRsvpd] = useState(
-		() => new Set(upcoming.filter((lab) => lab.going).map((lab) => lab.id))
-	)
+	// Every lab, once. Both panels are derived from this — see `panels` — so a
+	// change to one row is a change to both sides at the same instant.
+	const [rows, setRows] = useState([])
+	// ids with a request in flight, so a button can't be pressed twice into two
+	// opposite calls that then race each other
+	const [busy, setBusy] = useState(() => new Set())
+	// What the API refused the last change with. A revert on its own looks like
+	// the click missed; the reason is the only thing that makes it make sense.
+	const [error, setError] = useState(null)
 
-	const toggleRsvp = (id) =>
-		setRsvpd((prev) => {
-			const next = new Set(prev)
-			next.has(id) ? next.delete(id) : next.add(id)
-			return next
-		})
+	useEffect(() => {
+		let live = true
+		labsApi
+			.list()
+			.then((list) => live && setRows(list.map(toCard)))
+			.catch((err) => live && setError(err.message))
+		return () => { live = false }
+	}, [])
 
-	// `taken` in the data leaves you out, so add your own seat back in here.
-	// Everyone else already filling the cap means your seat is a waitlist one,
-	// which is what tips the count past the cap (21/20).
-	const upcomingRows = upcoming.map((lab) => {
-		const going = rsvpd.has(lab.id)
-		return {
-			...lab,
-			going,
-			waitlist: lab.taken >= lab.capacity,
-			taken: lab.taken + (going ? 1 : 0),
+	const { current, upcoming } = useMemo(() => panels(rows), [rows])
+
+	// Applied to the row first and rolled back if the call is refused. Because
+	// both panels read off that one row, an RSVP does two things at once with no
+	// extra work: the button turns green, and the lab appears in "current" under
+	// a lock — it's yours now, it just hasn't come round yet.
+	//
+	// Whether the seat taken is a real one or a waitlist place is the server's
+	// call, not this page's: `code` in the reply says which. A waitlist place is
+	// not a seat, so it neither moves the counter nor puts the lab in "current".
+	const toggleRsvp = async (lab) => {
+		if (busy.has(lab.id)) return
+		setBusy((prev) => new Set(prev).add(lab.id))
+		setError(null)
+
+		const leaving = lab.going || lab.waitlisted
+		const patch = (changes) =>
+			setRows((prev) =>
+				prev.map((row) => (row.id === lab.id ? { ...row, ...changes } : row))
+			)
+
+		// what the row said before, to put back if the call is refused
+		const before = { mine: lab.mine, taken: lab.taken }
+
+		patch(
+			leaving
+				? { mine: null, taken: lab.taken - (lab.going ? 1 : 0) }
+				: { mine: 'rsvped', taken: lab.taken + 1 }
+		)
+
+		try {
+			if (leaving) {
+				await labsApi.unrsvp(lab.id)
+			} else {
+				const reply = await labsApi.rsvp(lab.id)
+				if (reply?.code === 'WAITLISTED' || reply?.code === 'ALREADY_WAITLISTED') {
+					patch({ mine: 'waitlisted', taken: lab.taken })
+				}
+			}
+		} catch (err) {
+			patch(before)
+			setError(err.message)
+		} finally {
+			setBusy((prev) => {
+				const next = new Set(prev)
+				next.delete(lab.id)
+				return next
+			})
 		}
-	})
+	}
+
+	// A lab is full when every seat is gone and none of them is yours — that's
+	// what makes the button offer the waitlist instead of an rsvp.
+	const upcomingRows = upcoming.map((lab) => ({
+		...lab,
+		waitlist: lab.waitlisted || (!lab.going && lab.taken >= lab.capacity),
+	}))
 
 	// Both the slide and the hover peek move the same panel, so they share one
 	// transform — and the duration rides along with whichever one set it, so a
@@ -582,13 +758,27 @@ export default function MemberLabs() {
 						"
 					>
 						<PanelHeading>UPCOMING</PanelHeading>
+						{error && (
+							<p className="
+								font-vietnam
+								-mt-2
+								mb-2
+								px-3
+								text-center
+								text-sm
+								text-salmon-dark
+							">
+								{error}
+							</p>
+						)}
 						<LabGrid
 							items={upcomingRows}
 							renderAction={(lab) => (
 								<RsvpButton
-									going={lab.going}
+									going={lab.going || lab.waitlisted}
 									waitlist={lab.waitlist}
-									onClick={() => toggleRsvp(lab.id)}
+									attended={lab.attended}
+									onClick={() => toggleRsvp(lab)}
 								/>
 							)}
 						/>

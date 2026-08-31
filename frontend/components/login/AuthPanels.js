@@ -5,6 +5,23 @@ import { useRouter } from 'next/navigation'
 
 import FoldText from '@/components/FoldText'
 import { useDismiss } from '@/lib/dismiss'
+import { useSession } from '@/lib/session'
+import { auth } from '@/lib/api'
+
+// The error line under a card's fields. Absolutely positioned so a message
+// appearing doesn't push the button down the card — the two cards are fixed
+// heights that the panel is measured against, and a shifting one would resize
+// the whole opening.
+const ERROR = `
+	font-vietnam
+	absolute
+	inset-x-[50px]
+	bottom-[18px]
+	text-center
+	text-[12px]
+	leading-tight
+	text-[#B3402E]
+`
 
 const LABEL = `
 	font-beachday
@@ -107,9 +124,20 @@ const UNFOLD = {
 export default function AuthPanels() {
 	const [front, setFront] = useState('login')
 
-	// Which flow opened the code dialog, or null for closed. Both flows show the
-	// same code step; the mode is what decides where verifying takes you.
-	const [verifying, setVerifying] = useState(null)
+	// The forgot-password dialog. Email verification is switched off, so signing
+	// up no longer has a code step to show — it creates the account and goes
+	// straight to the dashboard. This is the only thing the dialog is still for.
+	const [forgot, setForgot] = useState(false)
+
+	const { login, register, user, loading } = useSession()
+	const router = useRouter()
+
+	// Somebody who is already signed in has no business on the login page —
+	// arriving here with a live token (a bookmark, the back button) should land
+	// them where they were going.
+	useEffect(() => {
+		if (!loading && user) router.replace('/dashboard')
+	}, [loading, user, router])
 
 	return (
 		<main className="
@@ -214,24 +242,22 @@ export default function AuthPanels() {
 							<LogIn
 								front={front === 'login'}
 								onCome={() => setFront('login')}
-								onForgot={() => setVerifying('reset')}
+								onForgot={() => setForgot(true)}
+								onSubmit={login}
+								onDone={() => router.replace('/dashboard')}
 							/>
 							<SignUp
 								front={front === 'signup'}
 								onCome={() => setFront('signup')}
-								onContinue={() => setVerifying('signup')}
+								onSubmit={register}
+								onDone={() => router.replace('/dashboard')}
 							/>
 						</section>
 					</div>
 				</div>
 			</div>
 
-			{verifying && (
-				<VerifyDialog
-					mode={verifying}
-					onClose={() => setVerifying(null)}
-				/>
-			)}
+			{forgot && <ForgotPasswordDialog onClose={() => setForgot(false)} />}
 		</main>
 	)
 }
@@ -298,9 +324,37 @@ function Bamboo() {
 // In front of the sign-up card, so its shadow falls across it. The square
 // bottom-right corner is what makes the overlap read as one card laid over
 // another rather than two cards that happen to touch.
-function LogIn({ front, onCome, onForgot }) {
+function LogIn({ front, onCome, onForgot, onSubmit, onDone }) {
+	const [username, setUsername] = useState('')
+	const [password, setPassword] = useState('')
+	const [error, setError] = useState(null)
+	const [busy, setBusy] = useState(false)
+
+	const ready = username.trim() !== '' && password !== '' && !busy
+
+	// A <form>, so Enter in either field submits — signing in without reaching
+	// for the mouse is the thing people do on a login page.
+	const submit = async (event) => {
+		event.preventDefault()
+		if (!ready) return
+
+		setBusy(true)
+		setError(null)
+		try {
+			await onSubmit(username.trim(), password)
+			onDone()
+		} catch (err) {
+			// The API says "Invalid credentials" whether it was the username or
+			// the password, and repeating that verbatim is right: saying which
+			// one was wrong tells an attacker which usernames exist.
+			setError(err.message)
+			setBusy(false)
+		}
+	}
+
 	return (
-		<div
+		<form
+			onSubmit={submit}
 			onClick={onCome}
 			onFocus={onCome}
 			className={`
@@ -335,6 +389,8 @@ function LogIn({ front, onCome, onForgot }) {
 				type="text"
 				name="username"
 				autoComplete="username"
+				value={username}
+				onChange={(event) => setUsername(event.target.value)}
 				className={`${FIELD} mt-[9px] bg-[#FFE9BF]`}
 			/>
 
@@ -343,6 +399,8 @@ function LogIn({ front, onCome, onForgot }) {
 				type="password"
 				name="password"
 				autoComplete="current-password"
+				value={password}
+				onChange={(event) => setPassword(event.target.value)}
 				className={`${FIELD} mt-[9px] bg-[#FFE9BF]`}
 			/>
 
@@ -370,17 +428,72 @@ function LogIn({ front, onCome, onForgot }) {
 				flex
 				justify-center
 			">
-				<Button className="w-[142px]">ENTER</Button>
+				<Button type="submit" disabled={!ready} className="w-[142px]">
+					{busy ? '...' : 'ENTER'}
+				</Button>
 			</div>
-		</div>
+
+			{error && <p className={ERROR}>{error}</p>}
+		</form>
 	)
 }
 
 // Pulled left so its own edge runs under the log-in card — the gap you see
 // between them is that card's shadow, not background.
-function SignUp({ front, onCome, onContinue }) {
+function SignUp({ front, onCome, onSubmit, onDone }) {
+	const [form, setForm] = useState({
+		username: '',
+		password: '',
+		verify: '',
+		instagram: '',
+	})
+	const [error, setError] = useState(null)
+	const [busy, setBusy] = useState(false)
+
+	const set = (field) => (event) => {
+		setForm((previous) => ({ ...previous, [field]: event.target.value }))
+		setError(null)
+	}
+
+	const ready =
+		form.username.trim() !== '' &&
+		form.password !== '' &&
+		form.verify !== '' &&
+		!busy
+
+	// The two rules the card already states as hints are checked here rather
+	// than being sent to the API and bounced back: the page said them, so the
+	// page should be the one to hold you to them.
+	const submit = async (event) => {
+		event.preventDefault()
+		if (!ready) return
+
+		if (form.password.length < 8) {
+			setError('Password must be at least 8 characters.')
+			return
+		}
+		if (form.password !== form.verify) {
+			setError("Those passwords don't match.")
+			return
+		}
+
+		setBusy(true)
+		try {
+			await onSubmit({
+				username: form.username.trim(),
+				password: form.password,
+				instagram: form.instagram.trim(),
+			})
+			onDone()
+		} catch (err) {
+			setError(err.message)
+			setBusy(false)
+		}
+	}
+
 	return (
-		<div
+		<form
+			onSubmit={submit}
 			onClick={onCome}
 			onFocus={onCome}
 			className={`
@@ -414,6 +527,8 @@ function SignUp({ front, onCome, onContinue }) {
 				type="text"
 				name="purdue-username"
 				autoComplete="username"
+				value={form.username}
+				onChange={set('username')}
 				className={`${FIELD} mt-[9px] bg-[#FFCC6E]`}
 			/>
 			<p className={`${HINT} mt-[10px]`}>without the &apos;@purdue.edu&apos;</p>
@@ -423,6 +538,8 @@ function SignUp({ front, onCome, onContinue }) {
 				type="password"
 				name="new-password"
 				autoComplete="new-password"
+				value={form.password}
+				onChange={set('password')}
 				className={`${FIELD} mt-[8px] bg-[#FFCC6E]`}
 			/>
 			<p className={`${HINT} mt-[8px]`}>must be 8 characters</p>
@@ -430,8 +547,10 @@ function SignUp({ front, onCome, onContinue }) {
 			<p className={`${LABEL} mt-[21px]`}>Verify Password</p>
 			<input
 				type="password"
-				name="new-password"
+				name="verify-password"
 				autoComplete="new-password"
+				value={form.verify}
+				onChange={set('verify')}
 				className={`${FIELD} mt-[8px] bg-[#FFCC6E]`}
 			/>
 			<p className={`${HINT} mt-[10px]`}>must be the same password</p>
@@ -440,6 +559,8 @@ function SignUp({ front, onCome, onContinue }) {
 			<input
 				type="text"
 				name="instagram"
+				value={form.instagram}
+				onChange={set('instagram')}
 				className={`${FIELD} mt-[8px] bg-[#FFCC6E]`}
 			/>
 
@@ -448,28 +569,29 @@ function SignUp({ front, onCome, onContinue }) {
 				flex
 				justify-center
 			">
-				<Button className="w-[137px]" onClick={onContinue}>CONTINUE</Button>
+				<Button type="submit" disabled={!ready} className="w-[137px]">
+					{busy ? '...' : 'CONTINUE'}
+				</Button>
 			</div>
-		</div>
+
+			{error && <p className={ERROR}>{error}</p>}
+		</form>
 	)
 }
-
-// ---- the code dialog --------------------------------------------------------
+// ---- forgot password --------------------------------------------------------
 //
-// One dialog, two flows, told apart by `mode`:
+// The button on the log-in card doesn't set a password, it asks for the link
+// that does — POST /auth/forgot-password, which mails a 15-minute token pointed
+// at /reset-password. So this dialog's job is to say where the link is going and
+// then confirm it went, which is also why it never asks for the old one.
 //
-//   reset    forgot password. The code proves it's you, then a second page
-//            takes the new one, and creating it closes the dialog.
-//   signup   the code is the last thing between you and an account, so
-//            verifying goes to the dashboard and there is no second page.
+// The address is the purdue username with the domain on the end, the same way
+// /account derives it, so this asks for the username rather than making anyone
+// type an address the club already knows.
 //
-// Shared rather than written twice because it is the same step — the same
-// heading, the same five boxes, the same resend. Two copies would be two things
-// to keep in step every time one of them changed.
-//
-// The card is a fixed size and both pages are drawn to fit it, so moving from
-// the code to the new password swaps what is inside without the box changing
-// shape underneath. It reads as one thing with two pages, not as two dialogs.
+// The reply is identical whether or not the account exists — that's the API
+// refusing to confirm which usernames are real, and the dialog has to keep that
+// line rather than reporting "no such user" back.
 //
 // The page's content is keyed on the step, which remounts it and so restarts
 // the fade. Without the key React would reuse the same nodes, the animation
@@ -477,8 +599,8 @@ function SignUp({ front, onCome, onContinue }) {
 //
 // `useDismiss` is what lets it animate on the way out: React would otherwise
 // drop the dialog the instant the state went null, leaving the exit nowhere to
-// happen. Everything that ends this — verify on signup, create, the X, the
-// backdrop, Escape — goes through `dismiss`.
+// happen. Everything that ends this — the X, the backdrop, Escape, done — goes
+// through `dismiss`.
 
 const RESET_LABEL = `
 	font-beachday
@@ -500,21 +622,17 @@ const RESET_FIELD = `
 	outline-none
 `
 
-function VerifyDialog({ mode, onClose }) {
+function ForgotPasswordDialog({ onClose }) {
 	const { closing, dismiss } = useDismiss()
-	const [step, setStep] = useState('code')
-	const router = useRouter()
 	const close = () => dismiss(onClose)
 
-	// The code step is the same in both flows; what differs is where verifying
-	// lands you. Signing up, the code was the last thing standing between you
-	// and an account, so it goes to the dashboard — through `dismiss`, so the
-	// dialog plays its exit and the page changes under a screen that is already
-	// on its way out rather than one that vanishes mid-animation. Resetting, the
-	// code only proves it's you; the new password is still to come.
-	const onVerify = mode === 'signup'
-		? () => dismiss(() => router.push('/dashboard'))
-		: () => setStep('password')
+	const [username, setUsername] = useState('')
+	const [sent, setSent] = useState(false)
+	const [busy, setBusy] = useState(false)
+	const [error, setError] = useState(null)
+
+	const handle = username.trim()
+	const email = handle ? `${handle}@purdue.edu` : 'your purdue email'
 
 	useEffect(() => {
 		const onKey = event => {
@@ -523,6 +641,23 @@ function VerifyDialog({ mode, onClose }) {
 		window.addEventListener('keydown', onKey)
 		return () => window.removeEventListener('keydown', onKey)
 	})
+
+	const send = async event => {
+		event.preventDefault()
+		if (sent) return close()
+		if (!handle || busy) return
+
+		setBusy(true)
+		setError(null)
+		try {
+			await auth.forgotPassword(email)
+			setSent(true)
+		} catch (err) {
+			setError(err.message)
+		} finally {
+			setBusy(false)
+		}
+	}
 
 	return (
 		<div
@@ -539,11 +674,12 @@ function VerifyDialog({ mode, onClose }) {
 				${closing ? 'dialog-leaving' : 'dialog-open'}
 			`}
 		>
-			<div
+			<form
 				onClick={event => event.stopPropagation()}
+				onSubmit={send}
 				role="dialog"
 				aria-modal="true"
-				aria-label={mode === 'signup' ? 'Verify email' : 'Reset password'}
+				aria-label="Reset password"
 				className="
 					relative
 					flex
@@ -596,127 +732,72 @@ function VerifyDialog({ mode, onClose }) {
 					</svg>
 				</button>
 
-				<div className="page-enter" key={step}>
-					{step === 'code'
-						? <CodeStep onVerify={onVerify} />
-						: <PasswordStep onCreate={close} />}
+				<div className="page-enter" key={sent ? 'sent' : 'ask'}>
+					{sent ? (
+						<div className="px-[22px] text-center">
+							<p className={RESET_LABEL}>CHECK YOUR EMAIL</p>
+							<p className="
+								font-vietnam
+								mt-[12px]
+								text-[13px]
+								leading-relaxed
+								text-black/60
+							">
+								If {email} is registered, a reset link is on its way. It
+								works once and runs out after 15 minutes.
+							</p>
+							<div className="
+								mt-[24px]
+								flex
+								justify-center
+							">
+								<Button type="submit" className="w-[146px]">DONE</Button>
+							</div>
+						</div>
+					) : (
+						<div className="px-[22px]">
+							<p className={RESET_LABEL}>PURDUE USERNAME</p>
+							<input
+								type="text"
+								name="username"
+								autoComplete="username"
+								autoFocus
+								value={username}
+								onChange={event => {
+									setUsername(event.target.value)
+									setError(null)
+								}}
+								className={RESET_FIELD}
+							/>
+							<p className="
+								font-vietnam
+								mt-[10px]
+								text-[12px]
+								leading-tight
+								text-[#2B2B2B]
+							">
+								{error
+									? <span className="text-[#B3402E]">{error}</span>
+									: `We'll email a reset link to ${email}.`}
+							</p>
+
+							<div className="
+								mt-[24px]
+								flex
+								justify-center
+							">
+								<Button
+									type="submit"
+									disabled={!handle || busy}
+									className="w-[146px]"
+								>
+									{busy ? '...' : 'SEND LINK'}
+								</Button>
+							</div>
+						</div>
+					)}
 				</div>
-			</div>
-		</div>
-	)
-}
-
-function CodeStep({ onVerify }) {
-	// One ref per box so a typed digit can hand focus to the next one. A
-	// five-box code that makes you click each box in turn is the kind of thing
-	// nobody reports and everybody resents.
-	const boxes = useRef([])
-
-	const onKeyDown = (event, index) => {
-		if (event.key !== 'Backspace' || event.target.value) return
-		boxes.current[index - 1]?.focus()
-	}
-
-	const onInput = (event, index) => {
-		if (event.target.value) boxes.current[index + 1]?.focus()
-	}
-
-	return (
-		<>
-			<div className="
-				flex
-				items-center
-				justify-center
-				gap-[14px]
-			">
-				<h2 className={RESET_LABEL}>TYPE CODE SENT TO EMAIL</h2>
-				<button
-					type="button"
-					className="
-						font-aalto
-						h-[23px]
-						shrink-0
-						cursor-pointer
-						rounded-full
-						bg-[#FF8A78]
-						px-[11px]
-						text-[22px]
-						leading-none
-						text-[#B3402E]
-					"
-				>
-					RESEND
-				</button>
-			</div>
-
-			<div className="
-				mt-[25px]
-				flex
-				justify-center
-				gap-[14px]
-			">
-				{[0, 1, 2, 3, 4].map(index => (
-					<input
-						key={index}
-						ref={node => { boxes.current[index] = node }}
-						type="text"
-						inputMode="numeric"
-						maxLength={1}
-						aria-label={`Digit ${index + 1} of 5`}
-						onInput={event => onInput(event, index)}
-						onKeyDown={event => onKeyDown(event, index)}
-						className="
-							font-vietnam
-							h-[55px]
-							w-[55px]
-							rounded-full
-							bg-[#FFCC6E]
-							text-center
-							text-[20px]
-							text-black
-							outline-none
-						"
-					/>
-				))}
-			</div>
-
-			<div className="
-				mt-[32px]
-				flex
-				justify-center
-			">
-				<Button className="w-[146px]" onClick={onVerify}>VERIFY</Button>
-			</div>
-		</>
-	)
-}
-
-function PasswordStep({ onCreate }) {
-	return (
-		<div className="px-[22px]">
-			<p className={RESET_LABEL}>NEW PASSWORD</p>
-			<input
-				type="password"
-				name="new-password"
-				autoComplete="new-password"
-				className={RESET_FIELD}
-			/>
-
-			<p className={`${RESET_LABEL} mt-[19px]`}>VERIFY NEW PASSWORD</p>
-			<input
-				type="password"
-				name="verify-password"
-				autoComplete="new-password"
-				className={RESET_FIELD}
-			/>
-
-			<div className="
-				mt-[16px]
-				flex
-				justify-center
-			">
-				<Button className="w-[146px]" onClick={onCreate}>CREATE</Button>
-			</div>
+			</form>
 		</div>
 	)
 }
@@ -729,11 +810,14 @@ function PasswordStep({ onCreate }) {
 //
 // `active:` rather than a click handler: it holds while the mouse is down and
 // releases on its own, and the keyboard gets it for free.
-function Button({ className = '', onClick, children }) {
+// Disabled, it keeps its shadow but loses the press: a pill that still drops
+// when you click it is telling you something happened when nothing did.
+function Button({ type = 'button', className = '', disabled = false, onClick, children }) {
 	return (
 		<button
-			type="button"
+			type={type}
 			onClick={onClick}
+			disabled={disabled}
 			className={`
 				font-dream
 				flex
@@ -741,7 +825,6 @@ function Button({ className = '', onClick, children }) {
 				items-center
 				justify-center
 				rounded-full
-				bg-[#4066FF]
 				text-[23px]
 				leading-none
 				text-white
@@ -749,9 +832,13 @@ function Button({ className = '', onClick, children }) {
 				transition-[translate,box-shadow]
 				duration-150
 				ease-out
-				active:translate-x-[4px]
-				active:translate-y-[4px]
-				active:shadow-[0px_0px_0px_rgba(0,0,0,0)]
+				${disabled
+					? 'bg-[#4066FF]/40 cursor-not-allowed'
+					: `bg-[#4066FF]
+					   cursor-pointer
+					   active:translate-x-[4px]
+					   active:translate-y-[4px]
+					   active:shadow-[0px_0px_0px_rgba(0,0,0,0)]`}
 				${className}
 			`}
 		>

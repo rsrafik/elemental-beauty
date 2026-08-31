@@ -1,6 +1,6 @@
 'use client'
 
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import DashboardShell from '@/components/dashboards/DashboardShell'
 import { useDismiss } from '@/lib/dismiss'
 import {
@@ -29,6 +29,7 @@ import {
 	SummaryCard,
 	TrashIcon,
 } from '@/components/analytics/parts'
+import { finances as financesApi, yearTargets } from '@/lib/api'
 import {
 	EXPENSE_BUDGET,
 	EXPENSE_CATEGORIES,
@@ -45,11 +46,13 @@ import {
 	nextId,
 	prettyDate,
 	schoolYear,
-	seedExpenses,
-	seedGrants,
-	seedIncome,
-	seedRequests,
+	statusLabel,
 	sum,
+	toExpenses,
+	toGrants,
+	toIncome,
+	toRequests,
+	toTargets,
 	today,
 	total,
 	totalsByCategory,
@@ -221,7 +224,7 @@ const LEDGERS = {
 			label: 'status',
 			options: GRANT_STATUSES.map((status) => ({
 				value: status,
-				label: status,
+				label: statusLabel(status),
 				node: <StatusPill status={status} />,
 			})),
 		},
@@ -813,7 +816,7 @@ function GrantDialog({ grant, onClose, onSave }) {
 						>
 							{GRANT_STATUSES.map((status) => (
 								<option key={status} value={status}>
-									{status}
+									{statusLabel(status)}
 								</option>
 							))}
 						</select>
@@ -1479,16 +1482,16 @@ function RequestQueue({ requests, filter, onFilter, onApprove, onDeny, onReimbur
 // ---- page ------------------------------------------------------------------
 
 export default function TreasurerAnalytics() {
-	const [income, setIncome] = useState(seedIncome)
-	const [expenses, setExpenses] = useState(seedExpenses)
-	const [grants, setGrants] = useState(seedGrants)
-	const [requests, setRequests] = useState(seedRequests)
+	const [income, setIncome] = useState([])
+	const [expenses, setExpenses] = useState([])
+	const [grants, setGrants] = useState([])
+	const [requests, setRequests] = useState([])
 
 	const [goals, setGoals] = useState(INCOME_GOAL)
 	const [budgets, setBudgets] = useState(EXPENSE_BUDGET)
 
-	const years = yearsIn(income, expenses)
-	const [year, setYear] = useState(years[0])
+	// null until the books have loaded and can say which year to open on.
+	const [year, setYear] = useState(null)
 
 	const [tab, setTab] = useState('income')
 	// null = closed. Otherwise the kind being worked on and the row it's opened
@@ -1500,14 +1503,44 @@ export default function TreasurerAnalytics() {
 	const [queueFilter, setQueueFilter] = useState('all')
 	// the request being read rather than acted on
 	const [viewing, setViewing] = useState(null)
+	const [error, setError] = useState(null)
 
-	const yearIncome = inYear(income, year)
-	const yearExpenses = inYear(expenses, year)
+	// Every figure on this page is a sum over these four lists, so a write that
+	// could move more than one of them reloads the lot rather than trying to
+	// patch each shape by hand. Settling a receipt is exactly that case: it
+	// changes the queue AND writes a ledger row, by trigger, inside Postgres.
+	const load = () =>
+		Promise.all([
+			financesApi.transactions(),
+			financesApi.grants(),
+			financesApi.allRequests(),
+			yearTargets.list(),
+		]).then(([transactions, grantRows, requestRows, targets]) => {
+			const ledgerIn = toIncome(transactions)
+			const ledgerOut = toExpenses(transactions)
+			setIncome(ledgerIn)
+			setExpenses(ledgerOut)
+			setGrants(toGrants(grantRows))
+			setRequests(toRequests(requestRows))
+
+			const { goals, budgets } = toTargets(targets)
+			setGoals((previous) => ({ ...previous, ...goals }))
+			setBudgets((previous) => ({ ...previous, ...budgets }))
+
+			// open on the most recent year the books actually have rows in
+			setYear((previous) => previous ?? yearsIn(ledgerIn, ledgerOut)[0])
+		})
+
+	useEffect(() => {
+		load().catch((err) => setError(err.message))
+	}, [])
+
+	const years = yearsIn(income, expenses)
+	const shownYear = year ?? years[0]
+
+	const yearIncome = inYear(income, shownYear)
+	const yearExpenses = inYear(expenses, shownYear)
 	const stats = monthStats(income, expenses)
-
-	const listFor = (kind) => (kind === 'income' ? income : kind === 'expenses' ? expenses : grants)
-	const setListFor = (kind) =>
-		kind === 'income' ? setIncome : kind === 'expenses' ? setExpenses : setGrants
 
 	// The ledger shows one year at a time; grants don't belong to a year the way
 	// a deposit does — an application open now is usually for next year — so
@@ -1516,57 +1549,136 @@ export default function TreasurerAnalytics() {
 		? grants
 		: tab === 'income' ? yearIncome : yearExpenses
 
-	const save = (values) => {
+	// One dialog serves three tables, so this is where the form's fields become
+	// whichever body that endpoint wants.
+	const save = async (values) => {
 		const { kind, row } = editing
-		setListFor(kind)((previous) =>
-			row
-				? previous.map((entry) => (entry.id === row.id ? { ...entry, ...values } : entry))
-				: [...previous, { ...values, id: nextId(previous) }]
-		)
-		// a row dated outside the year on screen would save and then vanish, so
-		// the page follows it to the year it landed in
-		if (values.date && schoolYear(values.date) !== year) setYear(schoolYear(values.date))
 		setEditing(null)
+		setError(null)
+
+		try {
+			if (kind === 'grants') {
+				const body = {
+					name: values.name,
+					org: values.org,
+					amountRequested: values.amount,
+					status: values.status,
+					deadline: values.due,
+				}
+				const saved = row
+					? await financesApi.updateGrant(row.id, body)
+					: await financesApi.createGrant(body)
+				const [mapped] = toGrants([saved])
+				setGrants((previous) =>
+					row
+						? previous.map((entry) => (entry.id === row.id ? mapped : entry))
+						: [...previous, mapped]
+				)
+				return
+			}
+
+			// income and expenses are the same table under two names — the form
+			// calls the description `source` on one and `title` on the other
+			const type = kind === 'income' ? 'income' : 'expense'
+			const body = {
+				type,
+				source: values.source ?? values.title,
+				amount: values.amount,
+				category: values.category,
+				date: values.date,
+			}
+			const saved = row
+				? await financesApi.updateTransaction(row.id, body)
+				: await financesApi.createTransaction(body)
+
+			const map = type === 'income' ? toIncome : toExpenses
+			const [mapped] = map([saved])
+			const setList = type === 'income' ? setIncome : setExpenses
+			setList((previous) =>
+				row
+					? previous.map((entry) => (entry.id === row.id ? mapped : entry))
+					: [...previous, mapped]
+			)
+
+			// a row dated outside the year on screen would save and then vanish,
+			// so the page follows it to the year it landed in
+			if (values.date && schoolYear(values.date) !== shownYear) {
+				setYear(schoolYear(values.date))
+			}
+		} catch (err) {
+			setError(err.message)
+		}
 	}
 
-	const remove = () => {
+	const remove = async () => {
 		const { kind, row } = deleting
-		setListFor(kind)((previous) => previous.filter((entry) => entry.id !== row.id))
 		setDeleting(null)
+		setError(null)
+
+		try {
+			if (kind === 'grants') {
+				await financesApi.removeGrant(row.id)
+				setGrants((previous) => previous.filter((entry) => entry.id !== row.id))
+				return
+			}
+			await financesApi.removeTransaction(row.id)
+			const setList = kind === 'income' ? setIncome : setExpenses
+			setList((previous) => previous.filter((entry) => entry.id !== row.id))
+		} catch (err) {
+			setError(err.message)
+		}
 	}
 
-	const patchRequest = (request, changes) =>
-		setRequests((previous) =>
-			previous.map((entry) => (entry.id === request.id ? { ...entry, ...changes } : entry))
-		)
+	const setStatus = async (request, status, reason) => {
+		setError(null)
+		try {
+			await financesApi.setRequestStatus(request.id, status, reason)
+			// Reimbursing writes a ledger row inside Postgres — the app has no
+			// code that does it — so the expense list has to be re-read rather
+			// than guessed at. The other two only move the request itself, but
+			// reloading all four keeps one path instead of three.
+			await load()
+		} catch (err) {
+			setError(err.message)
+		}
+	}
+
+	// The income goal and the spending budget, edited in place on the summary
+	// cards. Sent one at a time on purpose — PUT /year-targets takes a partial,
+	// so setting the goal can't blank the budget.
+	//
+	// Applied to the card first: the number is typed into the card itself, and
+	// snapping back to the old one while a round trip finishes reads as the
+	// edit having been rejected.
+	const setTarget = async (field, amount) => {
+		const setLocal = field === 'incomeGoal' ? setGoals : setBudgets
+		const before = (field === 'incomeGoal' ? goals : budgets)[shownYear]
+
+		setLocal((previous) => ({ ...previous, [shownYear]: amount }))
+		setError(null)
+		try {
+			await yearTargets.set(shownYear, { [field]: amount })
+		} catch (err) {
+			setLocal((previous) => ({ ...previous, [shownYear]: before }))
+			setError(err.message)
+		}
+	}
 
 	// Approving clears any earlier objection off the row — it's been answered,
-	// and leaving it there would keep flagging a settled argument.
-	const approve = (request) => patchRequest(request, { status: 'approved', denialReason: null })
+	// and leaving it there would keep flagging a settled argument. The API does
+	// that clearing; this only asks for the move.
+	const approve = (request) => setStatus(request, 'approved')
 
 	const deny = (reason) => {
-		patchRequest(denying, { status: 'denied', denialReason: reason })
+		const target = denying
 		setDenying(null)
+		setStatus(target, 'denied', reason)
 	}
 
-	// Paying someone back is the moment the money actually leaves, so it writes
-	// the expense row. It's dated the day of the purchase rather than today, so
-	// the spending lands in the month the club incurred it.
-	const reimburse = (request) => {
-		setExpenses((previous) => [
-			...previous,
-			{
-				id: nextId(previous),
-				date: request.date,
-				title: request.what,
-				category: request.category,
-				amount: request.amount,
-				requestId: request.id,
-				who: request.who,
-			},
-		])
-		patchRequest(request, { status: 'reimbursed', denialReason: null })
-	}
+	// Paying someone back is the moment the money actually leaves, and it's what
+	// writes the expense row — dated the day of the purchase rather than today,
+	// so the spending lands in the month the club incurred it.
+	const reimburse = (request) => setStatus(request, 'reimbursed')
 
 	const queue = [...requests].sort((a, b) => b.date.localeCompare(a.date))
 
@@ -1601,11 +1713,20 @@ export default function TreasurerAnalytics() {
 			">
 				<PageControls>
 					<Select
-						value={year}
+						value={shownYear}
 						onChange={setYear}
 						options={years}
 						label="School year"
 					/>
+					{error && (
+						<span className="
+							font-vietnam
+							text-xs
+							text-salmon-dark
+						">
+							{error}
+						</span>
+					)}
 				</PageControls>
 
 				<MonthStats stats={stats} />
@@ -1619,8 +1740,8 @@ export default function TreasurerAnalytics() {
 					lg:grid-cols-3
 				">
 					<BalanceCard
-						series={balanceSeries(income, expenses, year)}
-						year={year}
+						series={balanceSeries(income, expenses, shownYear)}
+						year={shownYear}
 						note="what was in the account at the close of each month"
 					/>
 
@@ -1643,11 +1764,11 @@ export default function TreasurerAnalytics() {
 						categories={INCOME_CATEGORIES}
 						totals={totalsByCategory(yearIncome, INCOME_CATEGORIES)}
 						total={total(yearIncome)}
-						goal={goals[year] ?? 0}
+						goal={goals[shownYear] ?? 0}
 						goalNote="income goal"
-						onGoal={(amount) => setGoals((previous) => ({ ...previous, [year]: amount }))}
+						onGoal={(amount) => setTarget('incomeGoal', amount)}
 						tint="bg-green"
-						year={year}
+						year={shownYear}
 					/>
 
 					<SummaryCard
@@ -1655,11 +1776,11 @@ export default function TreasurerAnalytics() {
 						categories={EXPENSE_CATEGORIES}
 						totals={totalsByCategory(yearExpenses, EXPENSE_CATEGORIES)}
 						total={total(yearExpenses)}
-						goal={budgets[year] ?? 0}
+						goal={budgets[shownYear] ?? 0}
 						goalNote="budget spent"
-						onGoal={(amount) => setBudgets((previous) => ({ ...previous, [year]: amount }))}
+						onGoal={(amount) => setTarget('expenseBudget', amount)}
 						tint="bg-orange"
-						year={year}
+						year={shownYear}
 					/>
 				</div>
 
@@ -1670,7 +1791,7 @@ export default function TreasurerAnalytics() {
 					tab={tab}
 					onTab={setTab}
 					rows={rows}
-					year={year}
+					year={shownYear}
 					onAdd={() => setEditing({ kind: tab, row: null })}
 					onEdit={(row) => setEditing({ kind: tab, row })}
 					onDelete={(row) => setDeleting({ kind: tab, row })}

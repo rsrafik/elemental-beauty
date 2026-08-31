@@ -2,7 +2,9 @@
 
 import { useEffect, useRef, useState } from 'react'
 import DashboardShell from '@/components/dashboards/DashboardShell'
-import { currentRole, hasRole } from '@/lib/roles'
+import { hasRole } from '@/lib/roles'
+import { useRole, useSession } from '@/lib/session'
+import { members as membersApi } from '@/lib/api'
 import { useDismiss } from '@/lib/dismiss'
 
 // /students — officer and up only. The member roster as one sheet: search,
@@ -45,27 +47,25 @@ const ROLE_PILL = {
 	admin: 'bg-green text-green-dark',
 }
 
-// Placeholder rows until /students is wired to GET /members. `id` is the
-// user_id the API returns; `joined` is users.created_at kept as 'YYYY-MM-DD',
-// which sorts as a plain string and formats without a Date round-trip; `photo`
-// is a path under public/ and falls back to the initials tile while profile
-// pictures aren't uploaded yet.
-const seedStudents = [
-	{ id: 12289, first: 'Daisy', last: 'Scott', username: 'daisy22', role: 'member', points: 40, joined: '2026-07-14', photo: null },
-	{ id: 12288, first: 'Isabel', last: 'Harris', username: 'isabel887', role: 'officer', points: 155, joined: '2025-09-02', photo: null },
-	{ id: 12287, first: 'Dan', last: 'Thomas', username: 'dan87675', role: 'member', points: 25, joined: '2026-06-30', photo: null },
-	{ id: 12286, first: 'Debra', last: 'Nelson', username: 'debra1212', role: 'treasurer', points: 130, joined: '2025-08-21', photo: null },
-	{ id: 12285, first: 'Vera', last: 'Cooper', username: 'vera8888', role: 'member', points: 90, joined: '2026-02-11', photo: null },
-	{ id: 12284, first: 'Brian', last: 'Miller', username: 'brian5564', role: 'member', points: 0, joined: '2026-07-28', photo: null },
-	{ id: 12283, first: 'Lauren', last: 'Martin', username: 'lauren7712', role: 'officer', points: 205, joined: '2025-09-15', photo: null },
-	{ id: 12282, first: 'Milton', last: 'Smith', username: 'milton2244', role: 'member', points: 65, joined: '2026-03-04', photo: null },
-	{ id: 12281, first: 'Molly', last: 'White', username: 'molly4747', role: 'admin', points: 310, joined: '2025-08-04', photo: null },
-	{ id: 12280, first: 'Priya', last: 'Anand', username: 'priya9021', role: 'member', points: 115, joined: '2025-11-19', photo: null },
-	{ id: 12279, first: 'Grace', last: 'Kim', username: 'grace3310', role: 'member', points: 15, joined: '2026-07-22', photo: null },
-	{ id: 12278, first: 'Nadia', last: 'Okafor', username: 'nadia1180', role: 'officer', points: 240, joined: '2025-09-08', photo: null },
-	{ id: 12277, first: 'Sofia', last: 'Reyes', username: 'sofia6602', role: 'member', points: 75, joined: '2026-01-27', photo: null },
-	{ id: 12276, first: 'Hana', last: 'Yamada', username: 'hana4429', role: 'member', points: 50, joined: '2026-05-06', photo: null },
-]
+// GET /members returns a member row with its user row nested inside it. The
+// table is flat, so this is where the two are folded together — and `joined` is
+// kept as 'YYYY-MM-DD', which sorts as plain text and formats without a Date
+// round-trip.
+//
+// `photo` falls back to the initials tile while profile pictures have nowhere
+// to be uploaded to.
+function toRow(row) {
+	return {
+		id: row.userId,
+		first: row.user?.firstName ?? '',
+		last: row.user?.lastName ?? '',
+		username: row.user?.username ?? '',
+		role: row.role,
+		points: row.points,
+		joined: String(row.user?.createdAt ?? row.dateJoined ?? '').slice(0, 10),
+		photo: row.user?.profilePicture ?? null,
+	}
+}
 
 // How tall a header row and a data row come out at this type size. Only the
 // starting guess and the fallback for a table with nothing in it — the real
@@ -78,22 +78,13 @@ const ROW_HEIGHT = 57
 // the timezone.
 function prettyDate(value) {
 	if (!value) return ''
-	const [year, month, day] = value.split('-').map(Number)
+	const [year, month, day] = String(value).slice(0, 10).split('-').map(Number)
+	if (!year || !month || !day) return ''
 	return new Date(year, month - 1, day).toLocaleDateString('en-US', {
 		month: 'short',
 		day: 'numeric',
 		year: 'numeric',
 	})
-}
-
-// Today as 'YYYY-MM-DD' in the officer's own timezone — the account a student
-// creates right now is dated the day they see on their calendar, not the day
-// it is in UTC. Built by hand for the same reason prettyDate is.
-function today() {
-	const now = new Date()
-	const month = String(now.getMonth() + 1).padStart(2, '0')
-	const day = String(now.getDate()).padStart(2, '0')
-	return `${now.getFullYear()}-${month}-${day}`
 }
 
 // Initials tiles stand in for profile pictures. The colour is picked off the id
@@ -749,7 +740,7 @@ function ConfirmDeleteDialog({ students, onCancel, onConfirm }) {
 
 // Mounted only while open, so it always starts blank. Points aren't asked for —
 // a new student starts at zero and earns from there.
-function AddStudentDialog({ onClose, onSave }) {
+function AddStudentDialog({ roles, onClose, onSave }) {
 	const { closing, dismiss } = useDismiss()
 	const close = () => dismiss(onClose)
 
@@ -922,7 +913,7 @@ function AddStudentDialog({ onClose, onSave }) {
 							onChange={set('role')}
 							className={`${FIELD} cursor-pointer`}
 						>
-							{ROLES.map((role) => (
+							{roles.map((role) => (
 								<option key={role} value={role}>
 									{role}
 								</option>
@@ -1173,7 +1164,14 @@ function compare(a, b, key) {
 }
 
 export default function OfficerStudents() {
-	const [students, setStudents] = useState(seedStudents)
+	const role = useRole()
+	const { user } = useSession()
+
+	const [students, setStudents] = useState([])
+	// Whatever the last write failed with. Shown in the toolbar rather than as a
+	// dialog: the table is the thing being changed, so the report belongs beside
+	// it and not on top of it.
+	const [error, setError] = useState(null)
 	const [query, setQuery] = useState('')
 	const [roles, setRoles] = useState([])
 	const [sort, setSort] = useState({ key: 'id', dir: 'asc' })
@@ -1194,6 +1192,17 @@ export default function OfficerStudents() {
 	const sheet = useRef(null)
 	const rowMetrics = useRef({ head: HEAD_HEIGHT, row: ROW_HEIGHT })
 	const [pageSize, setPageSize] = useState(10)
+
+	// The roster. Loaded once — every change after this is applied to the table
+	// and to the API together, so there's nothing to re-poll for.
+	useEffect(() => {
+		let live = true
+		membersApi
+			.list()
+			.then((rows) => live && setStudents(rows.map(toRow)))
+			.catch((err) => live && setError(err.message))
+		return () => { live = false }
+	}, [])
 
 	// Search and filter change which rows exist, so page 3 of the old list is
 	// meaningless against the new one — both reset to the top.
@@ -1276,8 +1285,11 @@ export default function OfficerStudents() {
 	// Anyone on staff can only be removed by an admin; officers and treasurers
 	// are left with plain members. Same rule the API has to enforce for real —
 	// this only keeps the UI from offering what the server would refuse.
-	const isAdmin = hasRole('admin', currentRole)
-	const canRemove = (student) => isAdmin || student.role === 'member'
+	const isAdmin = hasRole('admin', role)
+	// You can never remove yourself from the roster — DELETE /members/me is the
+	// route for leaving, and it belongs on /account, not here.
+	const canRemove = (student) =>
+		student.id !== user?.userId && (isAdmin || student.role === 'member')
 
 	const isSelected = (id) => selected.includes(id)
 	const toggleRow = (id) =>
@@ -1308,26 +1320,53 @@ export default function OfficerStudents() {
 	)
 	const selectedIds = selectedStudents.map((student) => student.id)
 
-	const deleteSelected = () => {
-		setStudents((prev) =>
-			prev.filter((student) => !selectedIds.includes(student.id))
-		)
-		setSelected([])
+	// One DELETE per row rather than a batch endpoint: the API deletes by id, and
+	// the rank rule it enforces is per-row too — a selection can legitimately be
+	// part-refused. allSettled, so one refusal doesn't strand the rest.
+	//
+	// The table is rebuilt from what actually succeeded rather than from what was
+	// asked for, which is the difference between the roster showing the truth and
+	// showing the optimistic version of it.
+	const deleteSelected = async () => {
 		setConfirmingDelete(false)
+		setError(null)
+
+		const results = await Promise.allSettled(
+			selectedIds.map((id) => membersApi.remove(id))
+		)
+
+		const removed = selectedIds.filter((_, index) => results[index].status === 'fulfilled')
+		const refused = results.filter((result) => result.status === 'rejected')
+
+		setStudents((prev) => prev.filter((student) => !removed.includes(student.id)))
+		setSelected((prev) => prev.filter((id) => !removed.includes(id)))
+
+		if (refused.length > 0) {
+			setError(
+				refused.length === selectedIds.length
+					? refused[0].reason?.message ?? 'Could not remove those students'
+					: `Removed ${removed.length}; ${refused.length} refused (${refused[0].reason?.message})`
+			)
+		}
 	}
 
-	const addStudent = (values) => {
-		setStudents((prev) => [
-			...prev,
-			{
-				...values,
-				id: Math.max(0, ...prev.map((student) => student.id)) + 1,
-				points: 0,
-				joined: today(),
-				photo: null,
-			},
-		])
-		setAdding(false)
+	const addStudent = async (values) => {
+		setError(null)
+		try {
+			const created = await membersApi.add({
+				firstName: values.first,
+				lastName: values.last,
+				username: values.username,
+				password: values.password,
+				role: values.role,
+			})
+			// the row the API hands back, not the form — it carries the real id,
+			// the joined date and the starting points
+			setStudents((prev) => [...prev, toRow({ ...created, user: created })])
+			setAdding(false)
+		} catch (err) {
+			setError(err.message)
+		}
 	}
 
 	// Clicking the pill that's already open closes it; any other pill moves the
@@ -1338,13 +1377,30 @@ export default function OfficerStudents() {
 	// Only ever reachable as an admin, since nobody else is given the pill to
 	// click. Promoting someone who was already ticked leaves them ticked, which
 	// is fine — an admin may delete any rank.
-	const changeRole = (role) => {
-		setStudents((prev) =>
-			prev.map((student) =>
-				student.id === roleMenu.id ? { ...student, role } : student
-			)
-		)
+	//
+	// Applied to the table first and rolled back if the API refuses: the menu
+	// closes on click, so leaving the pill on the old role until a round trip
+	// finishes reads as the click having missed.
+	const changeRole = async (next) => {
+		const id = roleMenu.id
+		const previous = students.find((student) => student.id === id)?.role
 		setRoleMenu(null)
+		setError(null)
+
+		setStudents((prev) =>
+			prev.map((student) => (student.id === id ? { ...student, role: next } : student))
+		)
+
+		try {
+			await membersApi.setRole(id, next)
+		} catch (err) {
+			setStudents((prev) =>
+				prev.map((student) =>
+					student.id === id ? { ...student, role: previous } : student
+				)
+			)
+			setError(err.message)
+		}
 	}
 
 	return (
@@ -1397,6 +1453,18 @@ export default function OfficerStudents() {
 						">
 							Students
 						</h1>
+						{/* whatever the last write was refused with, beside the count
+						    rather than over the table it's about */}
+						{error && (
+							<span className="
+								font-vietnam
+								text-xs
+								text-salmon-dark
+								max-w-[280px]
+							">
+								{error}
+							</span>
+						)}
 						<span className="
 							flex
 							items-center
@@ -1820,6 +1888,10 @@ export default function OfficerStudents() {
 
 			{adding && (
 				<AddStudentDialog
+					/* only an admin may create staff — the same rule the API
+					   enforces, so the dropdown can't offer what a POST would then
+					   refuse */
+					roles={isAdmin ? ROLES : ['member']}
 					onClose={() => setAdding(false)}
 					onSave={addStudent}
 				/>

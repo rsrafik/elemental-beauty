@@ -3,6 +3,8 @@
 import { useEffect, useState } from 'react'
 import { useDismiss } from '@/lib/dismiss'
 import DashboardShell from '@/components/dashboards/DashboardShell'
+import { eventCategories, events as eventsApi } from '@/lib/api'
+import { isoDate } from '@/lib/dates'
 
 // /events for officer / treasurer / admin: every event on one sheet, each one
 // editable from the dots in its corner.
@@ -13,18 +15,10 @@ import DashboardShell from '@/components/dashboards/DashboardShell'
 
 // ---- data ------------------------------------------------------------------
 
-// The kinds of thing an event can be. Labs are missing on purpose: they carry
-// sign-ups and check-in, so they're created from /labs instead.
-const CATEGORIES = [
-	'GBM',
-	'Workshop',
-	'Social',
-	'Pop-Up',
-	'Fundraiser',
-	'Volunteering',
-	'Photoshoot',
-	'Deadline',
-]
+// The tag list is a table now, not a constant — officers add to it and remove
+// from it on the calendar page, so this page fetches it. Labs are still absent
+// from it on purpose: they carry sign-ups and check-in, so they're created from
+// /labs instead, and /api/event-categories refuses 'lab' as a tag name.
 
 // Who the event is for. Officers-only events stay off the member calendar.
 const TRACKS = {
@@ -36,27 +30,30 @@ const TRACKS = {
 
 const TRACK_KEYS = Object.keys(TRACKS)
 
-// Placeholder rows until /events is wired to the API. `date` is stored the way
-// the date input wants it ('YYYY-MM-DD') and formatted for the card, so editing
-// an event prefills instead of re-parsing prose. `image` is a path under
-// public/ — cards fall back to a blank tile while those don't exist yet.
-const seedEvents = [
-	{ id: 1, title: 'Kickoff Mixer', date: '2026-08-30', time: '18:00', category: 'Social', track: 'open', image: null, description: '' },
-	{ id: 2, title: 'Vendor Booth', date: '2026-08-30', time: '11:00', category: 'Pop-Up', track: 'open', image: null, description: '' },
-	{ id: 3, title: 'Glow Night', date: '2026-08-30', time: '19:30', category: 'Social', track: 'members', image: null, description: '' },
-	{ id: 4, title: 'First Meeting', date: '2026-08-30', time: '17:00', category: 'GBM', track: 'members', image: null, description: '' },
-	{ id: 5, title: 'Fall Formal', date: '2026-09-06', time: '20:00', category: 'Social', track: 'members', image: null, description: '' },
-	{ id: 6, title: 'Volunteer Day', date: '2026-09-06', time: '09:00', category: 'Volunteering', track: 'open', image: null, description: '' },
-	{ id: 7, title: 'Bake Sale', date: '2026-09-06', time: '12:00', category: 'Fundraiser', track: 'open', image: null, description: '' },
-	{ id: 8, title: 'Officer Sync', date: '2026-09-06', time: '16:00', category: 'GBM', track: 'officers', image: null, description: '' },
-]
+// GET /api/events, flattened for the cards. `date` is kept the way the date
+// input wants it ('YYYY-MM-DD') so editing prefills instead of re-parsing what
+// the card prints.
+function toCard(event) {
+	return {
+		id: event.eventId,
+		title: event.title,
+		date: isoDate(event.date),
+		time: event.startTime ?? '',
+		categoryId: event.categoryId ?? null,
+		track: event.track,
+		type: event.type,
+		image: event.image,
+		description: event.description ?? '',
+	}
+}
 
 // '2026-08-30' -> 'August 30, 2026'. Split by hand rather than through Date,
 // which reads a bare date string as UTC and can hand back the day before
 // depending on the timezone.
 function prettyDate(value) {
 	if (!value) return ''
-	const [year, month, day] = value.split('-').map(Number)
+	const [year, month, day] = String(value).slice(0, 10).split('-').map(Number)
+	if (!year || !month || !day) return ''
 	return new Date(year, month - 1, day).toLocaleDateString('en-US', {
 		month: 'long',
 		day: 'numeric',
@@ -384,7 +381,7 @@ function ConfirmDeleteDialog({ label, onCancel, onConfirm }) {
 //
 // `onDelete` only comes in when there's an event to delete, which is what puts
 // the delete button on the footer.
-function EventDialog({ event, onClose, onSave, onDelete }) {
+function EventDialog({ event, categories, onClose, onSave, onDelete }) {
 	// dismiss plays the exit animation and then closes for real — lib/dismiss.js
 	const { closing, dismiss } = useDismiss()
 	const close = () => dismiss(onClose)
@@ -393,7 +390,7 @@ function EventDialog({ event, onClose, onSave, onDelete }) {
 		title: event?.title ?? '',
 		date: event?.date ?? '',
 		time: event?.time ?? '',
-		category: event?.category ?? CATEGORIES[0],
+		categoryId: event?.categoryId ?? categories[0]?.categoryId ?? '',
 		track: event?.track ?? 'members',
 		description: event?.description ?? '',
 	})
@@ -413,10 +410,20 @@ function EventDialog({ event, onClose, onSave, onDelete }) {
 		return () => window.removeEventListener('keydown', onKey)
 	})
 
+	// Read as a data URL rather than an object URL. An object URL only exists
+	// for as long as this tab does, so a picture saved that way would come back
+	// broken on the next load — a data URL is the actual bytes and survives.
+	//
+	// It's a stopgap: a photo inlined into a TEXT column is a big row and a big
+	// response. It becomes a path the moment there's somewhere to upload to.
 	const pickImage = (changed) => {
 		const file = changed.target.files?.[0]
 		if (!file) return
-		setImage(URL.createObjectURL(file))
+		const reader = new FileReader()
+		reader.onload = () => setImage(reader.result)
+		reader.readAsDataURL(file)
+		// so picking the same file twice still fires a change
+		changed.target.value = ''
 	}
 
 	const ready = form.title.trim() !== '' && form.date !== ''
@@ -572,13 +579,13 @@ function EventDialog({ event, onClose, onSave, onDelete }) {
 						<label className="block">
 							<Label>category</Label>
 							<select
-								value={form.category}
-								onChange={set('category')}
+								value={form.categoryId}
+								onChange={set('categoryId')}
 								className={`${FIELD} cursor-pointer`}
 							>
-								{CATEGORIES.map((category) => (
-									<option key={category} value={category}>
-										{category}
+								{categories.map((category) => (
+									<option key={category.categoryId} value={category.categoryId}>
+										{category.name}
 									</option>
 								))}
 							</select>
@@ -790,26 +797,72 @@ function EventDialog({ event, onClose, onSave, onDelete }) {
 // ---- page ------------------------------------------------------------------
 
 export default function OfficerEvents() {
-	const [events, setEvents] = useState(seedEvents)
+	const [events, setEvents] = useState([])
+	const [categories, setCategories] = useState([])
+	const [error, setError] = useState(null)
 
 	// null = closed. { event: null } opens an empty dialog, { event } loads that
 	// row into it — one dialog serving both the + and the dots.
 	const [editing, setEditing] = useState(null)
 
+	useEffect(() => {
+		let live = true
+		Promise.all([eventsApi.list(), eventCategories.list()])
+			.then(([rows, tags]) => {
+				if (!live) return
+				setEvents(rows.map(toCard))
+				setCategories(tags)
+			})
+			.catch((err) => live && setError(err.message))
+		return () => { live = false }
+	}, [])
+
 	// Confirming a delete takes the event out and closes both layers at once,
 	// since the dialog it was opened from no longer has anything to edit.
-	const deleteEvent = () => {
-		setEvents((prev) => prev.filter((row) => row.id !== editing.event.id))
+	//
+	// The API goes first rather than the card: deleting cascades to every RSVP
+	// on it, so a row vanishing and then coming back because the call was
+	// refused is worse than a beat's wait.
+	const deleteEvent = async () => {
+		const target = editing.event
+		setError(null)
+		try {
+			await eventsApi.remove(target.id)
+			setEvents((prev) => prev.filter((row) => row.id !== target.id))
+		} catch (err) {
+			setError(err.message)
+		}
 		setEditing(null)
 	}
 
-	const saveEvent = (values) => {
+	// `type` is what the club scores attendance on — official events are worth
+	// more than socials — and the form doesn't ask for it, so a new event takes
+	// 'social' and an edit leaves whatever it had. The tag the form *does* ask
+	// for is the calendar's label and a separate thing entirely.
+	const saveEvent = async (values) => {
 		const target = editing.event
-		setEvents((prev) =>
-			target
-				? prev.map((row) => (row.id === target.id ? { ...row, ...values } : row))
-				: [...prev, { ...values, id: Math.max(0, ...prev.map((row) => row.id)) + 1 }]
-		)
+		const body = {
+			title: values.title,
+			date: values.date,
+			startTime: values.time || null,
+			categoryId: values.categoryId === '' ? null : Number(values.categoryId),
+			track: values.track,
+			description: values.description,
+			image: values.image,
+		}
+
+		setError(null)
+		try {
+			if (target) {
+				const saved = await eventsApi.update(target.id, body)
+				setEvents((prev) => prev.map((row) => (row.id === target.id ? toCard(saved) : row)))
+			} else {
+				const created = await eventsApi.create({ ...body, type: 'social' })
+				setEvents((prev) => [...prev, toCard(created)])
+			}
+		} catch (err) {
+			setError(err.message)
+		}
 		setEditing(null)
 	}
 
@@ -838,6 +891,16 @@ export default function OfficerEvents() {
 				">
 					ALL EVENTS
 				</h1>
+				{error && (
+					<span className="
+						font-vietnam
+						text-xs
+						text-salmon-dark
+						max-w-[240px]
+					">
+						{error}
+					</span>
+				)}
 				<button
 					type="button"
 					onClick={() => setEditing({ event: null })}
@@ -898,6 +961,7 @@ export default function OfficerEvents() {
 			{editing && (
 				<EventDialog
 					event={editing.event}
+					categories={categories}
 					onClose={() => setEditing(null)}
 					onSave={saveEvent}
 					onDelete={editing.event ? deleteEvent : undefined}

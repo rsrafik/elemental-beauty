@@ -11,11 +11,17 @@ const router = express.Router()
 // if NODE_ENV is missing or anything else, nothing leaks.
 const IS_DEV = process.env.NODE_ENV === 'development'
 
-// Shared helper: called by BOTH verify-email and waiver — whichever
-// flips second creates the members row. Safe to call repeatedly.
+// Signing up gets you an ACCOUNT, not a membership: a fresh row in `users` and
+// nothing in `members`, which is the role the frontend calls 'user'. The member
+// row — and with it a rank, points and a place on the board — arrives when the
+// waiver is signed, or when an officer adds you from /students.
+//
+// Email verification is switched off for now, so the waiver is the only gate.
+// The verify-email endpoints below are left intact and still work; put
+// `user.emailVerified &&` back in front of the waiver check to turn it back on.
 async function promoteIfEligible(userId) {
     const user = await prisma.user.findUnique({ where: { userId } })
-    if (user.emailVerified && user.waiverSigned) {
+    if (user.waiverSigned) {
         await prisma.member.upsert({          // upsert = no crash if row exists
             where: { userId },
             update: {},
@@ -47,29 +53,99 @@ async function sendVerificationEmail(user) {
     return verificationToken
 }
 
+// The sign-up form asks for a purdue username, a password, and an instagram
+// handle it marks optional — no name, which is why first/last default to empty
+// on the row and get filled in from /account afterwards. `firstName` and
+// `lastName` are still accepted here, because /students creates accounts through
+// this same shape and does collect them.
+//
+// The address is the username with the domain on the end, which is what
+// /account writes on the page rather than asking for a second time. An `email`
+// in the body still wins, so a non-purdue account can be made by hand.
+//
+// What comes out is an account with NO member row — role 'user'. That's the
+// onboarding dashboard, and the labs / events / calendar menu isn't offered
+// until the waiver promotes them.
 router.post('/register', async (req, res) => {
-    const { username, email, password } = req.body
+    const { username, email, password, firstName, lastName, instagram } = req.body
 
-    if (!username || !email || !password) {
-        return res.status(400).json({ message: 'username, email, and password are required' })
+    if (!username || !password) {
+        return res.status(400).json({ message: 'username and password are required' })
     }
+    if (String(password).length < 8) {
+        return res.status(400).json({ message: 'password must be at least 8 characters' })
+    }
+
+    const handle = String(username).trim()
+    if (!handle) { return res.status(400).json({ message: 'username cannot be blank' }) }
 
     try {
         const passwordHash = await bcrypt.hash(password, 8)
         const user = await prisma.user.create({
-            data: { username, email, passwordHash }
+            data: {
+                username: handle,
+                email: email?.trim() || `${handle}@purdue.edu`,
+                passwordHash,
+                firstName: firstName?.trim() || '',
+                lastName: lastName?.trim() || '',
+                instagram: instagram?.trim() || null,
+                // Verification is switched off for now (see promoteIfEligible),
+                // so nothing would ever flip this and /account would show every
+                // account as unverified forever. Drop this line and put the
+                // sendVerificationEmail call back to turn it on again.
+                emailVerified: true
+            }
         })
 
-        const verificationToken = await sendVerificationEmail(user)
-
         const token = jwt.sign({ id: user.userId }, process.env.JWT_SECRET, { expiresIn: '24h' })
-        const response = { token, message: 'Check your email for a verification link' }
-        if (IS_DEV) { response.verificationToken = verificationToken }   // dev only
-        res.status(201).json(response)
+        res.status(201).json({ token, message: 'Account created' })
     } catch (err) {
         if (err.code === 'P2002') {           // Prisma unique violation
             return res.status(409).json({ message: 'Username or email already taken' })
         }
+        console.error(err.message)
+        res.sendStatus(500)
+    }
+})
+
+// Who the token belongs to, and what they're allowed to see. Every page asks
+// this on load — it's what replaces the hardcoded role the frontend used to
+// build itself against.
+//
+// Behind authMiddleware alone rather than requireRole, deliberately: somebody
+// with an account and no membership has to be able to ask who they are, and
+// `role: null` is the honest answer for them rather than a 403.
+router.get('/me', authMiddleware, async (req, res) => {
+    try {
+        const user = await prisma.user.findUnique({
+            where: { userId: req.userId },
+            select: {
+                userId: true,
+                username: true,
+                email: true,
+                firstName: true,
+                lastName: true,
+                instagram: true,
+                profilePicture: true,
+                emailVerified: true,
+                waiverSigned: true,
+                createdAt: true,
+                member: { select: { role: true, points: true, dateJoined: true } }
+            }
+        })
+        if (!user) { return res.status(404).json({ message: 'Account not found' }) }
+
+        const { member, ...account } = user
+        res.json({
+            ...account,
+            // 'user' rather than null: the frontend ranks roles, and an account
+            // with no membership is the bottom of that ladder, not the absence
+            // of an answer.
+            role: member?.role ?? 'user',
+            points: member?.points ?? 0,
+            dateJoined: member?.dateJoined ?? null
+        })
+    } catch (err) {
         console.error(err.message)
         res.sendStatus(500)
     }

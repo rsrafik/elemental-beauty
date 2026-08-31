@@ -1,7 +1,9 @@
 'use client'
 
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import DashboardShell from '@/components/dashboards/DashboardShell'
+import { eventCategories, events as eventsApi, labs as labsApi } from '@/lib/api'
+import { buildMonths, typesIn } from '@/lib/calendar'
 
 // /calendar for a user or member: month view of labs + events, read only.
 //
@@ -27,8 +29,9 @@ const SHEET_H = 815
 
 const WEEKDAYS = ['sun', 'mon', 'tue', 'wed', 'thu', 'fri', 'sat']
 
-// The kinds of thing that turn up on the calendar. Shown as the chip list and
-// again as the small caption over each entry, so the two read as one legend.
+// The chip list before the API answers — the tags the club ships with. Once
+// the fetch lands this is replaced by what's actually on the calendar plus
+// whatever tags officers have added since (see typesIn in lib/calendar).
 const TYPES = [
 	'Lab',
 	'GBM',
@@ -55,45 +58,11 @@ const TRACKS = {
 // should be filtering them out before they ever reach the page.
 const VISIBLE_TRACKS = Object.keys(TRACKS).filter((track) => track !== 'officers')
 
-// Keyed 'YYYY-MM', then by day of the month. Placeholder rows until /calendar
-// is wired to the API — one entry per day is all the grid has room for. A month
-// that isn't in here just draws an empty sheet.
-const entries = {
-	'2026-08': {
-		1: { type: 'Social', title: 'Kickoff Mixer', track: 'open' },
-		4: { type: 'GBM', title: 'First Meeting', track: 'members' },
-		6: { type: 'Lab', title: 'Bubbles & Beakers', track: 'members' },
-		8: { type: 'Pop-Up', title: 'Vendor Booth', track: 'open' },
-		11: { type: 'Lab', title: 'Lip Gloss', track: 'members' },
-		13: { type: 'Workshop', title: 'Skincare 101', track: 'online' },
-		15: { type: 'Social', title: 'Glow Night', track: 'members' },
-		18: { type: 'Lab', title: 'Bronzer', track: 'members' },
-		20: { type: 'Deadline', title: 'Dues Due', track: 'online' },
-		21: { type: 'GBM', title: 'Officer Sync', track: 'officers' },
-		23: { type: 'Volunteering', title: 'Beach Cleanup', track: 'open' },
-		25: { type: 'Photoshoot', title: 'Member Portraits', track: 'members' },
-		27: { type: 'Fundraiser', title: 'Bake Sale', track: 'open' },
-		29: { type: 'Lab', title: 'Lipstick', track: 'members' },
-		31: { type: 'GBM', title: 'Month Recap', track: 'members' },
-	},
-	'2026-09': {
-		2: { type: 'GBM', title: 'Fall Kickoff', track: 'members' },
-		5: { type: 'Lab', title: 'Blush', track: 'members' },
-		9: { type: 'Workshop', title: 'Brush Care', track: 'online' },
-		12: { type: 'Lab', title: 'Highlighter', track: 'members' },
-		17: { type: 'Fundraiser', title: 'Bake Sale', track: 'open' },
-		19: { type: 'Lab', title: 'Body Butter', track: 'members' },
-		24: { type: 'Photoshoot', title: 'Officer Headshots', track: 'officers' },
-		26: { type: 'Lab', title: 'Lip Scrub', track: 'members' },
-		30: { type: 'Deadline', title: 'Points Due', track: 'online' },
-	},
-	'2026-07': {
-		4: { type: 'Social', title: 'Summer Meetup', track: 'open' },
-		15: { type: 'Workshop', title: 'Ingredient Basics', track: 'online' },
-		22: { type: 'Lab', title: 'Sunscreen', track: 'members' },
-		29: { type: 'GBM', title: 'Planning Session', track: 'officers' },
-	},
-}
+// Where the days come from now: labs and events, folded into one month map by
+// lib/calendar. Officer-only events never arrive here at all — the API filters
+// them out for a member, so VISIBLE_TRACKS below is a second line of defence
+// rather than the only one.
+
 
 // Sunday-first weeks covering the month, with the neighbouring days that fill
 // out the first and last row. Weeks that are entirely next month are dropped,
@@ -379,6 +348,25 @@ export default function MemberCalendar() {
 	// into January of the next year on its own.
 	const [view, setView] = useState({ year: YEAR, month: MONTH })
 
+	// Every lab and event in one map, keyed by month then day. Fetched once and
+	// stepped through locally — the club's calendar is small enough that a
+	// request per month would be more round trips than rows.
+	const [months, setMonths] = useState({})
+	const [types, setTypes] = useState(TYPES)
+
+	useEffect(() => {
+		let live = true
+		Promise.all([labsApi.list(), eventsApi.list(), eventCategories.list()])
+			.then(([labs, events, categories]) => {
+				if (!live) return
+				const built = buildMonths(labs, events)
+				setMonths(built)
+				setTypes(typesIn(built, categories))
+			})
+			.catch(() => {})
+		return () => { live = false }
+	}, [])
+
 	const step = (delta) =>
 		setView(({ year, month }) => {
 			const moved = new Date(year, month + delta, 1)
@@ -387,11 +375,17 @@ export default function MemberCalendar() {
 
 	const weeks = monthWeeks(view.year, view.month)
 	const stamp = monthKey(view.year, view.month)
-	const monthEntries = entries[stamp] ?? {}
+	const monthEntries = months[stamp] ?? {}
 
+	// This grid has room for one thing per day, so a day holding several shows
+	// the first — which lib/calendar has already ordered by start time.
+	//
 	// Officer-only days read as empty here, same as a day with nothing on it.
-	const visible = (entry) =>
-		entry && VISIBLE_TRACKS.includes(entry.track) ? entry : null
+	// The API has already dropped them for a member; this is the second line.
+	const visible = (day) => {
+		const first = (day ?? []).find((entry) => VISIBLE_TRACKS.includes(entry.track))
+		return first ?? null
+	}
 
 	// The same days the grid shows a badge for, in date order — what the narrow
 	// layout lists under the month.
@@ -528,7 +522,7 @@ export default function MemberCalendar() {
 							justify-center
 							gap-2
 						">
-							{TYPES.map((type) => (
+							{types.map((type) => (
 								<span
 									key={type}
 									className="

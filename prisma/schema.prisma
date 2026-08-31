@@ -39,6 +39,18 @@ enum EventType {
   @@map("event_type")
 }
 
+// Who an event is for. The calendar colours a day by this and the member
+// calendar drops `officers` entirely, so it's the field that decides whether a
+// row is ever sent to a member at all — not just how it's drawn.
+enum EventTrack {
+  members
+  officers
+  open
+  online
+
+  @@map("event_track")
+}
+
 enum TransactionType {
   income
   expense
@@ -46,53 +58,105 @@ enum TransactionType {
   @@map("transaction_type")
 }
 
+// A receipt an officer hands in walks pending -> approved -> reimbursed, and
+// `approved` is not the end of it: agreeing the club owes the money and actually
+// handing it back are two different days, and only the second one is a line of
+// spending. That's why `reimbursed` exists rather than the ledger row being
+// written on approval.
 enum ReimbursementStatus {
   pending
   approved
+  reimbursed
   denied
 
   @@map("reimbursement_status")
 }
 
+// Where money comes from and where it goes, as the two analytics pages actually
+// slice it: the first four are the income summary's donut, the last four the
+// expense summary's — and the last four are also what a receipt gets filed
+// under, so a settled request lands in one of them.
 enum FinanceCategory {
-  membership_dues
-  sponsorship
-  grant_funding
-  fundraising
-  supplies
-  venue
-  equipment
+  grants
+  fundraisers
+  dues
+  sponsors
+  lab
+  events
+  guests
   marketing
-  travel
-  event_costs
-  other
 
   @@map("finance_category")
 }
 
+// How far along a grant application is. Ordered by progress rather than
+// alphabetically — the ledger sorts on this order, so it has to be the
+// declaration order too.
+//
+// `under_review` rather than 'under review': Prisma's client speaks the
+// identifier, not the mapped database value, so a @map here would put a space
+// in the column's type and change nothing anyone actually sees. The page turns
+// the underscore back into a space when it prints it.
+enum GrantStatus {
+  drafting
+  under_review
+  awarded
+  denied
+
+  @@map("grant_status")
+}
+
 // ---------- Users / Members ----------
 
+// The account. Everything here belongs to somebody the moment they sign up,
+// before there's a membership behind it — which is what decides what lives on
+// this row rather than on `members`:
+//
+//   firstName / lastName  the roster, the leaderboard, the Elementist pass and
+//     every receipt's "who" are all a person's name, and /students collects both
+//     when an officer adds a student. Nothing derives them from the username.
+//     Empty rather than nullable: signing yourself up asks for a username and a
+//     password and nothing else, so an account can exist before anyone has said
+//     what to call it — and every page that draws a name already copes with a
+//     blank one (initials fall back to '?'), where a null would throw. /account
+//     and /students both refuse to *save* an empty one.
+//   instagram             the sign-up form asks for it (optional) at the moment
+//     an account is created, which is before email verification and the waiver
+//     have made a member row exist.
+//   profilePicture        /account shows the photo picker to role 'user' too —
+//     somebody with an account and no membership can still set a picture.
 model User {
-  userId        Int      @id @default(autoincrement()) @map("user_id")
-  username      String   @unique
-  passwordHash  String   @map("password_hash")
-  email         String   @unique
-  emailVerified Boolean  @default(false) @map("email_verified")
-  waiverSigned  Boolean  @default(false) @map("waiver_signed")
-  createdAt     DateTime @default(now()) @map("created_at") @db.Timestamptz()
+  userId         Int      @id @default(autoincrement()) @map("user_id")
+  username       String   @unique
+  passwordHash   String   @map("password_hash")
+  email          String   @unique
+  firstName      String   @default("") @map("first_name")
+  lastName       String   @default("") @map("last_name")
+  instagram      String?
+  profilePicture String?  @map("profile_picture")
+  emailVerified  Boolean  @default(false) @map("email_verified")
+  waiverSigned   Boolean  @default(false) @map("waiver_signed")
+  createdAt      DateTime @default(now()) @map("created_at") @db.Timestamptz()
 
-  member Member?
+  member        Member?
+  announcements Announcement[]
 
+  // the roster sorts and searches on names as often as on the username
+  @@index([lastName, firstName])
   @@map("users")
 }
 
+// The membership. What's here is what only means something once someone has
+// actually joined: their rank, their points, and the day they joined.
+//
+// The five numbers on /account's counter — points, labs done, labs rsvp'd,
+// events done, events rsvp'd — are four counts over member_lab / member_event
+// plus this row's points, so only the points are stored.
 model Member {
-  userId         Int        @id @map("user_id")
-  role           MemberRole @default(member)
-  instagram      String?
-  profilePicture String?    @map("profile_picture")
-  points         Int        @default(0)
-  dateJoined     DateTime   @default(dbgenerated("CURRENT_DATE")) @map("date_joined") @db.Date
+  userId     Int        @id @map("user_id")
+  role       MemberRole @default(member)
+  points     Int        @default(0)
+  dateJoined DateTime   @default(dbgenerated("CURRENT_DATE")) @map("date_joined") @db.Date
 
   user           User            @relation(fields: [userId], references: [userId], onDelete: Cascade)
   labs           MemberLab[]
@@ -100,6 +164,25 @@ model Member {
   reimbursements Reimbursement[]
 
   @@map("members")
+}
+
+// ---------- Announcements ----------
+
+// What the officer dashboard's "make announcement" box posts and the member
+// dashboard's banner shows. The author survives being demoted but not being
+// deleted along with their account — an announcement with nobody behind it is
+// still the club's announcement, so the reference goes null rather than taking
+// the row with it.
+model Announcement {
+  announcementId Int      @id @default(autoincrement()) @map("announcement_id")
+  body           String
+  authorId       Int?     @map("author_id")
+  createdAt      DateTime @default(now()) @map("created_at") @db.Timestamptz()
+
+  author User? @relation(fields: [authorId], references: [userId], onDelete: SetNull)
+
+  @@index([createdAt])
+  @@map("announcements")
 }
 
 // ---------- Labs ----------
@@ -161,17 +244,46 @@ model QuizAnswerOption {
 
 // ---------- Events ----------
 
+// The kinds of thing that turn up on the calendar — GBM, Workshop, Social,
+// Pop-Up and the rest. A table rather than an enum because the officer calendar
+// lets officers add and remove tags themselves, and an enum can't be edited
+// from the app.
+//
+// 'Lab' is deliberately not one of these: labs carry sign-ups, a quiz and
+// check-in, so they're their own model and are scheduled from /labs.
+model EventCategory {
+  categoryId Int    @id @default(autoincrement()) @map("category_id")
+  name       String @unique
+
+  events Event[]
+
+  @@map("event_categories")
+}
+
 model Event {
-  eventId     Int       @id @default(autoincrement()) @map("event_id")
+  eventId     Int        @id @default(autoincrement()) @map("event_id")
   title       String
-  type        EventType @default(social)
+  type        EventType  @default(social)
+  // Who it's for. The member calendar never sees `officers` rows — that filter
+  // belongs on the API, not just on the page.
+  track       EventTrack @default(members)
+  categoryId  Int?       @map("category_id")
   description String?
-  date        DateTime  @db.Date
+  date        DateTime   @db.Date
+  // Start time as 'HH:MM', which is what <input type="time"> hands back and
+  // what the calendar prints. Null for something with no clock time on it —
+  // a deadline, say. A CHECK constraint holds the format (see migrations).
+  startTime   String?    @map("start_time") @db.VarChar(5)
   image       String?
-  capacity    Int?      // null = unlimited seats
+  capacity    Int? // null = unlimited seats
 
-  members MemberEvent[]
+  // Deleting a tag off the calendar's legend leaves the events that used it
+  // standing — they just stop being filed under anything.
+  category EventCategory? @relation(fields: [categoryId], references: [categoryId], onDelete: SetNull)
+  members  MemberEvent[]
 
+  @@index([date])
+  @@index([categoryId])
   @@map("events")
 }
 
@@ -208,26 +320,65 @@ model MemberEvent {
 
 // ---------- Finances ----------
 
+// A grant application, tracked from before it's sent. `amountRequested` is what
+// was asked for and `status` is what says whether the club ever saw it — only
+// an awarded one is money, and even then the cheque is a separate income row,
+// because the decision and the deposit don't arrive on the same day.
+//
+// That's what makes `dateGranted` nullable: a drafting application hasn't been
+// granted anything yet, and the tracker still has to be able to hold it.
 model Grant {
-  grantId        Int       @id @default(autoincrement()) @map("grant_id")
-  source         String
-  amountGranted  Decimal   @map("amount_granted") @db.Decimal(10, 2)
-  dateGranted    DateTime  @map("date_granted") @db.Date
-  expirationDate DateTime? @map("expiration_date") @db.Date
+  grantId         Int         @id @default(autoincrement()) @map("grant_id")
+  name            String
+  org             String
+  amountRequested Decimal     @map("amount_requested") @db.Decimal(10, 2)
+  status          GrantStatus @default(drafting)
+  // the application deadline, which is what the tracker counts down to
+  deadline        DateTime    @db.Date
+  dateGranted     DateTime?   @map("date_granted") @db.Date
+  expirationDate  DateTime?   @map("expiration_date") @db.Date
 
   transactions Transaction[]
 
+  @@index([status])
   @@map("grants")
 }
 
+// What the year was budgeted at, edited in place on the two summary cards. One
+// row per school year — '2025–26' — because the treasurer sets a fresh pair
+// every august and last year's figures stay on last year's view.
+model YearTarget {
+  schoolYear    String  @id @map("school_year")
+  incomeGoal    Decimal @map("income_goal") @db.Decimal(10, 2)
+  expenseBudget Decimal @map("expense_budget") @db.Decimal(10, 2)
+
+  @@map("year_targets")
+}
+
+// A receipt an officer handed in, which is the same row the treasurer settles.
+// The receipts card and the transaction history on /analytics are two views of
+// this one table.
+//
+// `title` and `explanation` are two different things and the form asks for both:
+// the title is what the row is called everywhere it's listed, the explanation is
+// what it was bought for. `date` is the day of the purchase, not the day it was
+// filed — settling it writes the expense against that day, so the spending lands
+// in the month the club incurred it.
+//
+// A denial has to say why, and that reason is what the officer answers when they
+// fix the request and send it back. One that's been round once keeps the old
+// objection in `previousDenial`, so the treasurer can see it's a second attempt
+// and at what.
 model Reimbursement {
   reimbursementId   Int                 @id @default(autoincrement()) @map("reimbursement_id")
   memberId          Int?                @map("member_id")
+  title             String
   explanation       String
   amountRequested   Decimal             @map("amount_requested") @db.Decimal(10, 2)
   category          FinanceCategory
   status            ReimbursementStatus @default(pending)
   denialExplanation String?             @map("denial_explanation")
+  previousDenial    String?             @map("previous_denial")
   receipt           String?
   date              DateTime            @default(dbgenerated("CURRENT_DATE")) @db.Date
 

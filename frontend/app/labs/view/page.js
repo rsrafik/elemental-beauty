@@ -1,8 +1,19 @@
-import { currentRole, hasRole } from '@/lib/roles'
-import UserLabView from '@/components/labs/MemberLabView'
+'use client'
+
+import { Gate } from '@/lib/session'
+import { hasRole } from '@/lib/roles'
+import NoAccess from '@/components/NoAccess'
+import MemberLabView from '@/components/labs/MemberLabView'
 import OfficerLabView from '@/components/labs/OfficerLabView'
 
 export default function LabView() {
-	if (hasRole('officer', currentRole)) return <OfficerLabView />
-	return <UserLabView />
+	return (
+		<Gate
+			require="member"
+			fallback={<NoAccess message="Labs are for members." />}
+			render={(user) =>
+				hasRole('officer', user.role) ? <OfficerLabView /> : <MemberLabView />
+			}
+		/>
+	)
 }

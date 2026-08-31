@@ -1,8 +1,8 @@
 'use client'
 
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import DashboardShell from '@/components/dashboards/DashboardShell'
-import { currentUser } from '@/lib/roles'
+import { useCurrentUser } from '@/lib/session'
 import { useDismiss } from '@/lib/dismiss'
 import {
 	Card,
@@ -23,26 +23,27 @@ import {
 	StatusPill,
 	SummaryCard,
 } from '@/components/analytics/parts'
+import { finances as financesApi, yearTargets } from '@/lib/api'
 import {
 	EXPENSE_CATEGORIES,
 	EXPENSE_BUDGET,
 	INCOME_CATEGORIES,
 	INCOME_GOAL,
 	REQUEST_STATUSES,
-	YEARS,
 	balanceSeries,
 	inYear,
 	money,
 	monthStats,
-	nextId,
 	prettyDate,
-	seedExpenses,
-	seedGrants,
-	seedIncome,
-	seedRequests,
 	sum,
+	toExpenses,
+	toGrants,
+	toIncome,
+	toRequests,
+	toTargets,
 	total,
 	totalsByCategory,
+	yearsIn,
 } from '@/lib/finances'
 
 // /analytics — the officer's view of the books. What came in, what went out,
@@ -819,73 +820,132 @@ function RequestHistory({ requests, filter, onFilter }) {
 // ---- page ------------------------------------------------------------------
 
 export default function OfficerAnalytics() {
-	const [year, setYear] = useState(YEARS[0])
-	const [requests, setRequests] = useState(seedRequests)
+	// Whose receipts these are. GET /reimbursements/mine already returns only
+	// this officer's, so nothing here filters on it — the API is the gate.
+	const currentUser = useCurrentUser()
+
+	// The club's books, read-only on this page: an officer can't post to them,
+	// so there's nothing to hold beyond what was fetched.
+	const [income, setIncome] = useState([])
+	const [expenses, setExpenses] = useState([])
+	const [grants, setGrants] = useState([])
+	const [goals, setGoals] = useState(INCOME_GOAL)
+	const [budgets, setBudgets] = useState(EXPENSE_BUDGET)
+
+	// Their own compensation requests, which is the half of this page they can
+	// actually change.
+	const [requests, setRequests] = useState([])
+
+	const [year, setYear] = useState(null)
 	// null = closed. Otherwise the receipt form is open, on a blank one or on the
 	// request being sent back.
 	const [composing, setComposing] = useState(null)
 	// the receipt being taken back, held while it's asked about
 	const [revoking, setRevoking] = useState(null)
 	const [statusFilter, setStatusFilter] = useState('all')
+	const [error, setError] = useState(null)
 
-	// The ledgers are read-only here — an officer can't post to them, so there's
-	// nothing to hold in state. What they submit goes into `requests`, and only
-	// becomes a line of spending once the treasurer settles it.
-	const income = inYear(seedIncome, year)
-	const expenses = inYear(seedExpenses, year)
-	const stats = monthStats(seedIncome, seedExpenses)
+	useEffect(() => {
+		let live = true
+		Promise.all([
+			financesApi.transactions(),
+			financesApi.myRequests(),
+			yearTargets.list(),
+		])
+			.then(([transactions, mine, targets]) => {
+				if (!live) return
+				const ledgerIn = toIncome(transactions)
+				const ledgerOut = toExpenses(transactions)
+				setIncome(ledgerIn)
+				setExpenses(ledgerOut)
+				setRequests(toRequests(mine))
 
-	// Their own requests, newest first. The API has to hold the same line on GET
-	// — this filter is for the display, not the gate.
-	const mine = requests
-		.filter((request) => request.memberId === currentUser.id)
-		.sort((a, b) => b.date.localeCompare(a.date))
+				const { goals, budgets } = toTargets(targets)
+				setGoals((previous) => ({ ...previous, ...goals }))
+				setBudgets((previous) => ({ ...previous, ...budgets }))
+
+				// open on the most recent year the books actually have rows in
+				setYear((previous) => previous ?? yearsIn(ledgerIn, ledgerOut)[0])
+			})
+			.catch((err) => live && setError(err.message))
+
+		// Its own call rather than part of the Promise.all above: the tracker is
+		// one card, and a page with no grants on it is still a working page.
+		financesApi
+			.grants()
+			.then((rows) => live && setGrants(toGrants(rows)))
+			.catch(() => {})
+
+		return () => { live = false }
+	}, [])
+
+	const years = yearsIn(income, expenses)
+	const shownYear = year ?? years[0]
+
+	const yearIncome = inYear(income, shownYear)
+	const yearExpenses = inYear(expenses, shownYear)
+	const stats = monthStats(income, expenses)
+
+	// Newest first.
+	const mine = [...requests].sort((a, b) => b.date.localeCompare(a.date))
 
 	// Anything not paid out yet, which includes the ones sent back — those are
 	// the ones with something left to do about them.
 	const open = mine.filter((request) => request.status !== 'reimbursed')
 
-	// A new receipt joins the list; one being sent back keeps its own id and
-	// goes to the back of the queue as pending, carrying the objection it was
-	// answering so the treasurer can see this is a second attempt.
-	const send = (values) => {
+	// A new receipt is a POST; one being sent back is a PUT that keeps its own
+	// id and goes to the back of the queue as pending, carrying the objection it
+	// was answering so the treasurer can see this is a second attempt. The
+	// server does that carrying — it has the old denial and this form doesn't.
+	const send = async (values) => {
 		const revising = composing.request
+		const body = {
+			title: values.what,
+			explanation: values.reason,
+			category: values.category,
+			date: values.date,
+			amountRequested: values.amount,
+			// the picked photo, as a data URL — see the note on the dialog
+			receipt: values.image?.preview ?? null,
+		}
 
-		setRequests((previous) =>
-			revising
-				? previous.map((entry) =>
-					entry.id === revising.id
-						? {
-							...entry,
-							...values,
-							status: 'pending',
-							previousDenial: entry.denialReason ?? entry.previousDenial ?? null,
-							denialReason: null,
-						}
-						: entry
-				)
-				: [
-					{
-						...values,
-						id: nextId(previous),
-						memberId: currentUser.id,
-						who: `${currentUser.first} ${currentUser.last}`,
-						status: 'pending',
-					},
-					...previous,
-				]
-		)
 		setComposing(null)
+		setError(null)
+		try {
+			const saved = revising
+				? await financesApi.reviseRequest(revising.id, body)
+				: await financesApi.submitRequest(body)
+			const [row] = toRequests([{ ...saved, member: { user: {
+				firstName: currentUser.first,
+				lastName: currentUser.last,
+			} } }])
+
+			setRequests((previous) =>
+				revising
+					? previous.map((entry) => (entry.id === revising.id ? row : entry))
+					: [row, ...previous]
+			)
+		} catch (err) {
+			setError(err.message)
+		}
 	}
 
 	// Taking one back drops it, rather than marking it withdrawn: an officer's
 	// own receipt that was never settled isn't a record of anything — nobody was
 	// paid and nothing was refused — so it comes off the card and out of the
-	// history together. The API has to check the status again on DELETE: a
-	// request that's been reimbursed since this page loaded can't be pulled.
-	const revoke = () => {
-		setRequests((previous) => previous.filter((entry) => entry.id !== revoking.id))
+	// history together. The API checks the status again on DELETE: a request
+	// that's been reimbursed since this page loaded can't be pulled, and that
+	// refusal is what the error line reports.
+	const revoke = async () => {
+		const target = revoking
 		setRevoking(null)
+		setError(null)
+		try {
+			await financesApi.revokeRequest(target.id)
+			setRequests((previous) => previous.filter((entry) => entry.id !== target.id))
+		} catch (err) {
+			setError(err.message)
+		}
 	}
 
 	return (
@@ -919,11 +979,20 @@ export default function OfficerAnalytics() {
 			">
 				<PageControls>
 					<Select
-						value={year}
+						value={shownYear}
 						onChange={setYear}
-						options={YEARS}
+						options={years}
 						label="School year"
 					/>
+					{error && (
+						<span className="
+							font-vietnam
+							text-xs
+							text-salmon-dark
+						">
+							{error}
+						</span>
+					)}
 				</PageControls>
 
 				<MonthStats stats={stats} />
@@ -936,12 +1005,12 @@ export default function OfficerAnalytics() {
 					lg:grid-cols-3
 				">
 					<BalanceCard
-						series={balanceSeries(seedIncome, seedExpenses, year)}
-						year={year}
+						series={balanceSeries(income, expenses, shownYear)}
+						year={shownYear}
 						note="what was in the account at the close of each month"
 					/>
 
-					<GrantTracker grants={seedGrants} />
+					<GrantTracker grants={grants} />
 				</div>
 
 				{/* the two summaries, side by side so the split reads as one pair */}
@@ -954,23 +1023,23 @@ export default function OfficerAnalytics() {
 					<SummaryCard
 						title="income summary"
 						categories={INCOME_CATEGORIES}
-						totals={totalsByCategory(income, INCOME_CATEGORIES)}
-						total={total(income)}
-						goal={INCOME_GOAL[year]}
+						totals={totalsByCategory(yearIncome, INCOME_CATEGORIES)}
+						total={total(yearIncome)}
+						goal={goals[shownYear] ?? 0}
 						goalNote="income goal"
 						tint="bg-green"
-						year={year}
+						year={shownYear}
 					/>
 
 					<SummaryCard
 						title="expense summary"
 						categories={EXPENSE_CATEGORIES}
-						totals={totalsByCategory(expenses, EXPENSE_CATEGORIES)}
-						total={total(expenses)}
-						goal={EXPENSE_BUDGET[year]}
+						totals={totalsByCategory(yearExpenses, EXPENSE_CATEGORIES)}
+						total={total(yearExpenses)}
+						goal={budgets[shownYear] ?? 0}
 						goalNote="budget spent"
 						tint="bg-orange"
-						year={year}
+						year={shownYear}
 					/>
 				</div>
 
