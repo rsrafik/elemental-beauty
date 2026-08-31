@@ -58,21 +58,26 @@ const HINT = `
 // places.
 //
 // The margins swap with the sizes, and that is not cosmetic: it keeps each
-// card's outer height — the margin box the panel measures — at 592 in the big
-// role and 567 in the small one either way round. Swap only the heights and the
-// taller of the two changes mid-move, which walks the panel up and down.
+// card's outer height — the margin box the panel measures — at 668 in the big
+// role and 643 in the small one either way round. Swap only the heights and the
+// taller of the two changes mid-move, which walks the panel up and down. The
+// 25px between those two totals is what has to stay put, not the numbers
+// themselves: grow both heights by the same amount and the swap is unaffected.
+//
+// Both cards grew 76px to make room for the name row on sign-up. Log in didn't
+// need it — the two are always the same height, because they trade places.
 
 const BIG = `
 	z-10
 	mt-[32px]
-	h-[560px]
+	h-[636px]
 	w-[430px]
 `
 
 const SMALL = `
 	z-0
 	mt-[36px]
-	h-[531px]
+	h-[607px]
 	w-[398px]
 	cursor-pointer
 `
@@ -94,10 +99,10 @@ const SWAP = `
 // than the panel's own edge.
 //
 // It is what the cards add up to at rest: across, 430 + 398 less the 20px
-// overlap, plus the 40px padding either side; down, the big card's 32 + 560
+// overlap, plus the 40px padding either side; down, the big card's 32 + 636
 // plus the 35px below it. Resize a card and this is the line to redo.
 const PANEL = `
-	h-[627px]
+	h-[703px]
 	w-[888px]
 `
 
@@ -442,6 +447,8 @@ function LogIn({ front, onCome, onForgot, onSubmit, onDone }) {
 // between them is that card's shadow, not background.
 function SignUp({ front, onCome, onSubmit, onDone }) {
 	const [form, setForm] = useState({
+		first: '',
+		last: '',
 		username: '',
 		password: '',
 		verify: '',
@@ -456,6 +463,8 @@ function SignUp({ front, onCome, onSubmit, onDone }) {
 	}
 
 	const ready =
+		form.first.trim() !== '' &&
+		form.last.trim() !== '' &&
 		form.username.trim() !== '' &&
 		form.password !== '' &&
 		form.verify !== '' &&
@@ -480,6 +489,8 @@ function SignUp({ front, onCome, onSubmit, onDone }) {
 		setBusy(true)
 		try {
 			await onSubmit({
+				firstName: form.first.trim(),
+				lastName: form.last.trim(),
 				username: form.username.trim(),
 				password: form.password,
 				instagram: form.instagram.trim(),
@@ -522,7 +533,39 @@ function SignUp({ front, onCome, onSubmit, onDone }) {
 				SIGN UP
 			</h2>
 
-			<p className={`${LABEL} mt-[35px]`}>PURDUE USERNAME</p>
+			{/* Names share a line. They're one fact about the same person and each
+			    is short, so a column apiece reads better than two full-width rows
+			    — and it costs the card one row of height instead of two. */}
+			<div className="
+				mt-[35px]
+				flex
+				gap-[14px]
+			">
+				<div className="min-w-0 flex-1">
+					<p className={LABEL}>FIRST NAME</p>
+					<input
+						type="text"
+						name="given-name"
+						autoComplete="given-name"
+						value={form.first}
+						onChange={set('first')}
+						className={`${FIELD} mt-[9px] bg-[#FFCC6E]`}
+					/>
+				</div>
+				<div className="min-w-0 flex-1">
+					<p className={LABEL}>LAST NAME</p>
+					<input
+						type="text"
+						name="family-name"
+						autoComplete="family-name"
+						value={form.last}
+						onChange={set('last')}
+						className={`${FIELD} mt-[9px] bg-[#FFCC6E]`}
+					/>
+				</div>
+			</div>
+
+			<p className={`${LABEL} mt-[21px]`}>PURDUE USERNAME</p>
 			<input
 				type="text"
 				name="purdue-username"

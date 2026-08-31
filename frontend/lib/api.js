@@ -112,10 +112,10 @@ export const auth = {
 
 	// Signing up gets an account and nothing else — role 'user', no membership.
 	// The instagram handle is the one optional field on the form.
-	register: ({ username, password, instagram }) =>
+	register: ({ firstName, lastName, username, password, instagram }) =>
 		api('/auth/register', {
 			method: 'POST',
-			body: { username, password, instagram },
+			body: { firstName, lastName, username, password, instagram },
 			auth: false,
 		}),
 
