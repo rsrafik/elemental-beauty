@@ -24,8 +24,13 @@ import { longDate, prettyTime } from '@/lib/dates'
 // 32px padding, the 327px sidebar, the 24px gap and 32px padding on the right.
 // Only above `lg` — below it the sidebar is a bar on top and the page is the
 // ordinary stacked layout at 1:1.
+//
+// SCALE takes a little off the whole thing: filling the column exactly the way
+// the mockup does read as too big on screen. Everything shrinks together, and
+// the space between the text and the photo is what takes up the difference.
 const DESIGN_W = 995
 const SHELL_W = 415
+const SCALE = 0.85
 const LG = 1024
 const MIN_ZOOM = 0.8
 const MAX_ZOOM = 1.6
@@ -42,7 +47,7 @@ export function useDesignZoom() {
 		() => DESIGN_W + SHELL_W
 	)
 	if (width < LG) return 1
-	return Math.min(MAX_ZOOM, Math.max(MIN_ZOOM, (width - SHELL_W) / DESIGN_W))
+	return Math.min(MAX_ZOOM, Math.max(MIN_ZOOM, ((width - SHELL_W) / DESIGN_W) * SCALE))
 }
 
 // CSS `zoom` rather than a transform: it re-lays the content out at the new
