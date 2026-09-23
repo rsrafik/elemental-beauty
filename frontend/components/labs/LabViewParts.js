@@ -199,7 +199,15 @@ export function ChunkyButton({ tone, onClick, disabled = false, children }) {
 				${TONES[tone]}
 			`}
 		>
-			{children}
+			{/* Dream Kudos keeps a deep descender zone (0.42em) that all-caps text
+			    never uses, so centring its line box leaves the capitals 0.19em
+			    high — measured off the font. This drops them back to the middle. */}
+			<span className="
+				block
+				translate-y-[0.19em]
+			">
+				{children}
+			</span>
 		</button>
 	)
 }

@@ -139,8 +139,19 @@ export default function MemberLabView() {
 		)
 	}
 
+	// Same bleed as the analytics pages: the scroll column is pulled out over
+	// the shell's padding on the top, bottom and right, so the quiz scrolls from
+	// the very top of the window to the very bottom instead of being cut off
+	// 32px short of each edge. The padding puts the content back where it was,
+	// so nothing on the page moves — only where it gets clipped.
 	return (
-		<DashboardShell>
+		<DashboardShell className="
+			lg:-mt-8
+			lg:-mb-8
+			lg:-mr-8
+			lg:py-8
+			lg:pr-8
+		">
 			<BackButton />
 			{body}
 		</DashboardShell>
