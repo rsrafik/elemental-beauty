@@ -20,6 +20,14 @@ export function today() {
 	return `${now.getFullYear()}-${month}-${day}`
 }
 
+// The month the viewer is in, as { year, month } with month 0-indexed —
+// the shape the calendars step through. Local time for the same reason as
+// today(): on the last evening of a month it's still that month here.
+export function thisMonth() {
+	const now = new Date()
+	return { year: now.getFullYear(), month: now.getMonth() }
+}
+
 // '2026-08-30' -> 'August 30, 2026'
 export function longDate(value) {
 	const [year, month, day] = isoDate(value).split('-').map(Number)

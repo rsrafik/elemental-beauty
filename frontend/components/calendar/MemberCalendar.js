@@ -4,6 +4,7 @@ import { useEffect, useState } from 'react'
 import DashboardShell from '@/components/dashboards/DashboardShell'
 import { eventCategories, events as eventsApi, labs as labsApi } from '@/lib/api'
 import { buildMonths, typesIn } from '@/lib/calendar'
+import { thisMonth } from '@/lib/dates'
 
 // /calendar for a user or member: month view of labs + events, read only.
 //
@@ -12,10 +13,6 @@ import { buildMonths, typesIn } from '@/lib/calendar'
 // colour is the *track* (who it's for), and the two lines underneath are the
 // kind of thing and its name. The arrows under the title step the month; the
 // grid rebuilds itself from whatever month it lands on.
-
-// Where the calendar opens.
-const YEAR = 2026
-const MONTH = 7 // 0-indexed: August
 
 // Height of the sheet, in px: a six-week grid plus its weekday header. Both
 // columns are held to it, so a five-week month leaves empty space under the
@@ -346,7 +343,7 @@ function Agenda({ days }) {
 export default function MemberCalendar() {
 	// Which month is on screen. Stepping goes through Date so December rolls
 	// into January of the next year on its own.
-	const [view, setView] = useState({ year: YEAR, month: MONTH })
+	const [view, setView] = useState(thisMonth)
 
 	// Every lab and event in one map, keyed by month then day. Fetched once and
 	// stepped through locally — the club's calendar is small enough that a

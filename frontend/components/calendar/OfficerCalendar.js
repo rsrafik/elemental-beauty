@@ -5,6 +5,7 @@ import { useDismiss } from '@/lib/dismiss'
 import DashboardShell from '@/components/dashboards/DashboardShell'
 import { eventCategories, events as eventsApi, labs as labsApi } from '@/lib/api'
 import { buildMonths, typesIn } from '@/lib/calendar'
+import { thisMonth } from '@/lib/dates'
 
 // /calendar for officer / treasurer / admin: the member month view, plus the
 // button that puts something new on it.
@@ -16,10 +17,6 @@ import { buildMonths, typesIn } from '@/lib/calendar'
 //
 // Labs are deliberately missing from the category dropdown: they carry sign-ups
 // and check-in, so they get scheduled from /labs rather than from here.
-
-// Where the calendar opens.
-const YEAR = 2026
-const MONTH = 7 // 0-indexed: August
 
 // Height of the sheet, in px: a six-week grid plus its weekday header. Both
 // columns are held to it, so a five-week month leaves empty space under the
@@ -1082,7 +1079,7 @@ function EventDialog({ categories, onClose, onSave }) {
 export default function OfficerCalendar() {
 	// Which month is on screen. Stepping goes through Date so December rolls
 	// into January of the next year on its own.
-	const [view, setView] = useState({ year: YEAR, month: MONTH })
+	const [view, setView] = useState(thisMonth)
 	const [dialogOpen, setDialogOpen] = useState(false)
 
 	// Every lab and event, keyed by month then day. Fetched once and stepped
