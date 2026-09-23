@@ -1,6 +1,7 @@
 'use client'
 
 import { useEffect, useMemo, useState } from 'react'
+import { useRouter } from 'next/navigation'
 import DashboardShell from '@/components/dashboards/DashboardShell'
 import { labs as labsApi } from '@/lib/api'
 import { isoDate, longDate, today } from '@/lib/dates'
@@ -209,7 +210,11 @@ function RsvpButton({ going, waitlist, attended, onClick }) {
 		// call is still out.
 		<button
 			type="button"
-			onClick={onClick}
+			// the card underneath opens the lab; pressing this shouldn't
+			onClick={(event) => {
+				event.stopPropagation()
+				onClick()
+			}}
 			aria-pressed={going}
 			className={`
 				relative
@@ -334,15 +339,23 @@ function panels(rows) {
 // to the right edge of the card. Sections that have no seat count (a lab that's
 // already running) just leave it out and the title takes the full width.
 //
-// The card itself doesn't navigate anywhere — the only thing to click on one is
-// its `action` (the rsvp button). The current section passes a plain `icon`
-// instead, which is a status marker, not a control.
-function LabCard({ title, date, image, icon, action, availability }) {
+// Clicking the card opens the lab (`onOpen`, /labs/view). Its `action` (the
+// rsvp button) is the one thing on it that doesn't — it stops the click on its
+// way out. The current section passes a plain `icon` instead, which is a status
+// marker, not a control.
+function LabCard({ title, date, image, icon, action, availability, onOpen }) {
 	return (
 		<div
+			role="link"
+			tabIndex={0}
+			onClick={onOpen}
+			onKeyDown={(event) => {
+				if (event.key === 'Enter') onOpen()
+			}}
 			className="
 				group
 				relative
+				cursor-pointer
 				bg-white
 				rounded-[10px]
 				p-3
@@ -464,6 +477,8 @@ function LabCard({ title, date, image, icon, action, availability }) {
 // scroll container, so without it the top of the raised card and its shadow
 // get clipped.
 function LabGrid({ items, icons, renderAction }) {
+	const router = useRouter()
+
 	return (
 		<div className="
 			flex-1
@@ -493,6 +508,7 @@ function LabGrid({ items, icons, renderAction }) {
 						availability={
 							lab.capacity == null ? null : `${lab.taken}/${lab.capacity}`
 						}
+						onOpen={() => router.push(`/labs/view?id=${lab.id}`)}
 					/>
 				))}
 			</div>

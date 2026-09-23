@@ -9,7 +9,25 @@ const RANK_OFFICER = ['officer', 'treasurer', 'admin']
 
 // Preview fields — what a member sees BEFORE passing the quiz
 const PREVIEW_SELECT = {
-    labId: true, title: true, date: true, description: true, image: true, capacity: true
+    labId: true, title: true, date: true, startTime: true, location: true,
+    description: true, image: true, capacity: true
+}
+
+// 'HH:MM' — what <input type="time"> hands back, same rule as events.
+const TIME = /^([01][0-9]|2[0-3]):[0-5][0-9]$/
+
+// The quiz as a member sees it: questions and options in a stable order, and
+// never isCorrect — the answer key stays server-side.
+const QUIZ_SELECT = {
+    orderBy: { questionId: 'asc' },
+    select: {
+        questionId: true,
+        question: true,
+        options: {
+            orderBy: { optionId: 'asc' },
+            select: { optionId: true, answerText: true }
+        }
+    }
 }
 
 // ---- member-visible reads ----
@@ -61,41 +79,60 @@ router.get('/', async (req, res) => {
     }
 })
 
-// Full content only for officers+ or members who passed this lab's quiz (100%)
+// Full content only for officers+ or members who passed this lab's quiz (100%).
+//
+// Every answer also says where the person asking stands on the lab, which is
+// what the member view switches on: `mine` (their attendance status, or null),
+// `quizPassed`, `taken` seats, and — while they're waitlisted — how many places
+// from the front of the queue they are (1 = next in line for a seat).
+//
+// Checked in but not passed yet is the one in-between case: the content is
+// still locked, but the quiz questions come along so there's something to take.
 router.get('/:id', async (req, res) => {
     const labId = parseInt(req.params.id)
     if (isNaN(labId)) { return res.status(400).json({ message: 'Invalid lab id' }) }
 
     try {
-        let unlocked = RANK_OFFICER.includes(req.role)
+        const link = await prisma.memberLab.findUnique({
+            where: { memberId_labId: { memberId: req.userId, labId } }
+        })
+        const unlocked = RANK_OFFICER.includes(req.role) || link?.quizPassed === true
+        const quizOpen = !unlocked && link?.attendanceStatus === 'attended'
 
-        if (!unlocked) {
-            const link = await prisma.memberLab.findUnique({
-                where: { memberId_labId: { memberId: req.userId, labId } }
-            })
-            unlocked = link?.quizPassed === true
-        }
-
-        if (unlocked) {
-            const lab = await prisma.lab.findUnique({
+        const lab = unlocked
+            ? await prisma.lab.findUnique({
                 where: { labId },
-                include: {
-                    lessons: true,
-                    quizQuestions: {
-                        include: {
-                            // never select isCorrect — the answer key stays server-side
-                            options: { select: { optionId: true, answerText: true } }
-                        }
-                    }
+                include: { lessons: true, quizQuestions: QUIZ_SELECT }
+            })
+            : await prisma.lab.findUnique({
+                where: { labId },
+                select: { ...PREVIEW_SELECT, ...(quizOpen ? { quizQuestions: QUIZ_SELECT } : {}) }
+            })
+        if (!lab) { return res.status(404).json({ message: 'Lab not found' }) }
+
+        const taken = await prisma.memberLab.count({ where: { labId, ...TAKEN } })
+
+        // everyone who joined the queue before this person, plus them
+        let waitlistPosition = null
+        if (link?.attendanceStatus === 'waitlisted') {
+            const ahead = await prisma.memberLab.count({
+                where: {
+                    labId,
+                    attendanceStatus: 'waitlisted',
+                    waitlistedAt: { lt: link.waitlistedAt }
                 }
             })
-            if (!lab) { return res.status(404).json({ message: 'Lab not found' }) }
-            return res.json({ unlocked: true, ...lab })
+            waitlistPosition = ahead + 1
         }
 
-        const lab = await prisma.lab.findUnique({ where: { labId }, select: PREVIEW_SELECT })
-        if (!lab) { return res.status(404).json({ message: 'Lab not found' }) }
-        res.json({ unlocked: false, ...lab })
+        res.json({
+            unlocked,
+            ...lab,
+            taken,
+            mine: link?.attendanceStatus ?? null,
+            quizPassed: link?.quizPassed ?? null,
+            waitlistPosition
+        })
     } catch (err) {
         console.error(err.message)
         res.sendStatus(500)
@@ -105,7 +142,7 @@ router.get('/:id', async (req, res) => {
 // ---- officer+ content management ----
 
 router.post('/', requireRole('officer'), async (req, res) => {
-    const { title, date, description, image, ingredients, equipment, safetyNote, instructions, capacity } = req.body
+    const { title, date, startTime, location, description, image, ingredients, equipment, safetyNote, instructions, capacity } = req.body
 
     if (!title || !date) {
         return res.status(400).json({ message: 'title and date are required' })
@@ -114,13 +151,19 @@ router.post('/', requireRole('officer'), async (req, res) => {
     if (isNaN(labDate.getTime())) {
         return res.status(400).json({ message: 'date must be a valid date (YYYY-MM-DD)' })
     }
+    if (startTime && !TIME.test(startTime)) {
+        return res.status(400).json({ message: 'startTime must be HH:MM' })
+    }
     if (capacity !== undefined && (!Number.isInteger(capacity) || capacity < 1)) {
         return res.status(400).json({ message: 'capacity must be a positive integer' })
     }
 
     try {
         const lab = await prisma.lab.create({
-            data: { title, date: labDate, description, image, ingredients, equipment, safetyNote, instructions, capacity }
+            data: {
+                title, date: labDate, startTime: startTime || null, location: location || null,
+                description, image, ingredients, equipment, safetyNote, instructions, capacity
+            }
         })
         res.status(201).json(lab)
     } catch (err) {
@@ -135,8 +178,14 @@ router.put('/:id', requireRole('officer'), async (req, res) => {
 
     // partial update: only touch fields the client actually sent
     const data = {}
-    for (const field of ['title', 'description', 'image', 'ingredients', 'equipment', 'safetyNote', 'instructions']) {
+    for (const field of ['title', 'location', 'description', 'image', 'ingredients', 'equipment', 'safetyNote', 'instructions']) {
         if (req.body[field] !== undefined) { data[field] = req.body[field] }
+    }
+    if (req.body.startTime !== undefined) {
+        if (req.body.startTime && !TIME.test(req.body.startTime)) {
+            return res.status(400).json({ message: 'startTime must be HH:MM' })
+        }
+        data.startTime = req.body.startTime || null
     }
     if (req.body.date !== undefined) {
         const labDate = new Date(req.body.date)
@@ -466,6 +515,10 @@ router.post('/:labId/admit-waitlist', requireRole('officer'), async (req, res) =
 
 // Grade the quiz. Passing requires 100% — every question's submitted option
 // set must exactly equal its correct set. Requires having attended the lab.
+//
+// The reply carries the score and the ids of the questions that were wrong,
+// because a retake only puts those back in front of the member. It still never
+// says which option would have been right.
 router.post('/:labId/quiz/submit', async (req, res) => {
     const labId = parseInt(req.params.labId)
     if (isNaN(labId)) { return res.status(400).json({ message: 'Invalid lab id' }) }
@@ -494,19 +547,19 @@ router.post('/:labId/quiz/submit', async (req, res) => {
             return res.status(400).json({ message: 'This lab has no quiz yet' })
         }
 
-        const passed = questions.every(q => {
+        const wrong = questions.filter(q => {
             const correct = q.options.filter(o => o.isCorrect).map(o => o.optionId).sort((a, b) => a - b)
             const given = [...(answers[q.questionId] ?? [])].map(Number).sort((a, b) => a - b)
-            return correct.length === given.length && correct.every((id, i) => id === given[i])
-        })
+            return !(correct.length === given.length && correct.every((id, i) => id === given[i]))
+        }).map(q => q.questionId)
+        const passed = wrong.length === 0
 
         await prisma.memberLab.update({
             where: { memberId_labId: { memberId: req.userId, labId } },
             data: { quizPassed: passed }
         })
 
-        // pass/fail only — never which answers were wrong, or the key leaks
-        res.json({ passed })
+        res.json({ passed, correct: questions.length - wrong.length, total: questions.length, wrong })
     } catch (err) {
         console.error(err.message)
         res.sendStatus(500)

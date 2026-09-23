@@ -191,6 +191,12 @@ model Lab {
   labId        Int      @id @default(autoincrement()) @map("lab_id")
   title        String
   date         DateTime @db.Date
+  // 'HH:MM', same as events.start_time — the member view uses it to decide
+  // when the lab has started and check-in (the QR) takes over from the RSVP.
+  // Null means the lab counts as started from the beginning of its day.
+  startTime    String?  @map("start_time") @db.VarChar(5)
+  // The room, as printed on the header line ('WTHR 200').
+  location     String?
   capacity     Int      @default(20)
   description  String?
   image        String?

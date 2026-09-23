@@ -16,8 +16,9 @@ import { getToken } from '@/lib/api'
 // It's fetched rather than pointed at with a plain <img src>: the endpoint is
 // behind the Authorization header like everything else, and an <img> tag can't
 // send one. So the PNG comes back as a blob and the object URL goes in the src.
-
-function usePassQr(enabled) {
+//
+// Exported for the lab view's "show QR code" popup, which is the same code.
+export function usePassQr(enabled) {
 	const [src, setSrc] = useState(null)
 
 	useEffect(() => {

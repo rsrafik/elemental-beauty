@@ -21,6 +21,7 @@
 
 import bcrypt from 'bcryptjs'
 import prisma from '../src/prismaClient.js'
+import { LAB_DESCRIPTIONS } from './labDescriptions.js'
 
 // One account per role. `role: null` is the one with no member row at all.
 const ACCOUNTS = [
@@ -90,6 +91,20 @@ async function createAccount({ username, firstName, lastName, role, points }) {
     return user
 }
 
+// [question, options, index of the right one]
+const BRONZER_QUIZ = [
+    ['What gives a pressed bronzer its warm brown colour?', ['Titanium dioxide', 'Iron oxides', 'Zinc stearate', 'Mica alone'], 1],
+    ['Why is a binder added to the powder before pressing?', ['To add shimmer', 'To preserve it', 'To hold the pan together', 'To thin the colour'], 2],
+    ['Which of these is a common slip agent in pressed powders?', ['Silica', 'Beeswax', 'Glycerin', 'Citric acid'], 0],
+    ['What does mica mostly contribute to a bronzer?', ['Oil control', 'Shine and luminosity', 'Adhesion to skin', 'Fragrance'], 1],
+    ['Why is zinc stearate used in powders?', ['It helps them adhere to skin', 'It is the main pigment', 'It is a preservative', 'It adds scent'], 0],
+    ['What goes wrong if a powder is pressed too hard?', ['It crumbles', 'It gets hardpan and picks up poorly', 'It changes colour', 'It melts'], 1],
+    ['What does sifting the blended powder help with?', ['Adding weight', 'Evening out colour and texture', 'Making it waterproof', 'Speeding up drying'], 1],
+    ['Which tool presses the powder into the pan?', ['A spatula', 'A pipette', 'A pressing die or coin', 'A whisk'], 2],
+    ['Why wear a mask while blending loose powders?', ['To avoid breathing in fine particles', 'To keep the powder warm', 'It is a cleanroom rule only', 'To stop static'], 0],
+    ['How do you make a bronzer more matte?', ['Add more mica', 'Add less mica and more sericite or silica', 'Add glycerin', 'Press it harder'], 1]
+]
+
 // Dates are relative to the day the seed runs, never absolute. A fixture with
 // hardcoded dates is only correct on the day it's written: come back a week
 // later and the lab that was "today" is in the past, the icon that demonstrated
@@ -146,20 +161,32 @@ async function main() {
             // Between them these cover every state a "current" card can be in:
             // two past ones the member attended (green unlock), one past one they
             // didn't (red lock), and one running today (the check-in calendar).
-            { title: 'Soap Bar', date: day(-17), capacity: 20, description: 'Cold process basics.' },
-            { title: 'Bath Bomb', date: day(-10), capacity: 20, description: 'Citric acid and bicarb ratios.' },
-            { title: 'Bronzer', date: day(-1), capacity: 20, description: 'Pressed powder bronzer from scratch.' },
-            // today — check-in is open on this one
-            { title: 'Lipstick', date: day(0), capacity: 20, description: 'Wax, oil and pigment ratios.' },
-            { title: 'Lip Gloss', date: day(6), capacity: 20, description: 'Base, pigment and finish.' },
-            { title: 'Blush', date: day(13), capacity: 20, description: 'Cream vs powder.' },
-            { title: 'Body Butter', date: day(20), capacity: 15, description: 'Emulsions and whipping.' },
-            { title: 'Lip Scrub', date: day(27), capacity: 20, description: 'Sugar, oil and flavour.' }
-        ]
+            { title: 'Soap Bar', date: day(-17), startTime: '17:00', location: 'WTHR 200', capacity: 20 },
+            { title: 'Bath Bomb', date: day(-10), startTime: '17:00', location: 'WTHR 200', capacity: 20 },
+            { title: 'Bronzer', date: day(-1), startTime: '17:00', location: 'WTHR 200', capacity: 20 },
+            // today — check-in is open on this one. Midnight rather than an
+            // evening start, so the QR stage shows whenever the seed is run.
+            { title: 'Lipstick', date: day(0), startTime: '00:00', location: 'WTHR 104', capacity: 20 },
+            { title: 'Lip Gloss', date: day(6), startTime: '17:00', location: 'WTHR 200', capacity: 20 },
+            // full: seven extras hold the seats and three more are queued ahead
+            // of the member, whose sign-up on it is a waitlist place
+            { title: 'Blush', date: day(13), startTime: '18:00', location: 'BRWN 1151', capacity: 7 },
+            { title: 'Body Butter', date: day(20), startTime: '17:00', location: 'WTHR 200', capacity: 15 },
+            { title: 'Lip Scrub', date: day(27), startTime: '17:30', location: 'WTHR 200', capacity: 20 }
+        ].map((lab) => ({ ...lab, description: LAB_DESCRIPTIONS[lab.title] }))
     })
 
     // Enough attendance on the member account that /account's counter isn't all
-    // zeroes: two labs done, one rsvp'd; one event done, two rsvp'd.
+    // zeroes, and one lab in every stage of /labs/view:
+    //
+    //   Soap Bar, Bath Bomb  attended and passed — the unlocked lab
+    //   Bronzer              attended, quiz not passed — the lab quiz
+    //   Lipstick (today)     rsvp'd, started — the QR check-in
+    //   Lip Gloss            rsvp'd — "you're registered!"
+    //   Blush                full, member waitlisted — "you're waitlisted!"
+    //   Body Butter          nothing — "sign up"
+    //
+    // plus one event done and two rsvp'd.
     //
     // Attendance goes ONLY on rows that have already happened, and RSVPs only on
     // ones that haven't. A future lab marked 'attended' is not just untidy — the
@@ -178,16 +205,44 @@ async function main() {
     ])
     const memberId = byName.member.userId
 
+    const labNamed = (title) => [...doneLabs, ...comingLabs].find((lab) => lab.title === title).labId
+    const extraIds = EXTRAS.map(({ username }) => byName[username].userId)
+
     await prisma.memberLab.createMany({
         data: [
             ...doneLabs.slice(0, 2).map((lab) => ({
                 memberId, labId: lab.labId, attendanceStatus: 'attended', quizPassed: true
             })),
-            ...comingLabs.slice(0, 1).map((lab) => ({
-                memberId, labId: lab.labId, attendanceStatus: 'rsvped'
-            }))
+            { memberId, labId: labNamed('Bronzer'), attendanceStatus: 'attended' },
+            { memberId, labId: labNamed('Lipstick'), attendanceStatus: 'rsvped' },
+            { memberId, labId: labNamed('Lip Gloss'), attendanceStatus: 'rsvped' },
+            ...extraIds.slice(0, 7).map((id) => ({
+                memberId: id, labId: labNamed('Blush'), attendanceStatus: 'rsvped'
+            })),
+            // queued a minute apart, oldest first, so the member is 4 spots away
+            ...extraIds.slice(7).map((id, i) => ({
+                memberId: id, labId: labNamed('Blush'), attendanceStatus: 'waitlisted',
+                waitlistedAt: new Date(Date.now() - (10 - i) * 60_000)
+            })),
+            { memberId, labId: labNamed('Blush'), attendanceStatus: 'waitlisted', waitlistedAt: new Date() }
         ]
     })
+
+    // The Bronzer quiz — ten questions, one right answer each (the member view
+    // takes one pick per question). Created per question in a transaction
+    // because the deferred trigger wants a correct option in place by COMMIT.
+    console.log('Quiz…')
+    const bronzerId = labNamed('Bronzer')
+    for (const [question, options, right] of BRONZER_QUIZ) {
+        await prisma.$transaction(async (tx) => {
+            const q = await tx.labQuizQuestion.create({ data: { labId: bronzerId, question } })
+            await tx.quizAnswerOption.createMany({
+                data: options.map((answerText, i) => ({
+                    questionId: q.questionId, answerText, isCorrect: i === right
+                }))
+            })
+        })
+    }
     await prisma.memberEvent.createMany({
         data: [
             ...doneEvents.slice(0, 1).map((event) => ({

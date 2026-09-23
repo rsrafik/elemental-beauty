@@ -176,6 +176,10 @@ export const labs = {
 	remove: (id) => api(`/labs/${id}`, { method: 'DELETE' }),
 	rsvp: (id) => api(`/labs/${id}/rsvp`, { method: 'POST' }),
 	unrsvp: (id) => api(`/labs/${id}/rsvp`, { method: 'DELETE' }),
+	// answers: { [questionId]: [optionId, ...] } — every question, every time;
+	// the reply is { passed, correct, total, wrong: [questionId, ...] }
+	submitQuiz: (id, answers) =>
+		api(`/labs/${id}/quiz/submit`, { method: 'POST', body: { answers } }),
 }
 
 export const finances = {

@@ -1,6 +1,7 @@
 import { Be_Vietnam_Pro } from "next/font/google";
 import { Delicious_Handrawn } from "next/font/google";
 import { Molle } from "next/font/google";
+import { Boogaloo } from "next/font/google";
 import localFont from "next/font/local";
 import { SessionProvider } from "@/lib/session";
 import "./globals.css";
@@ -24,6 +25,13 @@ const molle = Molle({
   subsets: ["latin"],
   weight: "400",
   style: "italic",
+});
+
+// The member lab view's "show QR code" button.
+const boogaloo = Boogaloo({
+  variable: "--font-boogaloo",
+  subsets: ["latin"],
+  weight: "400",
 });
 
 const bumbel = localFont({
@@ -95,6 +103,7 @@ export default function RootLayout({ children }) {
         ${bevietnampro.variable}
         ${delicioushandrawn.variable}
         ${molle.variable}
+        ${boogaloo.variable}
         ${bumbel.variable}
         ${beachday.variable}
         ${ettamelody.variable}
