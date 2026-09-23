@@ -1607,7 +1607,6 @@ export default function OfficerStudents() {
 						rounded-[16px]
 						bg-white
 						overflow-hidden
-						shadow-[0px_0px_20px_rgba(0,0,0,0.4)]
 					"
 				>
 					<div className="overflow-x-auto">
