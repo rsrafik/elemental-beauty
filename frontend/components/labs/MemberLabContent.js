@@ -289,7 +289,7 @@ export default function MemberLabContent({ lab }) {
 					lg:pr-[19.4px]
 					${tab === 'materials' ? 'lg:pt-[36.1px]' : ''}
 					${tab === 'lesson' ? 'lg:pt-[74.4px]' : ''}
-					${tab === 'instructions' ? 'lg:pt-[13.4px]' : ''}
+					${tab === 'instructions' ? 'lg:pt-[40px]' : ''}
 				`}
 				// The lesson viewer runs to the window's bottom edge, and the
 				// equipment card ends 23px short of it, inside the shell's 32px
