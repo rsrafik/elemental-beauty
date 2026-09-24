@@ -65,7 +65,7 @@ export function Scaled({ className = '', children }) {
 
 // 'october 10, 2026 • 5:00PM • WTHR 200'. A lab with no time or no room just
 // drops that part rather than printing an empty slot between two bullets.
-function metaLine(lab) {
+export function metaLine(lab) {
 	return [
 		longDate(lab.date).toLowerCase(),
 		prettyTime(lab.startTime).replace(' ', ''),

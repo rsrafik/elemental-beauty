@@ -543,3 +543,87 @@ body {
   color: var(--foreground);
   font-family: Arial, Helvetica, sans-serif;
 }
+
+/* ---- SkeuoButton ----------------------------------------------------------
+ *
+ * The raised pill from the design's Framer component, copied across as-is —
+ * the colours, the four-layer outer glow and the gradient are all set per
+ * button through the --skeuo-* variables (see components/labs/SkeuoButton.js).
+ * Hover / focus / active live here, exactly as the Framer code has them.
+ */
+@keyframes skeuo-active {
+  from { box-shadow: var(--skeuo-outer), inset 0 0 10px 0 rgba(0, 0, 250, 0.6); }
+  to   { box-shadow: var(--skeuo-outer), inset 0 0 3px 3px var(--skeuo-inner); }
+}
+
+.skeuo-btn,
+.skeuo-btn *,
+.skeuo-btn *::before,
+.skeuo-btn *::after {
+  box-sizing: border-box;
+}
+
+.skeuo-btn {
+  -webkit-appearance: none;
+  appearance: none;
+  user-select: none;
+  -webkit-tap-highlight-color: transparent;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 100%;
+  height: 100%;
+  margin: 0;
+  padding: 0 12px;
+  outline: none;
+  cursor: pointer;
+  background: var(--skeuo-fill);
+  border: 1px solid var(--skeuo-border);
+  border-radius: var(--skeuo-radius);
+  color: var(--skeuo-text);
+  text-shadow: 0 1px var(--skeuo-text-shadow);
+  box-shadow: var(--skeuo-outer), inset 0 0 3px 0 var(--skeuo-inner);
+  transition: all 0.2s ease;
+}
+
+.skeuo-btn::-moz-focus-inner { border: 0; }
+
+.skeuo-btn > * { transition: transform 0.2s ease; }
+
+.skeuo-btn:hover:not([disabled]) {
+  box-shadow: var(--skeuo-outer), inset 0 0 3px 3px var(--skeuo-inner);
+}
+.skeuo-btn:hover:not([disabled]) > * { transform: scale(0.975); }
+
+.skeuo-btn:focus-visible:not(:active) {
+  animation: skeuo-active 0.9s alternate infinite;
+}
+
+.skeuo-btn:active:not([disabled]) {
+  box-shadow: var(--skeuo-outer), inset 0 0 5px 3px #999, inset 0 0 30px #aaa;
+}
+.skeuo-btn:active:not([disabled]) > * { transform: scale(0.95); }
+
+.skeuo-btn:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+/* The flashcard deck's fullscreen box (components/labs/LabInstructions.js)
+   sits on <body> the whole time the deck is on the page, and is only drawn
+   while it's the element that's fullscreen. */
+.flashcard-fullscreen:not(:fullscreen) {
+  display: none;
+}
+
+/* The lesson viewer (components/labs/LabLesson.js): pdf.js lays pages out with
+   a 10px gap for its grey background to show through. On the design's white
+   background that gap is invisible, so the pages sit flush and a hairline in
+   the viewer's border colour marks where one ends and the next begins. */
+.lab-lesson .pdfViewer.removePageBorders .page {
+  margin: 0 auto;
+  box-shadow: 0 1px 0 #C2B3A1;
+}
+.lab-lesson .pdfViewer.removePageBorders .page:last-child {
+  box-shadow: none;
+}

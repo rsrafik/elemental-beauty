@@ -180,6 +180,39 @@ export const labs = {
 	// the reply is { passed, correct, total, wrong: [questionId, ...] }
 	submitQuiz: (id, answers) =>
 		api(`/labs/${id}/quiz/submit`, { method: 'POST', body: { answers } }),
+
+	// The lesson PDF as raw bytes, for the viewer. Fetched by hand rather than
+	// through api() because the body is a file, not JSON.
+	lesson: async (id) => {
+		const response = await fetch(`/api/labs/${id}/lesson`, {
+			headers: { Authorization: `Bearer ${getToken()}` },
+		})
+		if (!response.ok) {
+			let message = `Could not load the lesson (${response.status})`
+			try { message = (await response.json()).message || message } catch {}
+			throw new ApiError(response.status, message)
+		}
+		return new Uint8Array(await response.arrayBuffer())
+	},
+
+	// Officers: the PDF goes up as the request body, its name in a header.
+	uploadLesson: async (id, file) => {
+		const response = await fetch(`/api/labs/${id}/lesson`, {
+			method: 'PUT',
+			headers: {
+				Authorization: `Bearer ${getToken()}`,
+				'Content-Type': 'application/pdf',
+				'X-Filename': encodeURIComponent(file.name),
+			},
+			body: file,
+		})
+		const payload = await response.json().catch(() => null)
+		if (!response.ok) {
+			throw new ApiError(response.status, payload?.message || `Upload failed (${response.status})`, payload)
+		}
+		return payload
+	},
+	removeLesson: (id) => api(`/labs/${id}/lesson`, { method: 'DELETE' }),
 }
 
 export const finances = {

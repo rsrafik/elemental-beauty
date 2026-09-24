@@ -21,7 +21,9 @@
 
 import bcrypt from 'bcryptjs'
 import prisma from '../src/prismaClient.js'
+import { readFile } from 'fs/promises'
 import { LAB_DESCRIPTIONS } from './labDescriptions.js'
+import { SOAP_BAR_CONTENT, SOAP_BAR_LESSON_FILE } from './soapBarContent.js'
 
 // One account per role. `role: null` is the one with no member row at all.
 const ACCOUNTS = [
@@ -161,7 +163,14 @@ async function main() {
             // Between them these cover every state a "current" card can be in:
             // two past ones the member attended (green unlock), one past one they
             // didn't (red lock), and one running today (the check-in calendar).
-            { title: 'Soap Bar', date: day(-17), startTime: '17:00', location: 'WTHR 200', capacity: 20 },
+            // passed, so it's the one that shows the full lab — materials,
+            // lesson PDF and instructions all filled in
+            {
+                title: 'Soap Bar', date: day(-17), startTime: '17:00', location: 'WTHR 200', capacity: 20,
+                ...SOAP_BAR_CONTENT,
+                lessonPdf: await readFile(new URL(`./fixtures/${SOAP_BAR_LESSON_FILE}`, import.meta.url)),
+                lessonPdfName: 'Lab 1 - Fragrance Soap Making.pdf'
+            },
             { title: 'Bath Bomb', date: day(-10), startTime: '17:00', location: 'WTHR 200', capacity: 20 },
             { title: 'Bronzer', date: day(-1), startTime: '17:00', location: 'WTHR 200', capacity: 20 },
             // today — check-in is open on this one. Midnight rather than an

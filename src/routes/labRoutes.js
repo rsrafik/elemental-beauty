@@ -125,9 +125,13 @@ router.get('/:id', async (req, res) => {
             waitlistPosition = ahead + 1
         }
 
+        // the file itself is its own request (GET /:id/lesson) — this only says
+        // whether there is one
+        const { lessonPdfName, ...rest } = lab
         res.json({
             unlocked,
-            ...lab,
+            ...rest,
+            hasLesson: Boolean(lessonPdfName),
             taken,
             mine: link?.attendanceStatus ?? null,
             quizPassed: link?.quizPassed ?? null,
@@ -139,7 +143,97 @@ router.get('/:id', async (req, res) => {
     }
 })
 
+// The lesson PDF, for the same people who can see the rest of the full lab:
+// officers, and members who've passed its quiz. Sent inline so a browser that
+// opens the URL directly shows it rather than downloading it.
+router.get('/:id/lesson', async (req, res) => {
+    const labId = parseInt(req.params.id)
+    if (isNaN(labId)) { return res.status(400).json({ message: 'Invalid lab id' }) }
+
+    try {
+        if (!RANK_OFFICER.includes(req.role)) {
+            const link = await prisma.memberLab.findUnique({
+                where: { memberId_labId: { memberId: req.userId, labId } }
+            })
+            if (link?.quizPassed !== true) {
+                return res.status(403).json({ message: 'Pass the lab quiz to open its lesson' })
+            }
+        }
+
+        const lab = await prisma.lab.findUnique({
+            where: { labId },
+            select: { lessonPdf: true, lessonPdfName: true }
+        })
+        if (!lab?.lessonPdf) { return res.status(404).json({ message: 'This lab has no lesson yet' }) }
+
+        res.set({
+            'Content-Type': 'application/pdf',
+            'Content-Length': lab.lessonPdf.length,
+            // the plain name for old clients, the RFC 5987 one for anything
+            // with spaces or accents in it
+            'Content-Disposition': `inline; filename="lesson.pdf"; filename*=UTF-8''${encodeURIComponent(lab.lessonPdfName)}`,
+            'Cache-Control': 'private, no-store'
+        })
+        res.end(Buffer.from(lab.lessonPdf))
+    } catch (err) {
+        console.error(err.message)
+        res.sendStatus(500)
+    }
+})
+
 // ---- officer+ content management ----
+
+// Upload (or replace) a lab's lesson. The body is the PDF itself, sent as
+// application/pdf, with the original file name in X-Filename — no multipart
+// parsing to pull in for one file. Capped well above any lesson handout.
+const LESSON_LIMIT = '25mb'
+
+router.put('/:id/lesson', requireRole('officer'), express.raw({ type: 'application/pdf', limit: LESSON_LIMIT }), async (req, res) => {
+    const labId = parseInt(req.params.id)
+    if (isNaN(labId)) { return res.status(400).json({ message: 'Invalid lab id' }) }
+
+    const bytes = req.body
+    // every PDF starts with this signature; anything else isn't one, whatever
+    // its Content-Type says
+    if (!Buffer.isBuffer(bytes) || bytes.subarray(0, 5).toString('latin1') !== '%PDF-') {
+        return res.status(400).json({ message: 'Send the lesson as a PDF (Content-Type: application/pdf)' })
+    }
+    // URL-encoded by the client, since a header can't carry accents as-is
+    let name = 'lesson.pdf'
+    try { name = decodeURIComponent(req.get('X-Filename') || name) } catch {}
+    name = name.slice(0, 200)
+
+    try {
+        await prisma.lab.update({
+            where: { labId },
+            data: { lessonPdf: bytes, lessonPdfName: name },
+            select: { labId: true }
+        })
+        res.json({ message: 'Lesson uploaded', lessonPdfName: name, size: bytes.length })
+    } catch (err) {
+        if (err.code === 'P2025') { return res.status(404).json({ message: 'Lab not found' }) }
+        console.error(err.message)
+        res.sendStatus(500)
+    }
+})
+
+router.delete('/:id/lesson', requireRole('officer'), async (req, res) => {
+    const labId = parseInt(req.params.id)
+    if (isNaN(labId)) { return res.status(400).json({ message: 'Invalid lab id' }) }
+
+    try {
+        await prisma.lab.update({
+            where: { labId },
+            data: { lessonPdf: null, lessonPdfName: null },
+            select: { labId: true }
+        })
+        res.json({ message: 'Lesson removed' })
+    } catch (err) {
+        if (err.code === 'P2025') { return res.status(404).json({ message: 'Lab not found' }) }
+        console.error(err.message)
+        res.sendStatus(500)
+    }
+})
 
 router.post('/', requireRole('officer'), async (req, res) => {
     const { title, date, startTime, location, description, image, ingredients, equipment, safetyNote, instructions, capacity } = req.body

@@ -204,6 +204,13 @@ model Lab {
   equipment    String?
   safetyNote   String?  @map("safety_note")
   instructions String?
+  // The lesson tab's PDF, uploaded by an officer. Kept in the row rather than
+  // on disk so a lab is one thing to back up and move, same as its image. The
+  // bytes are left out of every query by default (see prismaClient.js) and only
+  // read by the endpoint that serves the file; the name is what the viewer's
+  // download button saves it as, and doubles as "is there a lesson at all".
+  lessonPdf     Bytes?  @map("lesson_pdf")
+  lessonPdfName String? @map("lesson_pdf_name")
 
   lessons       LabLesson[]
   quizQuestions LabQuizQuestion[]

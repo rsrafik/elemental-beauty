@@ -5,9 +5,10 @@ import { useSearchParams } from 'next/navigation'
 import DashboardShell from '@/components/dashboards/DashboardShell'
 import { labs as labsApi } from '@/lib/api'
 import { isoDate, today } from '@/lib/dates'
-import { BackButton, LabIntro, Scaled } from '@/components/labs/LabViewParts'
+import { BackButton, Scaled } from '@/components/labs/LabViewParts'
 import MemberLabSignup from '@/components/labs/MemberLabSignup'
 import MemberLabQuiz from '@/components/labs/MemberLabQuiz'
+import MemberLabContent from '@/components/labs/MemberLabContent'
 
 // /labs/view?id=N for a user or member. Which of the three stages you get is
 // worked out from the lab's date/time and your row on it:
@@ -18,7 +19,8 @@ import MemberLabQuiz from '@/components/labs/MemberLabQuiz'
 //   checkin  it has started and you hold a seat or a waitlist place: show the
 //            QR at the door (MemberLabQuiz, not checked in)
 //   quiz     you've been checked in and haven't passed yet (MemberLabQuiz)
-//   lab      you've passed — the full lab, still to be built
+//   lab      you've passed — the full lab: materials, lesson, instructions
+//            (MemberLabContent)
 //
 // The signup stage sits in the middle of the page; the others are top-aligned
 // because the quiz runs on below them. Both are laid out in the design's own
@@ -120,23 +122,25 @@ export default function MemberLabView() {
 				</Scaled>
 			</div>
 		)
-	} else if (stage === 'checkin' || stage === 'quiz' || stage === 'lab') {
+	} else if (stage === 'checkin' || stage === 'quiz') {
 		body = (
 			<Scaled className="
 				lg:pl-[40px]
 				lg:pr-[27px]
 				lg:pt-[25px]
 			">
-				{stage === 'lab'
-					// TODO: the full lab view (lessons, ingredients, instructions)
-					? <LabIntro lab={lab} />
-					: <MemberLabQuiz
-						lab={lab}
-						checkedIn={stage === 'quiz'}
-						onPassed={() => setLab((prev) => ({ ...prev, quizPassed: true }))}
-					/>}
+				<MemberLabQuiz
+					lab={lab}
+					checkedIn={stage === 'quiz'}
+					// passing unlocks the content, which only a fresh read
+					// brings back — the quiz answer doesn't carry it
+					onPassed={load}
+				/>
 			</Scaled>
 		)
+	} else if (stage === 'lab') {
+		// scales itself — it needs the zoom for its own measurements
+		body = <MemberLabContent lab={lab} />
 	}
 
 	// Same bleed as the analytics pages: the scroll column is pulled out over
