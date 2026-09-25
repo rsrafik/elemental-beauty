@@ -1,5 +1,4 @@
 import express from 'express'
-import bcrypt from 'bcryptjs'
 import jwt from 'jsonwebtoken'
 import prisma from '../prismaClient.js'
 import authMiddleware from '../middleware/authMiddleware.js'
@@ -8,6 +7,8 @@ import { fromEmail, takenMessage } from '../accountEmail.js'
 import { APP_URL, sendVerificationEmail } from '../verification.js'
 import { actionEmail } from '../emailTemplate.js'
 import { wantsEmail } from '../emailPrefs.js'
+import { checkPassword, hashPassword, needsRehash, passwordProblem } from '../passwords.js'
+import { log } from '../activity.js'
 
 const router = express.Router()
 
@@ -49,9 +50,8 @@ router.post('/register', async (req, res) => {
     if (!req.body.email || !password) {
         return res.status(400).json({ message: 'email and password are required' })
     }
-    if (String(password).length < 8) {
-        return res.status(400).json({ message: 'password must be at least 8 characters' })
-    }
+    const weak = passwordProblem(password)
+    if (weak) { return res.status(400).json({ message: weak }) }
 
     const { email, username: handle, error } = fromEmail(req.body.email)
     if (error) { return res.status(400).json({ message: error }) }
@@ -62,7 +62,7 @@ router.post('/register', async (req, res) => {
         if (await prisma.user.findUnique({ where: { email }, select: { userId: true } })) {
             return res.status(409).json({ message: 'An account with that email already exists' })
         }
-        const passwordHash = await bcrypt.hash(password, 8)
+        const passwordHash = await hashPassword(password)
         const user = await prisma.user.create({
             data: {
                 username: handle,
@@ -160,9 +160,19 @@ router.post('/login', async (req, res) => {
             return res.status(401).json({ message: 'Invalid credentials' })
         }
 
-        const passwordIsValid = await bcrypt.compare(password, user.passwordHash)
+        const passwordIsValid = await checkPassword(password, user.passwordHash)
         if (!passwordIsValid) {
             return res.status(401).json({ message: 'Invalid credentials' })
+        }
+
+        // the one moment the plain password is in hand: an account hashed at
+        // an older, cheaper cost is upgraded to today's (see passwords.js).
+        // Changing the hash also ends any reset link still out for it.
+        if (needsRehash(user.passwordHash)) {
+            await prisma.user.update({
+                where: { userId: user.userId },
+                data: { passwordHash: await hashPassword(password) }
+            }).catch((err) => console.error(`Password rehash failed: ${err.message}`))
         }
 
         const token = jwt.sign({ id: user.userId }, process.env.JWT_SECRET, { expiresIn: '24h' })
@@ -324,6 +334,10 @@ router.post('/reset-password', async (req, res) => {
     if (!resetToken || !newPassword) {
         return res.status(400).json({ message: 'resetToken and newPassword are required' })
     }
+    // the same rule as signing up — the page checks it too, but the page
+    // isn't the only thing that can call this
+    const weak = passwordProblem(newPassword)
+    if (weak) { return res.status(400).json({ message: weak.replace(/^password/, 'newPassword') }) }
 
     try {
         // decode (unverified) just to learn WHO this claims to be...
@@ -342,7 +356,7 @@ router.post('/reset-password', async (req, res) => {
             return res.status(400).json({ message: 'Invalid or expired reset token' })
         }
 
-        const passwordHash = await bcrypt.hash(newPassword, 8)
+        const passwordHash = await hashPassword(newPassword)
         await prisma.user.update({
             where: { userId: user.userId },
             data: { passwordHash }
@@ -350,6 +364,55 @@ router.post('/reset-password', async (req, res) => {
 
         res.json({ message: 'Password reset — you can now log in with your new password' })
     } catch (err) {
+        console.error(err.message)
+        res.sendStatus(500)
+    }
+})
+
+// Delete your own account — /account's "delete my account". Here rather than
+// on /members because somebody who never finished joining (role 'user', no
+// member row) owns an account too and can delete it just the same.
+//
+// The password is asked for again: a token left signed in on a shared
+// computer shouldn't be enough to wipe someone out.
+//
+// Deleting the USER cascades to the member row, lab and event sign-ups and
+// dues; reimbursement rows survive with memberId set to null, so the ledger
+// stays whole.
+router.delete('/me', authMiddleware, async (req, res) => {
+    try {
+        const user = await prisma.user.findUnique({
+            where: { userId: req.userId },
+            select: { passwordHash: true, firstName: true, lastName: true, username: true, member: { select: { role: true, points: true } } }
+        })
+        if (!user) { return res.status(404).json({ message: 'Account not found' }) }
+        // 403, not 401: the client treats a 401 as "this token is finished"
+        // and signs them out, which a typo shouldn't do
+        if (!(await checkPassword(req.body?.password, user.passwordHash))) {
+            return res.status(403).json({ message: 'That password isn’t right' })
+        }
+        // the club can't be left with nobody able to hand out staff roles
+        if (user.member?.role === 'admin') {
+            const admins = await prisma.member.count({ where: { role: 'admin' } })
+            if (admins <= 1) {
+                return res.status(409).json({ message: 'You’re the only admin — make someone else an admin before deleting your account' })
+            }
+        }
+
+        await prisma.$transaction(async (tx) => {
+            if (user.member) {
+                await log({
+                    actorId: req.userId,
+                    action: 'account_deleted',
+                    targetId: req.userId,
+                    details: { role: user.member.role, points: user.member.points }
+                }, tx)
+            }
+            await tx.user.delete({ where: { userId: req.userId } })
+        })
+        res.json({ message: 'Account deleted' })
+    } catch (err) {
+        if (err.code === 'P2025') { return res.status(404).json({ message: 'Account not found' }) }
         console.error(err.message)
         res.sendStatus(500)
     }

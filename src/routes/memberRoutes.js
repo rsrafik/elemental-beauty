@@ -1,14 +1,15 @@
 import express from 'express'
-import bcrypt from 'bcryptjs'
 import jwt from 'jsonwebtoken'
 import QRCode from 'qrcode'
 import prisma from '../prismaClient.js'
 import requireRole from '../middleware/requireRole.js'
-import { POINTS, MANUAL_ACTIONS } from '../points.js'
+import { POINTS, MANUAL_ACTIONS, eventPoints } from '../points.js'
 import { fromEmail, takenMessage } from '../accountEmail.js'
 import { sendVerificationEmail } from '../verification.js'
 import { STAFF, wantsEmail } from '../emailPrefs.js'
 import { emailAll, readMessage } from '../emailAll.js'
+import { hashPassword, passwordProblem } from '../passwords.js'
+import { log } from '../activity.js'
 
 const router = express.Router()
 
@@ -71,6 +72,11 @@ router.get('/', async (req, res) => {
     }
 })
 
+// "rsvp'd" on /account: signed up and not happened yet — a seat, a place on
+// the waitlist, or a spot offered off it. (Once the day passes an rsvp turns
+// into attended or absent, so nothing here is in the past.)
+const HOLDING = ['rsvped', 'waitlisted', 'offered']
+
 router.get('/me', async (req, res) => {
     try {
         const me = await prisma.member.findUnique({
@@ -98,9 +104,9 @@ router.get('/me', async (req, res) => {
         // drift out of step with the rows it claims to count.
         const [pastLabs, rsvpLabs, pastEvents, rsvpEvents] = await Promise.all([
             prisma.memberLab.count({ where: { memberId: req.userId, attendanceStatus: 'attended' } }),
-            prisma.memberLab.count({ where: { memberId: req.userId, attendanceStatus: { in: ['rsvped', 'waitlisted'] } } }),
+            prisma.memberLab.count({ where: { memberId: req.userId, attendanceStatus: { in: HOLDING } } }),
             prisma.memberEvent.count({ where: { memberId: req.userId, attendanceStatus: 'attended' } }),
-            prisma.memberEvent.count({ where: { memberId: req.userId, attendanceStatus: { in: ['rsvped', 'waitlisted'] } } })
+            prisma.memberEvent.count({ where: { memberId: req.userId, attendanceStatus: { in: HOLDING } } })
         ])
 
         res.json({ ...me, stats: { pastLabs, rsvpLabs, pastEvents, rsvpEvents } })
@@ -147,6 +153,78 @@ router.get('/me/qr', async (req, res) => {
         const qrToken = jwt.sign({ id: req.userId }, process.env.QR_SECRET, { noTimestamp: true })
         const png = await QRCode.toBuffer(qrToken)
         res.type('png').send(png)
+    } catch (err) {
+        console.error(err.message)
+        res.sendStatus(500)
+    }
+})
+
+// The history behind /account's five numbers — each tile opens a popup of
+// what it counts:
+//
+//   labs / events   every sign-up, with its status: the "done" tiles show the
+//                   attended ones, the "rsvp'd" tiles the ones still ahead
+//   awards          points an officer gave by hand, off the activity log
+//   earlier         points that neither of those explains — the ones from
+//                   before the log was kept (or seeded) — so the breakdown
+//                   always adds up to the number on the tile
+//
+// Attendance points are worked out from what each check-in is worth rather
+// than stored per row, the same way the counts are: a check-in undone simply
+// drops out.
+router.get('/me/history', async (req, res) => {
+    try {
+        const me = await prisma.member.findUnique({ where: { userId: req.userId }, select: { points: true } })
+        if (!me) { return res.status(404).json({ message: 'Member profile not found' }) }
+
+        const [labRows, eventRows, awardRows] = await Promise.all([
+            prisma.memberLab.findMany({
+                where: { memberId: req.userId },
+                select: {
+                    attendanceStatus: true,
+                    quizPassed: true,
+                    lab: { select: { labId: true, title: true, date: true, startTime: true, location: true } }
+                }
+            }),
+            prisma.memberEvent.findMany({
+                where: { memberId: req.userId },
+                select: {
+                    attendanceStatus: true,
+                    event: { select: { eventId: true, title: true, date: true, startTime: true, location: true, type: true } }
+                }
+            }),
+            prisma.activityLog.findMany({
+                where: { targetId: req.userId, action: 'points_awarded' },
+                orderBy: { createdAt: 'desc' },
+                select: { activityId: true, points: true, details: true, createdAt: true, actorName: true }
+            })
+        ])
+
+        const labs = labRows.map(({ lab, attendanceStatus, quizPassed }) => ({
+            ...lab,
+            status: attendanceStatus,
+            quizPassed,
+            points: attendanceStatus === 'attended' ? POINTS.lab : 0
+        }))
+        const events = eventRows.map(({ event, attendanceStatus }) => ({
+            ...event,
+            status: attendanceStatus,
+            points: attendanceStatus === 'attended' ? eventPoints(event.type) : 0
+        }))
+        const awards = awardRows.map((row) => ({
+            id: row.activityId,
+            reason: row.details?.reason ?? null,
+            points: row.points ?? 0,
+            at: row.createdAt,
+            by: row.actorName
+        }))
+        // newest first, with anything undated (a draft) at the end
+        const byDate = (a, b) => (b.date?.getTime() ?? 0) - (a.date?.getTime() ?? 0)
+        labs.sort(byDate)
+        events.sort(byDate)
+
+        const explained = [...labs, ...events, ...awards].reduce((sum, row) => sum + row.points, 0)
+        res.json({ points: me.points, labs, events, awards, earlier: me.points - explained })
     } catch (err) {
         console.error(err.message)
         res.sendStatus(500)
@@ -224,23 +302,6 @@ router.put('/me', async (req, res) => {
     }
 })
 
-// Deleting the USER cascades to member, member_lab, member_event;
-// reimbursement rows survive with memberId set to null.
-//
-// Above the '/:id' routes below, and it has to stay there: Express matches in
-// order, so a '/:id' handler declared first would swallow '/me' and try to read
-// it as a number.
-router.delete('/me', async (req, res) => {
-    try {
-        await prisma.user.delete({ where: { userId: req.userId } })
-        res.json({ message: 'Account deleted' })
-    } catch (err) {
-        if (err.code === 'P2025') { return res.status(404).json({ message: 'Account not found' }) }
-        console.error(err.message)
-        res.sendStatus(500)
-    }
-})
-
 // Officer+: award points for social-media actions. The action name picks the
 // value server-side — clients never send a point amount, so the values in
 // points.js are the only amounts that can ever be granted. Attendance points
@@ -255,9 +316,21 @@ router.post('/:id/points', requireRole('officer'), async (req, res) => {
     }
 
     try {
-        const updated = await prisma.member.update({
-            where: { userId: targetId },
-            data: { points: { increment: POINTS[action] } }
+        // the award and its line in the log land together or not at all —
+        // the log is what a member's points history reads it back from
+        const updated = await prisma.$transaction(async (tx) => {
+            const member = await tx.member.update({
+                where: { userId: targetId },
+                data: { points: { increment: POINTS[action] } }
+            })
+            await log({
+                actorId: req.userId,
+                action: 'points_awarded',
+                targetId,
+                points: POINTS[action],
+                details: { reason: action }
+            }, tx)
+            return member
         })
         res.json({ message: `+${POINTS[action]} points for ${action}`, points: updated.points })
     } catch (err) {
@@ -280,6 +353,8 @@ router.post('/', requireRole('officer'), async (req, res) => {
     if (!firstName?.trim() || !lastName?.trim() || !req.body.email || !password) {
         return res.status(400).json({ message: 'firstName, lastName, email, and password are required' })
     }
+    const weak = passwordProblem(password)
+    if (weak) { return res.status(400).json({ message: weak }) }
     if (!ROLES.includes(role)) {
         return res.status(400).json({ message: `role must be one of: ${ROLES.join(', ')}` })
     }
@@ -292,7 +367,7 @@ router.post('/', requireRole('officer'), async (req, res) => {
     if (error) { return res.status(400).json({ message: error }) }
 
     try {
-        const passwordHash = await bcrypt.hash(password, 8)
+        const passwordHash = await hashPassword(password)
 
         // One transaction: an account with no membership behind it would show
         // up as a half-added student that the roster can't see.
@@ -312,6 +387,7 @@ router.post('/', requireRole('officer'), async (req, res) => {
             const member = await tx.member.create({
                 data: { userId: user.userId, role }
             })
+            await log({ actorId: req.userId, action: 'member_added', targetId: user.userId, details: { role } }, tx)
             return { user, member }
         })
 
@@ -354,7 +430,16 @@ router.delete('/:id', requireRole('officer'), async (req, res) => {
             return res.status(403).json({ message: `Only an admin can remove ${target.role}s` })
         }
 
-        await prisma.user.delete({ where: { userId: targetId } })
+        await prisma.$transaction(async (tx) => {
+            // written first, while there's still a name to look up
+            await log({
+                actorId: req.userId,
+                action: 'member_removed',
+                targetId,
+                details: { role: target.role, points: target.points }
+            }, tx)
+            await tx.user.delete({ where: { userId: targetId } })
+        })
         res.json({ message: 'Student removed' })
     } catch (err) {
         if (err.code === 'P2025') { return res.status(404).json({ message: 'Member not found' }) }
@@ -376,9 +461,17 @@ router.put('/:id/role', requireRole('admin'), async (req, res) => {
     }
 
     try {
-        const updated = await prisma.member.update({
-            where: { userId: targetId },
-            data: { role }
+        const updated = await prisma.$transaction(async (tx) => {
+            const before = await tx.member.findUnique({ where: { userId: targetId }, select: { role: true } })
+            if (!before) { throw Object.assign(new Error('Member not found'), { code: 'P2025' }) }
+            const member = await tx.member.update({
+                where: { userId: targetId },
+                data: { role }
+            })
+            if (before.role !== role) {
+                await log({ actorId: req.userId, action: 'role_changed', targetId, details: { from: before.role, to: role } }, tx)
+            }
+            return member
         })
         res.json(updated)
     } catch (err) {
