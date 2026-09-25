@@ -6,6 +6,7 @@ import { useDismiss } from '@/lib/dismiss'
 import DashboardShell from '@/components/dashboards/DashboardShell'
 import { labs as labsApi } from '@/lib/api'
 import { isoDate, prettyTime } from '@/lib/dates'
+import { splitByDate, CompletedDivider, COMPLETED_CARD } from '@/components/CardSections'
 
 // /labs for officer / treasurer / admin: every lab on one sheet.
 //
@@ -185,7 +186,7 @@ function DraftTag({ published, hasDraft }) {
 }
 
 // Drafts — labs members can't see yet — are light purple instead of white.
-function LabCard({ lab, onOpen, menu, onMenu }) {
+function LabCard({ lab, onOpen, menu, onMenu, done = false }) {
 	const { title, date, time, location, image } = lab
 	return (
 		<div
@@ -199,6 +200,7 @@ function LabCard({ lab, onOpen, menu, onMenu }) {
 				group
 				relative
 				${lab.published ? 'bg-white' : 'bg-[#E8DEFF]'}
+				${done ? COMPLETED_CARD : ''}
 				rounded-[10px]
 				p-3
 				pb-4
@@ -433,6 +435,20 @@ function ConfirmDeleteDialog({ label, onCancel, onConfirm }) {
 	)
 }
 
+// the card sheet — the same grid above and below the completed divider
+const GRID = `
+	grid
+	grid-cols-2
+	lg:grid-cols-3
+	xl:grid-cols-4
+	2xl:grid-cols-5
+	gap-3
+	sm:gap-5
+	lg:gap-8
+	px-3
+	pb-3
+`
+
 // ---- page ------------------------------------------------------------------
 
 export default function OfficerLabs({ openNew = false }) {
@@ -474,6 +490,9 @@ export default function OfficerLabs({ openNew = false }) {
 	}
 
 	const closeMenu = useCallback(() => setMenuFor(null), [])
+
+	// coming up (or today) first, then what's already happened, greyed out
+	const { upcoming, completed } = splitByDate(labs)
 
 	return (
 		<DashboardShell>
@@ -544,19 +563,8 @@ export default function OfficerLabs({ openNew = false }) {
 				</button>
 			</div>
 
-			<div className="
-				grid
-				grid-cols-2
-				lg:grid-cols-3
-				xl:grid-cols-4
-				2xl:grid-cols-5
-				gap-3
-				sm:gap-5
-				lg:gap-8
-				px-3
-				pb-3
-			">
-				{labs.map((lab) => (
+			<div className={GRID}>
+				{upcoming.map((lab) => (
 					<LabCard
 						key={lab.id}
 						lab={lab}
@@ -577,6 +585,35 @@ export default function OfficerLabs({ openNew = false }) {
 					/>
 				))}
 			</div>
+
+			{completed.length > 0 && (
+				<>
+					<CompletedDivider count={completed.length} />
+					<div className={GRID}>
+						{completed.map((lab) => (
+							<LabCard
+								key={lab.id}
+								done
+								lab={lab}
+								onOpen={() => router.push(`/labs/view?id=${lab.id}`)}
+								onMenu={() => setMenuFor((open) => (open === lab.id ? null : lab.id))}
+								menu={menuFor === lab.id && (
+									<CardMenu
+										title={lab.title}
+										onClose={closeMenu}
+										onQuiz={() => router.push(`/labs/quiz?id=${lab.id}`)}
+										onEdit={() => router.push(`/labs/edit?id=${lab.id}`)}
+										onDelete={() => {
+											setMenuFor(null)
+											setDeleting(lab)
+										}}
+									/>
+								)}
+							/>
+						))}
+					</div>
+				</>
+			)}
 
 			{deleting && (
 				<ConfirmDeleteDialog

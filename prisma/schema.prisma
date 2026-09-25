@@ -141,6 +141,12 @@ model User {
   // students an officer added (they were vouched for in person).
   waiverName     String?   @map("waiver_name")
   waiverSignedAt DateTime? @map("waiver_signed_at") @db.Timestamptz()
+  // What officers' "email all" buttons may send them — set from /account.
+  // Account mail (the verification link, password resets) goes regardless.
+  //   emailClub    the officer dashboard's club-wide "Email All"
+  //   emailEvents  a lab or event's "email all", to the people signed up
+  emailClub      Boolean   @default(true) @map("email_club")
+  emailEvents    Boolean   @default(true) @map("email_events")
   createdAt      DateTime @default(now()) @map("created_at") @db.Timestamptz()
 
   member        Member?

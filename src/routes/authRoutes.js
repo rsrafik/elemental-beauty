@@ -110,6 +110,8 @@ router.get('/me', authMiddleware, async (req, res) => {
                 emailVerified: true,
                 waiverSigned: true,
                 waiverName: true,
+                emailClub: true,
+                emailEvents: true,
                 createdAt: true,
                 member: { select: { role: true, points: true, dateJoined: true } }
             }

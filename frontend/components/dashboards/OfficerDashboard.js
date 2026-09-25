@@ -102,7 +102,8 @@ export default function OfficerDashboard() {
 	const [board, setBoard] = useState([])
 
 	// Everyone whose role is plain member, for "Email All" — officers,
-	// treasurers and admins aren't on it. Held from the same /members read as
+	// treasurers and admins aren't on it, and nor is anyone who's turned
+	// club-wide emails off on /account. Held from the same /members read as
 	// the board, so the click can open Gmail straight away: a window opened
 	// after waiting on a request gets stopped by the popup blocker.
 	const [memberEmails, setMemberEmails] = useState([])
@@ -127,7 +128,7 @@ export default function OfficerDashboard() {
 				if (!live) return
 				setMemberEmails(
 					rows
-						.filter((row) => row.role === 'member' && row.user?.email)
+						.filter((row) => row.role === 'member' && row.user?.email && row.user.emailClub !== false)
 						.map((row) => row.user.email)
 				)
 				setBoard(
@@ -147,20 +148,22 @@ export default function OfficerDashboard() {
 			})
 			.catch(() => {})
 
-		// Today counts as upcoming — a lab running this afternoon is the most
-		// upcoming thing there is — so the cut is made here rather than with the
-		// API's ?when=upcoming, which measures from the current instant and would
-		// drop anything dated today.
+		// The next three things that haven't started yet, labs and events
+		// together, soonest first — [0] goes in the small front box, the one
+		// you see without hovering. Something later today still counts; one
+		// that already started this morning doesn't. Worked out here rather
+		// than with the API's ?when=upcoming, which compares whole dates.
 		Promise.all([labsApi.list(), eventsApi.list()])
 			.then(([labs, events]) => {
 				if (!live) return
 				const now = today()
+				const clock = new Date().toTimeString().slice(0, 5)
 				const soon = [
 					// drafts aren't happening yet — they stay on /labs until published
 					...labs.filter((lab) => lab.published !== false).map((lab) => ({
 						id: `lab-${lab.labId}`,
 						date: isoDate(lab.date),
-						time: '',
+						time: lab.startTime ?? '',
 						title: lab.title,
 						taken: lab.taken,
 						capacity: lab.capacity,
@@ -174,7 +177,9 @@ export default function OfficerDashboard() {
 						capacity: event.capacity,
 					})),
 				]
-					.filter((row) => row.date >= now)
+					// today only while it's still ahead — no time on it counts as
+					// all day, so it stays until tomorrow
+					.filter((row) => row.date > now || (row.date === now && (!row.time || row.time >= clock)))
 					// same day: the earlier start time comes first, and something
 					// with no time on it sorts ahead of something with one
 					.sort((a, b) => a.date.localeCompare(b.date) || a.time.localeCompare(b.time))

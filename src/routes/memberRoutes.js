@@ -44,7 +44,9 @@ router.get('/', async (req, res) => {
                         instagram: true,
                         profilePicture: true,
                         createdAt: true,
-                        email: ['officer', 'treasurer', 'admin'].includes(req.role)
+                        email: ['officer', 'treasurer', 'admin'].includes(req.role),
+                        // whether the dashboard's "Email All" may include them
+                        emailClub: ['officer', 'treasurer', 'admin'].includes(req.role)
                     }
                 }
             },
@@ -132,7 +134,7 @@ router.get('/me/qr', async (req, res) => {
 // is its first half (see accountEmail.js), so the two always move together; a
 // new address has to be verified again.
 router.put('/me', async (req, res) => {
-    const { firstName, lastName, instagram, profilePicture } = req.body
+    const { firstName, lastName, instagram, profilePicture, emailClub, emailEvents } = req.body
 
     const data = {}
     if (firstName !== undefined) {
@@ -150,6 +152,9 @@ router.put('/me', async (req, res) => {
         data.username = username
     }
     if (instagram !== undefined) { data.instagram = instagram }
+    // the two email opt-outs (see schema.prisma)
+    if (emailClub !== undefined) { data.emailClub = emailClub === true }
+    if (emailEvents !== undefined) { data.emailEvents = emailEvents === true }
     if (profilePicture !== undefined) { data.profilePicture = profilePicture }
 
     try {
@@ -171,6 +176,8 @@ router.put('/me', async (req, res) => {
                 profilePicture: true,
                 emailVerified: true,
                 waiverSigned: true,
+                emailClub: true,
+                emailEvents: true,
                 createdAt: true
             }
         })

@@ -25,7 +25,7 @@ const TAKEN = { attendanceStatus: { in: ['rsvped', 'attended'] } }
 const USER_SELECT = {
     member: {
         select: {
-            user: { select: { username: true, firstName: true, lastName: true, email: true } }
+            user: { select: { username: true, firstName: true, lastName: true, email: true, emailEvents: true } }
         }
     }
 }
@@ -59,8 +59,9 @@ export function mountRoster(router, kind) {
                 username: member.user.username,
                 firstName: member.user.firstName,
                 lastName: member.user.lastName,
-                // for the page's "email all" — officers only, like the route
-                email: member.user.email
+                // for the page's "email all" — officers only, like the route —
+                // left off for anyone who's opted out of lab & event emails
+                email: member.user.emailEvents ? member.user.email : null
             })))
         } catch (err) {
             console.error(err.message)

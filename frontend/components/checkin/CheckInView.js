@@ -447,7 +447,8 @@ export default function CheckInView({ kind, id }) {
 	}), [roster])
 
 	// "email all": everyone who signed up (both "not checked in" and "checked
-	// in" — not the waitlist), in BCC, in the officer's own mail service (see
+	// in" — not the waitlist) and hasn't turned lab & event emails off (the
+	// roster leaves their address out), in BCC, in the officer's own mail service (see
 	// lib/compose.js), with the lab or event's name as the subject
 	const recipients = [...waiting, ...here]
 		.map((row) => row.email)

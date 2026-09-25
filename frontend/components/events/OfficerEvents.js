@@ -6,6 +6,7 @@ import { useDismiss } from '@/lib/dismiss'
 import DashboardShell from '@/components/dashboards/DashboardShell'
 import { eventCategories, events as eventsApi } from '@/lib/api'
 import { isoDate, prettyTime } from '@/lib/dates'
+import { splitByDate, CompletedDivider, COMPLETED_CARD } from '@/components/CardSections'
 
 // /events for officer / treasurer / admin: every event on one sheet. Clicking
 // a card opens its check-in page; the dots in its corner edit it.
@@ -118,7 +119,7 @@ function CloseIcon({ className = '' }) {
 
 // The member card with one substitution: the corner holds a control instead of
 // a status icon.
-function EventCard({ title, date, time, location, image, onOpen, onEdit }) {
+function EventCard({ title, date, time, location, image, onOpen, onEdit, done = false }) {
 	return (
 		<div
 			role="link"
@@ -127,10 +128,11 @@ function EventCard({ title, date, time, location, image, onOpen, onEdit }) {
 			onKeyDown={(event) => {
 				if (event.key === 'Enter') onOpen()
 			}}
-			className="
+			className={`
 			group
 			relative
 			bg-white
+			${done ? COMPLETED_CARD : ''}
 			rounded-[10px]
 			p-3
 			pb-4
@@ -143,7 +145,7 @@ function EventCard({ title, date, time, location, image, onOpen, onEdit }) {
 			hover:shadow-[-5px_5px_5px_rgba(0,0,0,0.5)]
 			active:translate-y-0
 			active:shadow-[0_4px_10px_rgba(0,0,0,0.15)]
-		"
+		`}
 		>
 			<div className="
 				aspect-[4/3]
@@ -854,6 +856,20 @@ function EventDialog({ event, categories, onClose, onSave, onDelete }) {
 	)
 }
 
+// the card sheet — the same grid above and below the completed divider
+const GRID = `
+	grid
+	grid-cols-2
+	lg:grid-cols-3
+	xl:grid-cols-4
+	2xl:grid-cols-5
+	gap-3
+	sm:gap-5
+	lg:gap-8
+	px-3
+	pb-3
+`
+
 // ---- page ------------------------------------------------------------------
 
 export default function OfficerEvents({ openNew = false }) {
@@ -938,6 +954,9 @@ export default function OfficerEvents({ openNew = false }) {
 		closeEditor()
 	}
 
+	// coming up (or today) first, then what's already happened, greyed out
+	const { upcoming, completed } = splitByDate(events)
+
 	return (
 		<DashboardShell>
 			<div className="
@@ -1007,19 +1026,8 @@ export default function OfficerEvents({ openNew = false }) {
 				</button>
 			</div>
 
-			<div className="
-				grid
-				grid-cols-2
-				lg:grid-cols-3
-				xl:grid-cols-4
-				2xl:grid-cols-5
-				gap-3
-				sm:gap-5
-				lg:gap-8
-				px-3
-				pb-3
-			">
-				{events.map((row) => (
+			<div className={GRID}>
+				{upcoming.map((row) => (
 					<EventCard
 						key={row.id}
 						title={row.title}
@@ -1032,6 +1040,27 @@ export default function OfficerEvents({ openNew = false }) {
 					/>
 				))}
 			</div>
+
+			{completed.length > 0 && (
+				<>
+					<CompletedDivider count={completed.length} />
+					<div className={GRID}>
+						{completed.map((row) => (
+							<EventCard
+								key={row.id}
+								done
+								title={row.title}
+								date={row.date}
+								time={row.time}
+								location={row.location}
+								image={row.image}
+								onOpen={() => router.push(`/events/view?id=${row.id}`)}
+								onEdit={() => setEditing({ event: row })}
+							/>
+						))}
+					</div>
+				</>
+			)}
 
 			{editing && (
 				<EventDialog

@@ -945,6 +945,169 @@ function DetailsCard({ draft, dirty, ready, saved, saving, error, verified, onCh
 
 // The password doesn't live in the form above: it leaves through the mail
 // rather than through the save button, so it gets its own strip.
+// ---- email preferences ------------------------------------------------------
+
+// One on/off switch. Each saves the moment it's flipped — there's nothing to
+// review before sending, so it doesn't wait for the details form's button.
+function Toggle({ label, hint, checked, busy, onChange }) {
+	return (
+		<label className="
+			flex
+			items-start
+			justify-between
+			gap-4
+			py-3
+			cursor-pointer
+		">
+			<span className="min-w-0">
+				<span className="
+					block
+					font-vietnam
+					font-semibold
+					text-[15px]
+					text-black
+				">
+					{label}
+				</span>
+				<span className="
+					block
+					mt-0.5
+					font-vietnam
+					text-sm
+					text-black/55
+				">
+					{hint}
+				</span>
+			</span>
+			<button
+				type="button"
+				role="switch"
+				aria-checked={checked}
+				aria-label={label}
+				disabled={busy}
+				onClick={() => onChange(!checked)}
+				className={`
+					relative
+					mt-0.5
+					w-11
+					h-6
+					shrink-0
+					rounded-full
+					cursor-pointer
+					transition-colors
+					duration-200
+					ease-out
+					disabled:opacity-60
+					disabled:cursor-wait
+					${checked ? 'bg-green' : 'bg-black/20'}
+				`}
+			>
+				<span className={`
+					absolute
+					top-0.5
+					left-0.5
+					w-5
+					h-5
+					rounded-full
+					bg-white
+					shadow-[0_1px_3px_rgba(0,0,0,0.3)]
+					transition-transform
+					duration-200
+					ease-out
+					${checked ? 'translate-x-5' : ''}
+				`} />
+			</button>
+		</label>
+	)
+}
+
+// What officers' "email all" buttons may send you. Account mail — the link
+// that confirms your address, password resets — isn't optional and isn't
+// listed.
+function EmailPrefsCard({ user, onSaved, className = '' }) {
+	const [prefs, setPrefs] = useState(() => ({
+		emailClub: user?.emailClub !== false,
+		emailEvents: user?.emailEvents !== false,
+	}))
+	const [busy, setBusy] = useState(null)
+	const [error, setError] = useState(null)
+
+	const flip = (key) => async (value) => {
+		setBusy(key)
+		setError(null)
+		setPrefs((prev) => ({ ...prev, [key]: value }))
+		try {
+			await membersApi.update({ [key]: value })
+			await onSaved()
+		} catch (err) {
+			setPrefs((prev) => ({ ...prev, [key]: !value }))
+			setError(err.message)
+		} finally {
+			setBusy(null)
+		}
+	}
+
+	return (
+		<section className={`
+			rounded-[26px]
+			bg-white
+			p-6
+			sm:px-8
+			shadow-[0_0_20px_rgba(0,0,0,0.12)]
+			${className}
+		`}>
+			<h2 className="
+				font-beachday
+				text-[24px]
+				sm:text-[28px]
+				leading-none
+				text-black
+			">
+				emails
+			</h2>
+			<p className="
+				mt-1.5
+				font-vietnam
+				text-sm
+				text-black/55
+			">
+				What officers can send you. Emails about your account — confirming
+				your address, resetting your password — always come through.
+			</p>
+			<div className="
+				mt-3
+				divide-y
+				divide-black/10
+			">
+				<Toggle
+					label="club-wide emails"
+					hint="News and updates officers send to every member."
+					checked={prefs.emailClub}
+					busy={busy === 'emailClub'}
+					onChange={flip('emailClub')}
+				/>
+				<Toggle
+					label="lab & event emails"
+					hint="Messages about labs and events you've signed up for."
+					checked={prefs.emailEvents}
+					busy={busy === 'emailEvents'}
+					onChange={flip('emailEvents')}
+				/>
+			</div>
+			{error && (
+				<p className="
+					mt-2
+					font-vietnam
+					text-sm
+					text-salmon-dark
+				">
+					{error}
+				</p>
+			)}
+		</section>
+	)
+}
+
 function PasswordCard({ onReset, className = '' }) {
 	return (
 		<section className={`
@@ -1741,6 +1904,12 @@ export default function Profile() {
 				<PasswordCard
 					className={narrow}
 					onReset={() => setResetting(true)}
+				/>
+
+				<EmailPrefsCard
+					className={narrow}
+					user={user}
+					onSaved={refresh}
 				/>
 			</div>
 
