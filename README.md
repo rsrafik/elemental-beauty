@@ -73,6 +73,8 @@ npm run dev:all          # Postgres in Docker, the API on :5003, Next on :3000
 npm run db:reset         # wipe and reseed (accounts: member/member, officer/officer, … — see prisma/seed.js)
 ```
 
+**The first admin** on a fresh (production) database, where nobody can hand out roles yet: `npm run make-admin -- jane7@purdue.edu Jane Doe` makes the account — username `jane7`, verified, admin — and prints a one-time password. An email that already has an account is just made admin. In Docker: `docker exec -it <container> npm run make-admin -- ...`.
+
 Emails go through Gmail or Resend when configured in `.env`, and are printed to the console otherwise. Automatic ones: the day-before reminder for labs and events, and reimbursement updates (to the treasurer when a receipt comes in, to the officer when it's approved, denied or paid). Seed accounts use `@example.com` addresses so a dev server can never mail a real inbox.
 
 **Tests** run with Node's built-in runner. The integration tests need their own database, whose name must contain `test`:

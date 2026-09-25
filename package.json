@@ -11,6 +11,7 @@
     "start": "node --experimental-strip-types ./src/server.js",
     "db:reset": "npx prisma migrate reset --force --skip-generate && npm run db:seed",
     "db:seed": "node --env-file=.env --experimental-strip-types prisma/seed.js",
+    "make-admin": "node --env-file-if-exists=.env --experimental-strip-types scripts/makeAdmin.js",
     "test": "node --env-file-if-exists=.env.test --experimental-strip-types --test \"test/**/*.test.js\"",
     "lint:frontend": "npm run lint --prefix frontend"
   },

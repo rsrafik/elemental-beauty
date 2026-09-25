@@ -31,6 +31,7 @@ COPY prisma.config.ts ./
 COPY prisma ./prisma
 RUN npx prisma generate
 COPY src ./src
+COPY scripts ./scripts
 COPY --from=frontend /app/frontend/out ./public
 
 ENV NODE_ENV=production
