@@ -97,6 +97,10 @@ app.use(express.json({ limit: '15mb' }))
 // link that opened one directly (the emailed "view the lab" and "view the
 // event" buttons, a refresh) landed on a 404.
 const PUBLIC = path.join(__dirname, '../public')
+// Members-only for now: the address opens on the sign-in page (which sends
+// anyone signed in on to /dashboard), and the landing and about-us pages are
+// off. See frontend/app/page.js.
+app.get(['/', '/about-us'], (req, res) => { res.redirect(302, '/login') })
 app.use(express.static(PUBLIC, { extensions: ['html'], redirect: false }))
 app.get(/^\/(?!api\/).+/, (req, res, next) => {
     const page = path.join(PUBLIC, `${req.path.replace(/\/+$/, '')}.html`)
@@ -104,6 +108,11 @@ app.get(/^\/(?!api\/).+/, (req, res, next) => {
     if (!page.startsWith(PUBLIC + path.sep)) { return next() }
     res.sendFile(page, (err) => { if (err) { next() } })
 })
+
+// "Is the server up?" — for the host's health check and the uptime pinger that
+// keeps Render's free instance from sleeping. It never touches the database,
+// so pinging it every few minutes doesn't keep Neon awake too.
+app.get('/api/health', (req, res) => { res.json({ ok: true }) })
 
 // API routes — all under /api so they can never collide with frontend pages
 // (frontend /labs is a page; /api/labs is the API).

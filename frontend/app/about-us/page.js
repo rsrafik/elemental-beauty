@@ -1,7 +1,6 @@
+import { redirect } from 'next/navigation'
+
+// Off for now, like the landing page (see app/page.js) — nothing on it yet.
 export default function AboutUs() {
-    return (
-        <main className="p-8">
-            <h1 className="text-2xl font-bold">About Us</h1>
-        </main>
-    )
+	redirect('/login')
 }
