@@ -122,9 +122,15 @@ export const auth = {
 
 	me: () => api('/auth/me'),
 
-	// The waiver is what turns an account into a membership now that email
-	// verification is switched off.
-	signWaiver: () => api('/auth/waiver', { method: 'POST' }),
+	// The two gates between an account and a membership: the emailed link,
+	// and the waiver, signed with the name typed under it. Whichever lands
+	// second makes them a member (the reply says `promoted`).
+	signWaiver: ({ firstName, lastName }) =>
+		api('/auth/waiver', { method: 'POST', body: { firstName, lastName } }),
+	// No login needed — the token from the link is the proof.
+	verifyEmail: (verificationToken) =>
+		api('/auth/verify-email', { method: 'POST', body: { verificationToken }, auth: false }),
+	resendVerification: () => api('/auth/resend-verification', { method: 'POST' }),
 
 	forgotPassword: (email) =>
 		api('/auth/forgot-password', { method: 'POST', body: { email }, auth: false }),

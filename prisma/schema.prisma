@@ -136,6 +136,11 @@ model User {
   profilePicture String?  @map("profile_picture")
   emailVerified  Boolean  @default(false) @map("email_verified")
   waiverSigned   Boolean  @default(false) @map("waiver_signed")
+  // The signature itself: the name typed at the bottom of the waiver and when.
+  // Null for accounts from before the waiver was signed on the site, and for
+  // students an officer added (they were vouched for in person).
+  waiverName     String?   @map("waiver_name")
+  waiverSignedAt DateTime? @map("waiver_signed_at") @db.Timestamptz()
   createdAt      DateTime @default(now()) @map("created_at") @db.Timestamptz()
 
   member        Member?

@@ -28,6 +28,11 @@ if (process.env.NODE_ENV === 'production' && !process.env.RESEND_API_KEY) {
     console.error('RESEND_API_KEY is required in production (email verification + password resets)')
     process.exit(1)
 }
+// the links in those emails are built on it
+if (process.env.NODE_ENV === 'production' && !process.env.APP_URL) {
+    console.error('APP_URL is required in production (the links in verification and reset emails)')
+    process.exit(1)
+}
 
 const app = express()
 const PORT = process.env.PORT || 5003
@@ -40,7 +45,11 @@ if (process.env.NODE_ENV === 'production') { app.set('trust proxy', 1) }
 const authLimiter = rateLimit({
     windowMs: 15 * 60 * 1000,
     limit: 30,                 // per IP per window, across all /auth endpoints
-    message: { message: 'Too many attempts — try again in 15 minutes' }
+    message: { message: 'Too many attempts — try again in 15 minutes' },
+    // GET /auth/me is every page load's "who am I", and the onboarding page
+    // asks it every few seconds while it waits for the email link — it isn't
+    // an attempt at anything, and counting it would lock people out
+    skip: (req) => req.method === 'GET'
 })
 
 // Get file path from URL of current module

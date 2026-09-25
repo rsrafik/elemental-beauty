@@ -5,6 +5,7 @@ import prisma from '../prismaClient.js'
 import authMiddleware from '../middleware/authMiddleware.js'
 import { sendEmail } from '../email.js'
 import { fromEmail, takenMessage } from '../accountEmail.js'
+import { APP_URL, sendVerificationEmail } from '../verification.js'
 
 const router = express.Router()
 
@@ -12,17 +13,16 @@ const router = express.Router()
 // if NODE_ENV is missing or anything else, nothing leaks.
 const IS_DEV = process.env.NODE_ENV === 'development'
 
+
 // Signing up gets you an ACCOUNT, not a membership: a fresh row in `users` and
 // nothing in `members`, which is the role the frontend calls 'user'. The member
-// row — and with it a rank, points and a place on the board — arrives when the
-// waiver is signed, or when an officer adds you from /students.
-//
-// Email verification is switched off for now, so the waiver is the only gate.
-// The verify-email endpoints below are left intact and still work; put
-// `user.emailVerified &&` back in front of the waiver check to turn it back on.
+// row — and with it a rank, points and a place on the board — arrives once both
+// gates are through: the email is verified (the link mailed at sign-up) and the
+// waiver is signed. Either can come first; whichever finishes second promotes.
+// An officer adding someone from /students skips both.
 async function promoteIfEligible(userId) {
     const user = await prisma.user.findUnique({ where: { userId } })
-    if (user.waiverSigned) {
+    if (user.emailVerified && user.waiverSigned) {
         await prisma.member.upsert({          // upsert = no crash if row exists
             where: { userId },
             update: {},
@@ -33,26 +33,6 @@ async function promoteIfEligible(userId) {
     return false
 }
 
-// Email a verification token (24h expiry). The token itself is the proof —
-// only someone with access to the inbox can produce it.
-async function sendVerificationEmail(user) {
-    const verificationToken = jwt.sign(
-        { id: user.userId, purpose: 'verify-email' },
-        process.env.JWT_SECRET,
-        { expiresIn: '24h' }
-    )
-    const link = process.env.APP_URL
-        ? `${process.env.APP_URL}/verify?token=${verificationToken}`
-        : null
-    await sendEmail({
-        to: user.email,
-        subject: 'Verify your Elemental Beauty email',
-        text: link
-            ? `Welcome to Elemental Beauty!\n\nVerify your email by opening this link (expires in 24 hours):\n${link}`
-            : `Welcome to Elemental Beauty!\n\nYour verification code (expires in 24 hours):\n\n${verificationToken}`
-    })
-    return verificationToken
-}
 
 // The sign-up form asks for an email, a password, the person's name and an
 // instagram handle it marks optional. The username isn't asked for: it's the
@@ -88,14 +68,14 @@ router.post('/register', async (req, res) => {
                 passwordHash,
                 firstName: firstName?.trim() || '',
                 lastName: lastName?.trim() || '',
-                instagram: instagram?.trim() || null,
-                // Verification is switched off for now (see promoteIfEligible),
-                // so nothing would ever flip this and /account would show every
-                // account as unverified forever. Drop this line and put the
-                // sendVerificationEmail call back to turn it on again.
-                emailVerified: true
+                instagram: instagram?.trim() || null
             }
         })
+
+        // The confirmation link. A failed send doesn't undo the account — the
+        // onboarding page offers "resend" — so it's logged, not thrown.
+        await sendVerificationEmail(user).catch((err) =>
+            console.error(`Verification email failed: ${err.message}`))
 
         const token = jwt.sign({ id: user.userId }, process.env.JWT_SECRET, { expiresIn: '24h' })
         res.status(201).json({ token, message: 'Account created' })
@@ -129,6 +109,7 @@ router.get('/me', authMiddleware, async (req, res) => {
                 profilePicture: true,
                 emailVerified: true,
                 waiverSigned: true,
+                waiverName: true,
                 createdAt: true,
                 member: { select: { role: true, points: true, dateJoined: true } }
             }
@@ -208,6 +189,7 @@ router.post('/verify-email', async (req, res) => {
 
         const promoted = await promoteIfEligible(decoded.id)
         res.json({
+            promoted,
             message: promoted
                 ? 'Email verified~ Welcome, you are now a member!'
                 : 'Email verified. Sign the waiver to become a member.'
@@ -236,18 +218,47 @@ router.post('/resend-verification', authMiddleware, async (req, res) => {
     }
 })
 
+// Sign the waiver. The page only lets someone send this once they've scrolled
+// to the end of it; the body is the name they typed underneath, which has to
+// be the name on their account. An account made before names were asked for
+// takes the typed one as its name.
+const sameName = (a, b) => String(a ?? '').trim().replace(/\s+/g, ' ').toLowerCase() ===
+    String(b ?? '').trim().replace(/\s+/g, ' ').toLowerCase()
+
 router.post('/waiver', authMiddleware, async (req, res) => {
+    const firstName = String(req.body.firstName ?? '').trim()
+    const lastName = String(req.body.lastName ?? '').trim()
+    if (!firstName || !lastName) {
+        return res.status(400).json({ message: 'Type your first and last name to sign' })
+    }
+
     try {
+        const user = await prisma.user.findUnique({ where: { userId: req.userId } })
+        if (!user) { return res.status(404).json({ message: 'Account not found' }) }
+
+        const named = user.firstName || user.lastName
+        if (named && !(sameName(firstName, user.firstName) && sameName(lastName, user.lastName))) {
+            return res.status(400).json({
+                message: `Sign with the name on your account: ${user.firstName} ${user.lastName}`.trim()
+            })
+        }
+
         await prisma.user.update({
             where: { userId: req.userId },
-            data: { waiverSigned: true }
+            data: {
+                waiverSigned: true,
+                waiverName: `${firstName} ${lastName}`,
+                waiverSignedAt: new Date(),
+                ...(named ? {} : { firstName, lastName })
+            }
         })
 
         const promoted = await promoteIfEligible(req.userId)
         res.json({
+            promoted,
             message: promoted
                 ? 'Waiver signed ~ welcome, you are now a member!'
-                : 'Waiver signed. Verify your email to become a member.'
+                : 'Waiver signed. Confirm your email to become a member.'
         })
     } catch (err) {
         console.error(err.message)
@@ -274,8 +285,8 @@ router.post('/forgot-password', async (req, res) => {
                 process.env.JWT_SECRET + user.passwordHash,
                 { expiresIn: '15m' }
             )
-            const link = process.env.APP_URL
-                ? `${process.env.APP_URL}/reset-password?token=${resetToken}`
+            const link = APP_URL
+                ? `${APP_URL}/reset-password?token=${resetToken}`
                 : null
             await sendEmail({
                 to: user.email,

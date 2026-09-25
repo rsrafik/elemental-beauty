@@ -6,6 +6,7 @@ import prisma from '../prismaClient.js'
 import requireRole from '../middleware/requireRole.js'
 import { POINTS, MANUAL_ACTIONS } from '../points.js'
 import { fromEmail, takenMessage } from '../accountEmail.js'
+import { sendVerificationEmail } from '../verification.js'
 
 const router = express.Router()
 
@@ -158,6 +159,12 @@ router.put('/me', async (req, res) => {
                 createdAt: true
             }
         })
+        // a new address gets its own confirmation link (it doesn't undo a
+        // membership — that's already been earned)
+        if (data.emailVerified === false) {
+            await sendVerificationEmail(me).catch((err) =>
+                console.error(`Verification email failed: ${err.message}`))
+        }
         res.json(me)
     } catch (err) {
         if (err.code === 'P2002') { return res.status(409).json({ message: takenMessage(err, data.username) }) }
