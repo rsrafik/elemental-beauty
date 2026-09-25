@@ -8,10 +8,11 @@ import { POINTS, MANUAL_ACTIONS } from '../points.js'
 import { fromEmail, takenMessage } from '../accountEmail.js'
 import { sendVerificationEmail } from '../verification.js'
 import { mailProvider } from '../mailProvider.js'
+import { STAFF, wantsEmail } from '../emailPrefs.js'
 
 const router = express.Router()
 
-const ROLES = ['member', 'officer', 'treasurer', 'admin']
+const ROLES = ['member', 'officer', 'jboard', 'treasurer', 'admin']
 
 // Anyone on staff can only be handled by an admin; officers and treasurers are
 // left with plain members. The roster puts this gate on the row's checkbox so
@@ -44,15 +45,26 @@ router.get('/', async (req, res) => {
                         instagram: true,
                         profilePicture: true,
                         createdAt: true,
-                        email: ['officer', 'treasurer', 'admin'].includes(req.role),
-                        // whether the dashboard's "Email All" may include them
-                        emailClub: ['officer', 'treasurer', 'admin'].includes(req.role)
+                        email: true,
+                        emailClub: true
                     }
                 }
             },
             orderBy: { dateJoined: 'asc' }
         })
-        res.json(members)
+        // Staff get each address and whether the dashboard's "Email All" may
+        // include it (their choice, or their role's default); nobody else
+        // sees either.
+        const staff = STAFF.includes(req.role)
+        res.json(members.map(({ user, ...row }) => {
+            const { email, emailClub, ...rest } = user
+            return {
+                ...row,
+                user: staff
+                    ? { ...rest, email, emailClub: wantsEmail(emailClub, row.role) }
+                    : rest
+            }
+        }))
     } catch (err) {
         console.error(err.message)
         res.sendStatus(500)

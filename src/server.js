@@ -13,7 +13,7 @@ import grantRoutes from './routes/grantRoutes.js'
 import reimbursementRoutes from './routes/reimbursementRoutes.js'
 import transactionRoutes from './routes/transactionRoutes.js'
 import authMiddleware from './middleware/authMiddleware.js'
-import requireRole from './middleware/requireRole.js'
+import requireRole, { denyRole } from './middleware/requireRole.js'
 import { sweepAbsences } from './sweepAbsences.js'
 
 // Refuse to boot misconfigured — a missing secret must crash here, loudly,
@@ -83,13 +83,16 @@ app.use('/api/event-categories', authMiddleware, requireRole('member'), eventCat
 app.use('/api/announcements', authMiddleware, requireRole('member'), announcementRoutes)
 // the income goal and spending budget: on the summary cards every officer
 // sees, set by the treasurer alone (enforced inside the router)
-app.use('/api/year-targets', authMiddleware, requireRole('officer'), yearTargetRoutes)
-app.use('/api/reimbursements', authMiddleware, requireRole('officer'), reimbursementRoutes)
-app.use('/api/transactions', authMiddleware, requireRole('officer'), transactionRoutes)
+//
+// J-board outranks an officer but the books aren't theirs, so every finance
+// route turns them away (see denyRole).
+app.use('/api/year-targets', authMiddleware, requireRole('officer'), denyRole('jboard'), yearTargetRoutes)
+app.use('/api/reimbursements', authMiddleware, requireRole('officer'), denyRole('jboard'), reimbursementRoutes)
+app.use('/api/transactions', authMiddleware, requireRole('officer'), denyRole('jboard'), transactionRoutes)
 // Same split as transactions: every officer reads the books — the grant
 // tracker is on the analytics page they all see — and only the treasurer
 // writes to them. The write gate is inside the router.
-app.use('/api/grants', authMiddleware, requireRole('officer'), grantRoutes)
+app.use('/api/grants', authMiddleware, requireRole('officer'), denyRole('jboard'), grantRoutes)
 
 // Mark RSVP'd no-shows absent once a lab/event's day has passed —
 // on boot, then hourly.

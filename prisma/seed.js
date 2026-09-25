@@ -5,6 +5,8 @@
 //                           dashboard, and no labs/events/calendar in the menu
 //   member / member         the member dashboard, /labs, /events, /calendar
 //   officer / officer       adds /students and /analytics (the read-only books)
+//   jboard / jboard         everything an officer has — a rank only an admin
+//                           can give
 //   treasurer / treasurer   the same pages, with /analytics as the full ledger
 //   admin / admin           outranks everyone; the only role that can change
 //                           other people's roles or remove staff
@@ -30,6 +32,7 @@ const ACCOUNTS = [
     { username: 'user', firstName: 'Uma', lastName: 'Newman', role: null, points: 0 },
     { username: 'member', firstName: 'Mina', lastName: 'Reyes', role: 'member', points: 155 },
     { username: 'officer', firstName: 'Ola', lastName: 'Harris', role: 'officer', points: 240 },
+    { username: 'jboard', firstName: 'Jada', lastName: 'Brooks', role: 'jboard', points: 180 },
     { username: 'treasurer', firstName: 'Tess', lastName: 'Nelson', role: 'treasurer', points: 130 },
     { username: 'admin', firstName: 'Ada', lastName: 'White', role: 'admin', points: 310 }
 ]

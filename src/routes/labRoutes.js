@@ -6,7 +6,7 @@ import { POINTS } from '../points.js'
 import { mountRoster } from './roster.js'
 
 const router = express.Router()
-const RANK_OFFICER = ['officer', 'treasurer', 'admin']
+const RANK_OFFICER = ['officer', 'jboard', 'treasurer', 'admin']
 
 // Preview fields — what a member sees BEFORE passing the quiz
 const PREVIEW_SELECT = {

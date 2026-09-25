@@ -101,9 +101,9 @@ export default function OfficerDashboard() {
 	// so it can't disagree with the roster on /students.
 	const [board, setBoard] = useState([])
 
-	// Everyone whose role is plain member, for "Email All" — officers,
-	// treasurers and admins aren't on it, and nor is anyone who's turned
-	// club-wide emails off on /account. Held from the same /members read as
+	// Everyone who wants club-wide email, for "Email All": members unless
+	// they've turned it off, staff only if they've turned it on (the server
+	// works that out — see src/emailPrefs.js). Held from the same /members read as
 	// the board, so the click can open Gmail straight away: a window opened
 	// after waiting on a request gets stopped by the popup blocker.
 	const [memberEmails, setMemberEmails] = useState([])
@@ -128,7 +128,7 @@ export default function OfficerDashboard() {
 				if (!live) return
 				setMemberEmails(
 					rows
-						.filter((row) => row.role === 'member' && row.user?.email && row.user.emailClub !== false)
+						.filter((row) => row.user?.email && row.user.emailClub)
 						.map((row) => row.user.email)
 				)
 				setBoard(
@@ -317,7 +317,7 @@ export default function OfficerDashboard() {
 						type="button"
 						onClick={() => openCompose({ provider: mail.provider, from: mail.email, bcc: memberEmails })}
 						disabled={memberEmails.length === 0}
-						title={`Email all ${memberEmails.length} members`}
+						title={`Email ${memberEmails.length} ${memberEmails.length === 1 ? 'person' : 'people'}`}
 						className="
                         mt-6
 						w-full

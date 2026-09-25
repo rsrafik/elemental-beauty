@@ -1,5 +1,6 @@
 import prisma from '../prismaClient.js'
 import requireRole from '../middleware/requireRole.js'
+import { wantsEmail } from '../emailPrefs.js'
 
 // The officer check-in page's roster, shared by labs and events: the same
 // three columns (not checked in / checked in / waitlist) and the same buttons
@@ -25,6 +26,7 @@ const TAKEN = { attendanceStatus: { in: ['rsvped', 'attended'] } }
 const USER_SELECT = {
     member: {
         select: {
+            role: true,
             user: { select: { username: true, firstName: true, lastName: true, email: true, emailEvents: true } }
         }
     }
@@ -60,8 +62,9 @@ export function mountRoster(router, kind) {
                 firstName: member.user.firstName,
                 lastName: member.user.lastName,
                 // for the page's "email all" — officers only, like the route —
-                // left off for anyone who's opted out of lab & event emails
-                email: member.user.emailEvents ? member.user.email : null
+                // left off for anyone who doesn't want lab & event emails
+                // (their choice, or their role's default: see emailPrefs.js)
+                email: wantsEmail(member.user.emailEvents, member.role) ? member.user.email : null
             })))
         } catch (err) {
             console.error(err.message)

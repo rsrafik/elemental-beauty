@@ -14,9 +14,12 @@ datasource db {
 
 // ---------- Enums ----------
 
+// Ranked in this order (see requireRole.js). J-board has everything an
+// officer has; only an admin can give it (or any staff role) to anyone.
 enum MemberRole {
   member
   officer
+  jboard
   treasurer
   admin
 
@@ -145,8 +148,10 @@ model User {
   // Account mail (the verification link, password resets) goes regardless.
   //   emailClub    the officer dashboard's club-wide "Email All"
   //   emailEvents  a lab or event's "email all", to the people signed up
-  emailClub      Boolean   @default(true) @map("email_club")
-  emailEvents    Boolean   @default(true) @map("email_events")
+  // null = never chosen, which follows the role: members are in, staff are
+  // out until they opt in (see src/emailPrefs.js). true/false = their choice.
+  emailClub      Boolean?  @map("email_club")
+  emailEvents    Boolean?  @map("email_events")
   createdAt      DateTime @default(now()) @map("created_at") @db.Timestamptz()
 
   member        Member?

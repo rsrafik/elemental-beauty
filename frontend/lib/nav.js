@@ -1,4 +1,4 @@
-import { hasRole } from '@/lib/roles'
+import { canSeeAnalytics, hasRole } from '@/lib/roles'
 
 // The sidebar menu, per role. Order here is the order in the sidebar, and the
 // numbers (01, 02, ...) come from that order — so adding an entry renumbers
@@ -19,13 +19,22 @@ const MEMBER_ONLY = [
 
 const OFFICER_ONLY = [
 	{ label: 'students', href: '/students' },
+]
+
+// every officer's but j-board's — see canSeeAnalytics
+const ANALYTICS = [
 	{ label: 'analytics', href: '/analytics' },
 ]
 
 export function navFor(role) {
 	if (!hasRole('member', role)) return BASE
 	if (!hasRole('officer', role)) return [...BASE, ...MEMBER_ONLY]
-	return [...BASE, ...MEMBER_ONLY, ...OFFICER_ONLY]
+	return [
+		...BASE,
+		...MEMBER_ONLY,
+		...OFFICER_ONLY,
+		...(canSeeAnalytics(role) ? ANALYTICS : []),
+	]
 }
 
 // The instagram banner belongs to the member-facing sidebar and follows them

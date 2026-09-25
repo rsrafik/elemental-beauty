@@ -2,7 +2,7 @@
 
 import { useEffect, useRef, useState } from 'react'
 import DashboardShell from '@/components/dashboards/DashboardShell'
-import { hasRole } from '@/lib/roles'
+import { hasRole, roleLabel } from '@/lib/roles'
 import { useRole, useSession } from '@/lib/session'
 import { members as membersApi, auth } from '@/lib/api'
 import { useDismiss } from '@/lib/dismiss'
@@ -60,6 +60,7 @@ const ROLE_INK = {
 	user: 'text-black/45 border-black/25',
 	member: 'text-salmon-dark border-salmon-dark/60',
 	officer: 'text-blue-med border-blue-med/60',
+	jboard: 'text-[#6B4FBF] border-[#6B4FBF]/60',
 	treasurer: 'text-yellow-dark border-yellow-dark/60',
 	admin: 'text-green-dark border-green-dark/60',
 }
@@ -411,7 +412,7 @@ function RoleStamp({ role }) {
 			select-none
 			${ROLE_INK[role] ?? ROLE_INK.user}
 		`}>
-			{role === 'user' ? 'no membership' : role}
+			{role === 'user' ? 'no membership' : roleLabel(role)}
 		</span>
 	)
 }
@@ -1025,6 +1026,7 @@ function Toggle({ label, hint, checked, busy, onChange }) {
 // that confirms your address, password resets — isn't optional and isn't
 // listed.
 function EmailPrefsCard({ user, onSaved, className = '' }) {
+	const staff = hasRole('officer', user?.role)
 	const [prefs, setPrefs] = useState(() => ({
 		emailClub: user?.emailClub !== false,
 		emailEvents: user?.emailEvents !== false,
@@ -1073,6 +1075,7 @@ function EmailPrefsCard({ user, onSaved, className = '' }) {
 			">
 				What officers can send you. Emails about your account — confirming
 				your address, resetting your password — always come through.
+				{staff && ' As staff you start opted out — turn these on if you want them, say for an event you’ve signed up for.'}
 			</p>
 			<div className="
 				mt-3

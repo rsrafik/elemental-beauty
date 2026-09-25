@@ -187,7 +187,7 @@ function Loading() {
 
 // Kept here rather than imported from lib/roles so the gate has no dependency
 // that could reintroduce a hardcoded role.
-const RANK = { user: 0, member: 1, officer: 2, treasurer: 3, admin: 4 }
+const RANK = { user: 0, member: 1, officer: 2, jboard: 3, treasurer: 4, admin: 5 }
 
 function rankAtLeast(role, min) {
 	return (RANK[role] ?? -1) >= (RANK[min] ?? Infinity)

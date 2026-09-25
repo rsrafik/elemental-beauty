@@ -2,7 +2,7 @@
 
 import { useEffect, useRef, useState } from 'react'
 import DashboardShell from '@/components/dashboards/DashboardShell'
-import { hasRole } from '@/lib/roles'
+import { hasRole, roleLabel } from '@/lib/roles'
 import { useRole, useSession } from '@/lib/session'
 import { members as membersApi } from '@/lib/api'
 import { useDismiss } from '@/lib/dismiss'
@@ -28,7 +28,7 @@ import { useDismiss } from '@/lib/dismiss'
 
 // ---- data ------------------------------------------------------------------
 
-const ROLES = ['member', 'officer', 'treasurer', 'admin']
+const ROLES = ['member', 'officer', 'jboard', 'treasurer', 'admin']
 
 // Sorting roles alphabetically would put admin above officer for no reason —
 // rank is the order anyone actually means by "sort by role". Mirrors RANK in
@@ -36,13 +36,15 @@ const ROLES = ['member', 'officer', 'treasurer', 'admin']
 const ROLE_ORDER = {
 	member: 0,
 	officer: 1,
-	treasurer: 2,
-	admin: 3,
+	jboard: 2,
+	treasurer: 3,
+	admin: 4,
 }
 
 const ROLE_PILL = {
 	member: 'bg-salmon-lightest text-salmon-dark',
 	officer: 'bg-blue-light text-blue-med',
+	jboard: 'bg-[#E8DEFF] text-[#6B4FBF]',
 	treasurer: 'bg-yellow-light text-yellow-dark',
 	admin: 'bg-green text-green-dark',
 }
@@ -360,7 +362,7 @@ function RoleTag({ role, title }) {
 			text-xs
 			${ROLE_PILL[role]}
 		`}>
-			{role}
+			{roleLabel(role)}
 		</span>
 	)
 }
@@ -380,7 +382,7 @@ function RolePill({ role, open, onOpen }) {
 			onClick={(event) => onOpen(event.currentTarget.getBoundingClientRect())}
 			aria-haspopup="listbox"
 			aria-expanded={open}
-			aria-label={`Change role, currently ${role}`}
+			aria-label={`Change role, currently ${roleLabel(role)}`}
 			className={`
 				group
 				inline-flex
@@ -405,7 +407,7 @@ function RolePill({ role, open, onOpen }) {
 				${ROLE_PILL[role]}
 			`}
 		>
-			{role}
+			{roleLabel(role)}
 			<ChevronIcon className={`
 				w-2.5
 				h-2.5
@@ -920,7 +922,7 @@ function AddStudentDialog({ roles, onClose, onSave }) {
 						>
 							{roles.map((role) => (
 								<option key={role} value={role}>
-									{role}
+									{roleLabel(role)}
 								</option>
 							))}
 						</select>
@@ -1123,9 +1125,9 @@ function RoleFilter({ roles, onChange }) {
 								<Checkbox
 									checked={roles.includes(role)}
 									onChange={() => toggle(role)}
-									label={role}
+									label={roleLabel(role)}
 								/>
-								{role}
+								{roleLabel(role)}
 							</label>
 						))}
 					</div>
@@ -1688,7 +1690,7 @@ export default function OfficerStudents() {
 												title={
 													canRemove(student)
 														? undefined
-														: `only an admin can remove ${student.role}s`
+														: `only an admin can remove ${roleLabel(student.role)}s`
 												}
 											/>
 										</td>
