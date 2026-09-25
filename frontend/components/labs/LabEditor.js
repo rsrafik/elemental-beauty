@@ -21,6 +21,8 @@ import DateTimeField from '@/components/labs/DateTimeField'
 import { labs as labsApi } from '@/lib/api'
 import { isoDate } from '@/lib/dates'
 import { parseSections } from '@/lib/labContent'
+// cover photos are shrunk before they're sent — see lib/images.js
+import { shrinkImage } from '@/lib/images'
 
 // /labs/edit (a new lab) and /labs/edit?id=N — the officer's lab editor.
 //
@@ -44,11 +46,6 @@ const LG = 1024
 
 // how many empty sections a brand new lab starts with — the mockup's two
 const NEW_SECTIONS = 2
-
-// Cover photos are shrunk before they're sent: they travel inside the lab's
-// JSON as a data URL (there's no file store yet), and a phone photo is
-// megabytes.
-const COVER_MAX = 1600
 
 const BULLET = '• '
 
@@ -158,28 +155,6 @@ function missingFor(form, hasLesson, publishing) {
 	if (!fromSteps(form.sections[0]?.steps ?? '').length) missing.add('section-steps')
 	if (!hasLesson) missing.add('lesson')
 	return missing
-}
-
-function shrinkImage(file) {
-	return new Promise((resolve, reject) => {
-		const reader = new FileReader()
-		reader.onerror = () => reject(new Error('Could not read that image'))
-		reader.onload = () => {
-			const img = new Image()
-			img.onerror = () => reject(new Error('That file isn’t an image'))
-			img.onload = () => {
-				const scale = Math.min(1, COVER_MAX / Math.max(img.width, img.height))
-				if (scale === 1 && file.size < 600_000) return resolve(reader.result)
-				const canvas = document.createElement('canvas')
-				canvas.width = Math.round(img.width * scale)
-				canvas.height = Math.round(img.height * scale)
-				canvas.getContext('2d').drawImage(img, 0, 0, canvas.width, canvas.height)
-				resolve(canvas.toDataURL('image/jpeg', 0.85))
-			}
-			img.src = reader.result
-		}
-		reader.readAsDataURL(file)
-	})
 }
 
 // ---- pieces ----------------------------------------------------------------

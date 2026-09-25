@@ -24,6 +24,7 @@ import {
 	SummaryCard,
 } from '@/components/analytics/parts'
 import { finances as financesApi, yearTargets } from '@/lib/api'
+import { RECEIPT_MAX, shrinkImage } from '@/lib/images'
 import {
 	EXPENSE_CATEGORIES,
 	EXPENSE_BUDGET,
@@ -73,9 +74,8 @@ import {
 // either way — fixing what was wrong and sending it back is the same act as
 // filing it in the first place.
 //
-// The picked photo is held as an object URL for the preview. Nothing uploads
-// yet — it rides along on the request so the thumbnail has something to draw
-// once this is posting to the API.
+// The picked photo is held as a data URL (shrunk — see lib/images.js), which
+// is both the preview and what's sent: the request stores it as-is.
 function ReceiptDialog({ request, onClose, onSave }) {
 	// every way out of this dialog goes through dismiss, so the card animates
 	// away whether it was cancelled or sent
@@ -94,13 +94,19 @@ function ReceiptDialog({ request, onClose, onSave }) {
 	const set = (field) => (event) =>
 		setForm((previous) => ({ ...previous, [field]: event.target.value }))
 
+	// Shrunk and turned into a data URL straight away. It used to be an object
+	// URL (blob:…), which only means anything inside this one tab — the
+	// treasurer opening the receipt got a broken image. The data URL is the
+	// photo itself, so it survives being stored and read back anywhere.
+	const [imageError, setImageError] = useState(null)
 	const pickImage = (event) => {
 		const file = event.target.files?.[0]
 		if (!file) return
-		setImage((previous) => {
-			if (previous?.preview) URL.revokeObjectURL(previous.preview)
-			return { file, preview: URL.createObjectURL(file) }
-		})
+		event.target.value = ''
+		setImageError(null)
+		shrinkImage(file, RECEIPT_MAX)
+			.then((preview) => setImage({ preview }))
+			.catch((err) => setImageError(err.message))
 	}
 
 	const amount = Number(form.amount)
@@ -313,6 +319,16 @@ function ReceiptDialog({ request, onClose, onSave }) {
 							/>
 						</label>
 					</div>
+					{imageError && (
+						<p className="
+							mt-2
+							font-vietnam
+							text-sm
+							text-salmon-dark
+						">
+							{imageError}
+						</p>
+					)}
 				</div>
 			</div>
 

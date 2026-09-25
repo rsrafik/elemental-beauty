@@ -7,6 +7,7 @@ import DashboardShell from '@/components/dashboards/DashboardShell'
 import { eventCategories, events as eventsApi } from '@/lib/api'
 import { isoDate, prettyTime } from '@/lib/dates'
 import { splitByDate, CompletedDivider, COMPLETED_CARD } from '@/components/CardSections'
+import { COVER_MAX, shrinkImage } from '@/lib/images'
 
 // /events for officer / treasurer / admin: every event on one sheet. Clicking
 // a card opens its check-in page; the dots in its corner edit it.
@@ -445,9 +446,8 @@ function EventDialog({ event, categories, onClose, onSave, onDelete }) {
 	const pickImage = (changed) => {
 		const file = changed.target.files?.[0]
 		if (!file) return
-		const reader = new FileReader()
-		reader.onload = () => setImage(reader.result)
-		reader.readAsDataURL(file)
+		// shrunk first — a phone photo is megabytes (see lib/images.js)
+		shrinkImage(file, COVER_MAX).then(setImage).catch(() => {})
 		// so picking the same file twice still fires a change
 		changed.target.value = ''
 	}
