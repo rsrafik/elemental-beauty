@@ -5,10 +5,10 @@ import { useRouter } from 'next/navigation'
 import { useDismiss } from '@/lib/dismiss'
 import DashboardShell from '@/components/dashboards/DashboardShell'
 import { eventCategories, events as eventsApi } from '@/lib/api'
-import { isoDate } from '@/lib/dates'
+import { isoDate, prettyTime } from '@/lib/dates'
 
-// /events for officer / treasurer / admin: every event on one sheet, each one
-// editable from the dots in its corner.
+// /events for officer / treasurer / admin: every event on one sheet. Clicking
+// a card opens its check-in page; the dots in its corner edit it.
 //
 // Same page as /labs for officers — cards with a dots menu, a + in the header,
 // one dialog serving both — but the dialog is the calendar's new-event form:
@@ -45,6 +45,8 @@ function toCard(event) {
 		type: event.type,
 		image: event.image,
 		description: event.description ?? '',
+		capacity: event.capacity ?? null,
+		location: event.location ?? '',
 	}
 }
 
@@ -116,15 +118,23 @@ function CloseIcon({ className = '' }) {
 
 // The member card with one substitution: the corner holds a control instead of
 // a status icon.
-function EventCard({ title, date, image, onEdit }) {
+function EventCard({ title, date, time, location, image, onOpen, onEdit }) {
 	return (
-		<div className="
+		<div
+			role="link"
+			tabIndex={0}
+			onClick={onOpen}
+			onKeyDown={(event) => {
+				if (event.key === 'Enter') onOpen()
+			}}
+			className="
 			group
 			relative
 			bg-white
 			rounded-[10px]
 			p-3
 			pb-4
+			cursor-pointer
 			shadow-[0_4px_10px_rgba(0,0,0,0.15)]
 			transition-all
 			duration-200
@@ -133,7 +143,8 @@ function EventCard({ title, date, image, onEdit }) {
 			hover:shadow-[-5px_5px_5px_rgba(0,0,0,0.5)]
 			active:translate-y-0
 			active:shadow-[0_4px_10px_rgba(0,0,0,0.15)]
-		">
+		"
+		>
 			<div className="
 				aspect-[4/3]
 				w-full
@@ -173,21 +184,31 @@ function EventCard({ title, date, image, onEdit }) {
 					">
 						{title}
 					</p>
-					<p className="
-						font-vietnam
-						text-black/70
-						text-xs
-						sm:text-sm
-						mt-1
-						truncate
-					">
-						{prettyDate(date)}
-					</p>
+					{/* date, time and room, a row each — whichever it has */}
+					<div className="mt-1">
+						{[prettyDate(date), prettyTime(time), location].filter(Boolean).map((line) => (
+							<p
+								key={line}
+								className="
+									font-vietnam
+									text-black/70
+									text-xs
+									sm:text-sm
+									truncate
+								"
+							>
+								{line}
+							</p>
+						))}
+					</div>
 				</div>
 
 				<button
 					type="button"
-					onClick={onEdit}
+					onClick={(clicked) => {
+						clicked.stopPropagation()
+						onEdit()
+					}}
 					aria-label={`Edit ${title}`}
 					className="
 						w-7
@@ -394,6 +415,8 @@ function EventDialog({ event, categories, onClose, onSave, onDelete }) {
 		categoryId: event?.categoryId ?? categories[0]?.categoryId ?? '',
 		track: event?.track ?? 'members',
 		description: event?.description ?? '',
+		spots: event?.capacity == null ? '' : String(event.capacity),
+		location: event?.location ?? '',
 	})
 	const [image, setImage] = useState(event?.image ?? null)
 	const [confirmingDelete, setConfirmingDelete] = useState(false)
@@ -427,7 +450,9 @@ function EventDialog({ event, categories, onClose, onSave, onDelete }) {
 		changed.target.value = ''
 	}
 
-	const ready = form.title.trim() !== '' && form.date !== ''
+	// blank = unlimited; anything else has to be a whole number of seats
+	const spotsOk = form.spots.trim() === '' || (Number.isInteger(Number(form.spots)) && Number(form.spots) > 0)
+	const ready = form.title.trim() !== '' && form.date !== '' && spotsOk
 
 	const submit = (submitted) => {
 		submitted.preventDefault()
@@ -607,6 +632,40 @@ function EventDialog({ event, categories, onClose, onSave, onDelete }) {
 									</option>
 								))}
 							</select>
+						</label>
+					</div>
+
+					<div className="
+						grid
+						grid-cols-1
+						sm:grid-cols-2
+						gap-4
+					">
+						<label className="block">
+							<Label>location</Label>
+							<input
+								type="text"
+								value={form.location}
+								onChange={set('location')}
+								placeholder="WTHR 200"
+								className={FIELD}
+							/>
+						</label>
+
+						{/* optional: set it and rsvps stop at that many, with a
+						    waitlist after; leave it blank for no limit */}
+						<label className="block">
+							<Label>available spots</Label>
+							<input
+								type="number"
+								min="1"
+								step="1"
+								inputMode="numeric"
+								value={form.spots}
+								onChange={set('spots')}
+								placeholder="blank = unlimited"
+								className={`${FIELD} ${spotsOk ? '' : 'border-red focus:border-red'}`}
+							/>
 						</label>
 					</div>
 
@@ -860,6 +919,8 @@ export default function OfficerEvents({ openNew = false }) {
 			track: values.track,
 			description: values.description,
 			image: values.image,
+			capacity: values.spots.trim() === '' ? null : Number(values.spots),
+			location: values.location.trim() || null,
 		}
 
 		setError(null)
@@ -963,7 +1024,10 @@ export default function OfficerEvents({ openNew = false }) {
 						key={row.id}
 						title={row.title}
 						date={row.date}
+						time={row.time}
+						location={row.location}
 						image={row.image}
+						onOpen={() => router.push(`/events/view?id=${row.id}`)}
 						onEdit={() => setEditing({ event: row })}
 					/>
 				))}

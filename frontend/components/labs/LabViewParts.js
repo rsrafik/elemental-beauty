@@ -261,7 +261,8 @@ const BACK_CLASS = `
 	active:translate-x-0
 `
 
-// Always back to the labs dashboard. Above `lg` it's pinned to the window's
+// Back to the labs dashboard, or wherever `href` says (the event check-in
+// page goes back to /events). Above `lg` it's pinned to the window's
 // top-right corner the way the design has it — 28px down, 26px in, 32px
 // square on the 1410 frame — and portalled to <body> so neither the scroll
 // column nor its entrance animation gets to move it. Below `lg` the sticky
@@ -273,7 +274,7 @@ const BACK_CLASS = `
 // back by the zoom because `zoom` multiplies top/right as well.
 const SHELL_PAD = 32
 
-export function BackButton() {
+export function BackButton({ href = '/labs', label = 'Back to labs' }) {
 	const zoom = useDesignZoom()
 	const mounted = useSyncExternalStore(subscribe, () => true, () => false)
 	const top = (SHELL_PAD - 4 * zoom) / zoom
@@ -288,8 +289,8 @@ export function BackButton() {
 				lg:hidden
 			">
 				<Link
-					href="/labs"
-					aria-label="Back to labs"
+					href={href}
+					aria-label={label}
 					className={`w-8 h-8 ${BACK_CLASS}`}
 				>
 					<BackArrowIcon className="w-8 h-8" />
@@ -298,8 +299,8 @@ export function BackButton() {
 
 			{mounted && createPortal(
 				<Link
-					href="/labs"
-					aria-label="Back to labs"
+					href={href}
+					aria-label={label}
 					style={{ zoom, top, right }}
 					className={`
 						hidden

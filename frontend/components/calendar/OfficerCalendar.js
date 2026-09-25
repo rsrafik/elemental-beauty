@@ -732,6 +732,8 @@ function EventDialog({ categories, onClose, onSave }) {
 		categoryId: categories[0]?.categoryId ?? '',
 		track: 'members',
 		description: '',
+		spots: '',
+		location: '',
 	})
 	const [image, setImage] = useState(null) // { file, preview }
 
@@ -756,7 +758,9 @@ function EventDialog({ categories, onClose, onSave }) {
 		})
 	}
 
-	const ready = form.title.trim() !== '' && form.date !== ''
+	// blank = unlimited; anything else has to be a whole number of seats
+	const spotsOk = form.spots.trim() === '' || (Number.isInteger(Number(form.spots)) && Number(form.spots) > 0)
+	const ready = form.title.trim() !== '' && form.date !== '' && spotsOk
 
 	const submit = (event) => {
 		event.preventDefault()
@@ -938,6 +942,40 @@ function EventDialog({ categories, onClose, onSave }) {
 						</label>
 					</div>
 
+					<div className="
+						grid
+						grid-cols-1
+						sm:grid-cols-2
+						gap-4
+					">
+						<label className="block">
+							<Label>location</Label>
+							<input
+								type="text"
+								value={form.location}
+								onChange={set('location')}
+								placeholder="WTHR 200"
+								className={FIELD}
+							/>
+						</label>
+
+						{/* optional: set it and rsvps stop at that many, with a
+						    waitlist after; leave it blank for no limit */}
+						<label className="block">
+							<Label>available spots</Label>
+							<input
+								type="number"
+								min="1"
+								step="1"
+								inputMode="numeric"
+								value={form.spots}
+								onChange={set('spots')}
+								placeholder="blank = unlimited"
+								className={`${FIELD} ${spotsOk ? '' : 'border-red focus:border-red'}`}
+							/>
+						</label>
+					</div>
+
 					<label className="block">
 						<Label>description</Label>
 						<textarea
@@ -1103,7 +1141,8 @@ export default function OfficerCalendar() {
 	const load = () =>
 		Promise.all([labsApi.list(), eventsApi.list(), eventCategories.list()])
 			.then(([labs, events, tags]) => {
-				const built = buildMonths(labs, events)
+				// drafts aren't happening yet — they stay on /labs until published
+				const built = buildMonths(labs.filter((lab) => lab.published !== false), events)
 				setMonths(built)
 				setCategories(tags)
 				setTypes(typesIn(built, tags))
@@ -1180,7 +1219,7 @@ export default function OfficerCalendar() {
 	// `type` — official or social, which is what attendance is scored on — isn't
 	// on this form, so a new event takes 'social'. Change it from /events, where
 	// the same event has a full editor.
-	const saveEvent = async ({ title, date, time, categoryId, track, description, image }) => {
+	const saveEvent = async ({ title, date, time, categoryId, track, description, image, spots, location }) => {
 		setError(null)
 		try {
 			await eventsApi.create({
@@ -1191,6 +1230,8 @@ export default function OfficerCalendar() {
 				track,
 				description,
 				image,
+				capacity: spots.trim() === '' ? null : Number(spots),
+				location: location.trim() || null,
 				type: 'social',
 			})
 			await load()

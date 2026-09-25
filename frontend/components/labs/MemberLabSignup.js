@@ -27,7 +27,9 @@ export default function MemberLabSignup({ lab, ended, onChange }) {
 	const mine = pending ?? lab.mine
 	const going = mine === 'rsvped'
 	const waitlisted = mine === 'waitlisted'
-	const left = Math.max(0, lab.capacity - lab.taken)
+	// null capacity = unlimited seats: never full, and no count to show
+	const unlimited = lab.capacity == null
+	const left = unlimited ? Infinity : Math.max(0, lab.capacity - lab.taken)
 
 	const toggle = async () => {
 		if (busy) return
@@ -72,7 +74,8 @@ export default function MemberLabSignup({ lab, ended, onChange }) {
 		)
 	} else {
 		button = <ChunkyButton tone="red" onClick={toggle}>SIGN UP</ChunkyButton>
-		caption = left > 0
+		if (unlimited) caption = null
+		else caption = left > 0
 			? `${left}/${lab.capacity} spots left!`
 			: 'the lab is full — signing up puts you on the waitlist'
 	}
@@ -86,7 +89,7 @@ export default function MemberLabSignup({ lab, ended, onChange }) {
 				mt-[50px]
 			">
 				{button}
-				<ButtonCaption>{caption}</ButtonCaption>
+				{caption && <ButtonCaption>{caption}</ButtonCaption>}
 				{error && (
 					<p className="
 						font-vietnam

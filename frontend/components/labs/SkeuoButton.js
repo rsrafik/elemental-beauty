@@ -31,6 +31,9 @@ export default function SkeuoButton({
 	innerShadowColor = '#CECFD1',
 	disabled = false,
 	className = '',
+	// the label's type — the lab tabs' 22px medium unless a page says otherwise
+	textClassName = 'font-medium text-[22px]',
+	type = 'button',
 	...rest
 }) {
 	// slightly darker at the bottom, the base colour at 80%, a hair lighter at
@@ -55,7 +58,7 @@ export default function SkeuoButton({
 	return (
 		<div className={`relative overflow-visible ${className}`}>
 			<button
-				type="button"
+				type={type}
 				className="skeuo-btn"
 				disabled={disabled}
 				onClick={onClick}
@@ -71,17 +74,16 @@ export default function SkeuoButton({
 				}}
 				{...rest}
 			>
-				<span className="
+				<span className={`
 					block
 					w-full
 					m-0
 					text-center
 					whitespace-nowrap
 					font-vietnam
-					font-medium
-					text-[22px]
 					leading-[1]
-				">
+					${textClassName}
+				`}>
 					{children}
 				</span>
 			</button>

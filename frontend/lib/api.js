@@ -166,6 +166,13 @@ export const events = {
 	remove: (id) => api(`/events/${id}`, { method: 'DELETE' }),
 	rsvp: (id) => api(`/events/${id}/rsvp`, { method: 'POST' }),
 	unrsvp: (id) => api(`/events/${id}/rsvp`, { method: 'DELETE' }),
+	get: (id) => api(`/events/${id}`),
+
+	// Officers, on the check-in page — see src/routes/roster.js.
+	roster: (id) => api(`/events/${id}/roster`),
+	// action: checkin | uncheck | admit | remove (with memberId) or add (with username)
+	rosterAction: (id, body) => api(`/events/${id}/roster`, { method: 'POST', body }),
+	checkin: (id, qrToken) => api(`/events/${id}/checkin`, { method: 'POST', body: { qrToken } }),
 }
 
 export const labs = {
@@ -213,6 +220,19 @@ export const labs = {
 		return payload
 	},
 	removeLesson: (id) => api(`/labs/${id}/lesson`, { method: 'DELETE' }),
+
+	// Officers, on the check-in page — see src/routes/roster.js.
+	roster: (id) => api(`/labs/${id}/roster`),
+	// action: checkin | uncheck | admit | remove (with memberId) or add (with username)
+	rosterAction: (id, body) => api(`/labs/${id}/roster`, { method: 'POST', body }),
+	checkin: (id, qrToken) => api(`/labs/${id}/checkin`, { method: 'POST', body: { qrToken } }),
+
+	// Officers, on the quiz editor. The read carries the answer key and any
+	// unpublished draft; the save is the whole quiz, as a draft or published.
+	quizForEdit: (id) => api(`/labs/${id}/quiz/edit`),
+	saveQuiz: (id, questions, publish) =>
+		api(`/labs/${id}/quiz`, { method: 'PUT', body: { questions, publish } }),
+	discardQuizDraft: (id) => api(`/labs/${id}/quiz/draft`, { method: 'DELETE' }),
 }
 
 export const finances = {

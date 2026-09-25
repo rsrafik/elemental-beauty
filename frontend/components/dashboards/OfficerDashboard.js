@@ -143,7 +143,8 @@ export default function OfficerDashboard() {
 				if (!live) return
 				const now = today()
 				const soon = [
-					...labs.map((lab) => ({
+					// drafts aren't happening yet — they stay on /labs until published
+					...labs.filter((lab) => lab.published !== false).map((lab) => ({
 						id: `lab-${lab.labId}`,
 						date: isoDate(lab.date),
 						time: '',

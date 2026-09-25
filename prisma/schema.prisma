@@ -190,14 +190,18 @@ model Announcement {
 model Lab {
   labId        Int      @id @default(autoincrement()) @map("lab_id")
   title        String
-  date         DateTime @db.Date
+  // Only a draft can be without one — publishing needs a date (see
+  // PUT /api/labs/:id), and members only ever see published labs.
+  date         DateTime? @db.Date
   // 'HH:MM', same as events.start_time — the member view uses it to decide
   // when the lab has started and check-in (the QR) takes over from the RSVP.
   // Null means the lab counts as started from the beginning of its day.
   startTime    String?  @map("start_time") @db.VarChar(5)
   // The room, as printed on the header line ('WTHR 200').
   location     String?
-  capacity     Int      @default(20)
+  // null = unlimited seats, same as events.capacity — the edit page's
+  // "seats available" is optional
+  capacity     Int?
   description  String?
   image        String?
   ingredients  String?
@@ -211,6 +215,17 @@ model Lab {
   // download button saves it as, and doubles as "is there a lesson at all".
   lessonPdf     Bytes?  @map("lesson_pdf")
   lessonPdfName String? @map("lesson_pdf_name")
+  // A lab saved with "save draft" and never published is hidden from
+  // members entirely. Existing labs were all live, hence the default.
+  published     Boolean @default(true)
+  // "save draft" on a lab that's already live can't touch the live row —
+  // members are signed up to it — so the edits wait here, in the same shape
+  // PUT /labs/:id takes, until they're published or discarded.
+  draft         Json?
+  // The same for the quiz: its editor's unpublished questions, as
+  // [{ question, options: [{ answerText, isCorrect }] }]. Members only ever
+  // see the published lab_quiz_questions.
+  quizDraft     Json?   @map("quiz_draft")
 
   lessons       LabLesson[]
   quizQuestions LabQuizQuestion[]
@@ -287,6 +302,9 @@ model Event {
   // what the calendar prints. Null for something with no clock time on it —
   // a deadline, say. A CHECK constraint holds the format (see migrations).
   startTime   String?    @map("start_time") @db.VarChar(5)
+  // The room, as on a lab ('WTHR 200'). Optional — plenty of events are
+  // online or somewhere that isn't a room.
+  location    String?
   image       String?
   capacity    Int? // null = unlimited seats
 

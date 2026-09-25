@@ -1,18 +1,18 @@
 'use client'
 
-import { useEffect, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { useDismiss } from '@/lib/dismiss'
 import DashboardShell from '@/components/dashboards/DashboardShell'
 import { labs as labsApi } from '@/lib/api'
-import { isoDate } from '@/lib/dates'
+import { isoDate, prettyTime } from '@/lib/dates'
 
-// /labs for officer / treasurer / admin: every lab on one sheet, each one
-// editable from the dots in its corner.
+// /labs for officer / treasurer / admin: every lab on one sheet.
 //
 // Same card as the member page — photo, name, date — with the status icon in
-// the bottom-right swapped for the dots menu. The dots and the + in the header
-// open the same dialog: + starts an empty one, the dots load that card into it.
+// the bottom-right swapped for a dots menu. Clicking the card opens the lab's
+// check-in page; the dots offer its two editors (the lab, and its quiz) and
+// delete. The + in the header opens the lab editor on a new lab.
 
 // ---- data ------------------------------------------------------------------
 
@@ -24,8 +24,12 @@ function toCard(lab) {
 		id: lab.labId,
 		title: lab.title,
 		date: isoDate(lab.date),
+		time: lab.startTime ?? '',
+		location: lab.location ?? '',
 		image: lab.image,
 		description: lab.description ?? '',
+		published: lab.published !== false,
+		hasDraft: Boolean(lab.hasDraft),
 	}
 }
 
@@ -78,44 +82,137 @@ function PlusIcon({ className = '' }) {
 	)
 }
 
-function CloseIcon({ className = '' }) {
+// ---- card ----------------------------------------------------------------
+
+const MENU_ITEM = `
+	block
+	w-full
+	text-left
+	rounded-[8px]
+	px-3
+	py-2
+	font-vietnam
+	font-semibold
+	text-sm
+	cursor-pointer
+	transition-colors
+	duration-150
+	ease-out
+`
+
+// The dots' menu, over the bottom of the photo so the name stays readable. Closes on a click
+// anywhere else or Escape.
+function CardMenu({ title, onQuiz, onEdit, onDelete, onClose }) {
+	const ref = useRef(null)
+
+	useEffect(() => {
+		const onDown = (event) => {
+			if (!ref.current?.contains(event.target)) onClose()
+		}
+		const onKey = (event) => {
+			if (event.key === 'Escape') onClose()
+		}
+		// on the next tick, so the click that opened it doesn't close it
+		const timer = setTimeout(() => window.addEventListener('pointerdown', onDown))
+		window.addEventListener('keydown', onKey)
+		return () => {
+			clearTimeout(timer)
+			window.removeEventListener('pointerdown', onDown)
+			window.removeEventListener('keydown', onKey)
+		}
+	}, [onClose])
+
 	return (
-		<svg
-			viewBox="0 0 24 24"
-			fill="none"
-			stroke="currentColor"
-			strokeWidth="2.5"
-			strokeLinecap="round"
-			className={className}
-			aria-hidden="true"
+		<div
+			ref={ref}
+			role="menu"
+			aria-label={`${title} options`}
+			onClick={(event) => event.stopPropagation()}
+			className="
+				menu-open
+				absolute
+				right-2
+				bottom-[68px]
+				z-30
+				w-44
+				rounded-[14px]
+				bg-white
+				p-2
+				shadow-[0_10px_30px_rgba(0,0,0,0.2)]
+				[transform-origin:bottom_right]
+			"
 		>
-			<path d="M6 6l12 12M18 6L6 18" />
-		</svg>
+			<button type="button" role="menuitem" onClick={onQuiz} className={`${MENU_ITEM} text-black hover:bg-cream`}>
+				edit lab quiz
+			</button>
+			<button type="button" role="menuitem" onClick={onEdit} className={`${MENU_ITEM} text-black hover:bg-cream`}>
+				edit lab
+			</button>
+			<div className="
+				my-1
+				h-px
+				bg-black/10
+			" />
+			<button type="button" role="menuitem" onClick={onDelete} className={`${MENU_ITEM} text-red hover:bg-red/10`}>
+				delete lab
+			</button>
+		</div>
 	)
 }
 
-// ---- card ------------------------------------------------------------------
-
-// The member card with one substitution: the corner holds a control instead of
-// a status icon.
-function LabCard({ title, date, image, onEdit }) {
+// A live lab with unpublished edits waiting says so across its photo. (A lab
+// that's only ever been a draft doesn't need to — its whole card is purple.)
+function DraftTag({ published, hasDraft }) {
+	if (!published || !hasDraft) return null
 	return (
-		<div className="
-			group
-			relative
-			bg-white
-			rounded-[10px]
-			p-3
-			pb-4
-			shadow-[0_4px_10px_rgba(0,0,0,0.15)]
-			transition-all
-			duration-200
-			ease-out
-			hover:-translate-y-1
-			hover:shadow-[-5px_5px_5px_rgba(0,0,0,0.5)]
-			active:translate-y-0
-			active:shadow-[0_4px_10px_rgba(0,0,0,0.15)]
+		<span className="
+			absolute
+			left-5
+			top-5
+			rounded-full
+			bg-yellow-light
+			px-2.5
+			py-0.5
+			font-vietnam
+			font-semibold
+			text-[11px]
+			text-[#8A7500]
+			shadow-[0_2px_6px_rgba(0,0,0,0.15)]
 		">
+			unpublished edits
+		</span>
+	)
+}
+
+// Drafts — labs members can't see yet — are light purple instead of white.
+function LabCard({ lab, onOpen, menu, onMenu }) {
+	const { title, date, time, location, image } = lab
+	return (
+		<div
+			role="link"
+			tabIndex={0}
+			onClick={onOpen}
+			onKeyDown={(event) => {
+				if (event.key === 'Enter') onOpen()
+			}}
+			className={`
+				group
+				relative
+				${lab.published ? 'bg-white' : 'bg-[#E8DEFF]'}
+				rounded-[10px]
+				p-3
+				pb-4
+				cursor-pointer
+				shadow-[0_4px_10px_rgba(0,0,0,0.15)]
+				transition-all
+				duration-200
+				ease-out
+				hover:-translate-y-1
+				hover:shadow-[-5px_5px_5px_rgba(0,0,0,0.5)]
+				active:translate-y-0
+				active:shadow-[0_4px_10px_rgba(0,0,0,0.15)]
+			`}
+		>
 			<div className="
 				aspect-[4/3]
 				w-full
@@ -136,6 +233,7 @@ function LabCard({ title, date, image, onEdit }) {
 					/>
 				)}
 			</div>
+			<DraftTag published={lab.published} hasDraft={lab.hasDraft} />
 
 			<div className="
 				mt-3
@@ -155,22 +253,34 @@ function LabCard({ title, date, image, onEdit }) {
 					">
 						{title}
 					</p>
-					<p className="
-						font-vietnam
-						text-black/70
-						text-xs
-						sm:text-sm
-						mt-1
-						truncate
-					">
-						{prettyDate(date)}
-					</p>
+					{/* date, time and room, a row each — whichever it has */}
+					<div className="mt-1">
+						{[prettyDate(date), prettyTime(time), location].filter(Boolean).map((line) => (
+							<p
+								key={line}
+								className="
+									font-vietnam
+									text-black/70
+									text-xs
+									sm:text-sm
+									truncate
+								"
+							>
+								{line}
+							</p>
+						))}
+					</div>
 				</div>
 
 				<button
 					type="button"
-					onClick={onEdit}
-					aria-label={`Edit ${title}`}
+					onClick={(event) => {
+						event.stopPropagation()
+						onMenu()
+					}}
+					aria-label={`${title} options`}
+					aria-haspopup="menu"
+					aria-expanded={Boolean(menu)}
 					className="
 						w-7
 						h-7
@@ -190,46 +300,15 @@ function LabCard({ title, date, image, onEdit }) {
 					<DotsIcon className="w-4 h-4" />
 				</button>
 			</div>
+
+			{menu}
 		</div>
 	)
 }
 
-// ---- dialog ----------------------------------------------------------------
+// ---- delete ----------------------------------------------------------------
 
-const FIELD = `
-	w-full
-	rounded-[10px]
-	border
-	border-black/25
-	bg-white
-	px-4
-	py-2.5
-	font-vietnam
-	text-sm
-	text-black
-	outline-none
-	transition-colors
-	duration-200
-	focus:border-black
-`
-
-function Label({ children }) {
-	return (
-		<span className="
-			block
-			font-vietnam
-			text-[11px]
-			uppercase
-			tracking-[0.12em]
-			text-black/50
-			mb-1.5
-		">
-			{children}
-		</span>
-	)
-}
-
-// Sits on top of the edit dialog, so it needs to clear that layer's z-50.
+// Asked before a lab goes, from the card's menu.
 function ConfirmDeleteDialog({ label, onCancel, onConfirm }) {
 	// dismiss plays the exit animation and then closes for real — lib/dismiss.js
 	const { closing, dismiss } = useDismiss()
@@ -354,378 +433,21 @@ function ConfirmDeleteDialog({ label, onCancel, onConfirm }) {
 	)
 }
 
-// Mounted only while open, so it always starts from whatever `lab` it was
-// handed — an existing row to edit, or nothing for a new one.
-//
-// The picked image is held as an object URL, which is enough to draw it on the
-// card. Swap it for the uploaded path once /labs is posting to the API.
-//
-// `onDelete` only comes in when there's a lab to delete, which is what puts the
-// delete button on the footer.
-function LabDialog({ lab, onClose, onSave, onDelete }) {
-	// dismiss plays the exit animation and then closes for real — lib/dismiss.js
-	const { closing, dismiss } = useDismiss()
-	const close = () => dismiss(onClose)
-
-	const [form, setForm] = useState({
-		title: lab?.title ?? '',
-		date: lab?.date ?? '',
-		description: lab?.description ?? '',
-	})
-	const [image, setImage] = useState(lab?.image ?? null)
-	const [confirmingDelete, setConfirmingDelete] = useState(false)
-
-	const set = (field) => (event) =>
-		setForm((prev) => ({ ...prev, [field]: event.target.value }))
-
-	// Escape closes, same as the backdrop — but not while the delete
-	// confirmation is up, or one keypress would dismiss both layers at once.
-	useEffect(() => {
-		const onKey = (event) => {
-			if (event.key === 'Escape' && !confirmingDelete) close()
-		}
-		window.addEventListener('keydown', onKey)
-		return () => window.removeEventListener('keydown', onKey)
-	})
-
-	// Read as a data URL rather than an object URL. An object URL only exists
-	// for as long as this tab does, so a picture saved that way would come back
-	// broken on the next load — a data URL is the actual bytes and survives.
-	//
-	// It's a stopgap: a photo inlined into a TEXT column is a big row and a big
-	// response. It becomes a path the moment there's somewhere to upload to.
-	const pickImage = (event) => {
-		const file = event.target.files?.[0]
-		if (!file) return
-		const reader = new FileReader()
-		reader.onload = () => setImage(reader.result)
-		reader.readAsDataURL(file)
-		// so picking the same file twice still fires a change
-		event.target.value = ''
-	}
-
-	const ready = form.title.trim() !== '' && form.date !== ''
-
-	const submit = (event) => {
-		event.preventDefault()
-		if (!ready) return
-		dismiss(() =>
-			onSave({
-				...form,
-				title: form.title.trim(),
-				description: form.description.trim(),
-				image,
-			})
-		)
-	}
-
-	return (
-		<div
-			className={`
-				fixed
-				inset-0
-				z-50
-				flex
-				items-center
-				justify-center
-				bg-black/40
-				p-4
-				sm:p-8
-				${closing ? 'dialog-leaving' : 'dialog-open'}
-			`}
-			onClick={close}
-		>
-			{/* the card swallows clicks so only the backdrop itself closes */}
-			<form
-				onClick={(event) => event.stopPropagation()}
-				onSubmit={submit}
-				role="dialog"
-				aria-modal="true"
-				aria-label={lab ? 'Edit lab' : 'New lab'}
-				className="
-					w-full
-					max-w-[560px]
-					max-h-[90dvh]
-					overflow-y-auto
-					max-h-[85vh]
-					overflow-y-auto
-					bg-cream
-					rounded-[20px]
-					p-8
-					shadow-[0_10px_40px_rgba(0,0,0,0.35)]
-				"
-			>
-				<div className="
-					flex
-					items-start
-					justify-between
-					gap-4
-				">
-					<h2 className="
-						font-beachday
-						text-black
-						text-[38px]
-						leading-none
-					">
-						{lab ? 'edit lab' : 'new lab'}
-					</h2>
-					<button
-						type="button"
-						onClick={close}
-						aria-label="Close"
-						className="
-							w-9
-							h-9
-							shrink-0
-							flex
-							items-center
-							justify-center
-							rounded-full
-							bg-black
-							text-cream
-							cursor-pointer
-							transition-all
-							duration-200
-							ease-out
-							hover:brightness-125
-							active:scale-95
-						"
-					>
-						<CloseIcon className="w-4 h-4" />
-					</button>
-				</div>
-
-				<div className="
-					mt-6
-					flex
-					flex-col
-					gap-4
-				">
-					<label className="block">
-						<Label>name</Label>
-						<input
-							type="text"
-							value={form.title}
-							onChange={set('title')}
-							placeholder="Lip Gloss"
-							className={FIELD}
-						/>
-					</label>
-
-					<label className="block">
-						<Label>date</Label>
-						<input
-							type="date"
-							value={form.date}
-							onChange={set('date')}
-							className={FIELD}
-						/>
-					</label>
-
-					<label className="block">
-						<Label>description</Label>
-						<textarea
-							value={form.description}
-							onChange={set('description')}
-							rows={3}
-							placeholder="What members will make, what to bring."
-							className={`${FIELD} resize-none`}
-						/>
-					</label>
-
-					<div>
-						<Label>picture</Label>
-						<div className="
-							flex
-							items-center
-							gap-4
-						">
-							<div className="
-								w-20
-								h-20
-								shrink-0
-								rounded-[10px]
-								overflow-hidden
-								bg-white
-								border
-								border-black/25
-							">
-								{image && (
-									<img
-										src={image}
-										alt=""
-										className="
-											w-full
-											h-full
-											object-cover
-										"
-									/>
-								)}
-							</div>
-							<label className="
-								inline-flex
-								items-center
-								rounded-full
-								border
-								border-black/70
-								px-4
-								py-1.5
-								font-vietnam
-								text-sm
-								text-black
-								cursor-pointer
-								transition-all
-								duration-200
-								ease-out
-								hover:-translate-y-0.5
-								hover:shadow-lg
-								hover:shadow-black/10
-							">
-								{image ? 'change picture' : 'choose picture'}
-								<input
-									type="file"
-									accept="image/*"
-									onChange={pickImage}
-									className="hidden"
-								/>
-							</label>
-						</div>
-					</div>
-				</div>
-
-				{/* delete sits apart from the pair on the right, so it can't be hit
-				    while reaching for save */}
-				<div className="
-					mt-8
-					flex
-					items-center
-					justify-between
-					gap-3
-				">
-					{onDelete ? (
-						<button
-							type="button"
-							onClick={() => setConfirmingDelete(true)}
-							className="
-								rounded-full
-								border
-								border-red
-								px-6
-								py-2
-								font-vietnam
-								font-semibold
-								text-sm
-								text-red
-								cursor-pointer
-								transition-all
-								duration-200
-								ease-out
-								hover:bg-red
-								hover:text-white
-								hover:-translate-y-0.5
-								hover:shadow-lg
-								hover:shadow-black/10
-								active:translate-y-0
-								active:shadow-none
-							"
-						>
-							delete lab
-						</button>
-					) : (
-						<span />
-					)}
-
-					<div className="
-						flex
-						gap-3
-					">
-					<button
-						type="button"
-						onClick={close}
-						className="
-							rounded-full
-							border
-							border-black/70
-							px-6
-							py-2
-							font-vietnam
-							font-semibold
-							text-sm
-							text-black
-							cursor-pointer
-							transition-all
-							duration-200
-							ease-out
-							hover:-translate-y-0.5
-							hover:shadow-lg
-							hover:shadow-black/10
-							active:translate-y-0
-							active:shadow-none
-						"
-					>
-						cancel
-					</button>
-					<button
-						type="submit"
-						disabled={!ready}
-						className={`
-							rounded-full
-							px-6
-							py-2
-							font-vietnam
-							font-semibold
-							text-sm
-							transition-all
-							duration-200
-							ease-out
-							${ready
-								? `bg-blue
-								   text-white
-								   cursor-pointer
-								   hover:-translate-y-0.5
-								   hover:shadow-lg
-								   hover:shadow-black/20
-								   active:translate-y-0
-								   active:shadow-none`
-								: 'bg-black/10 text-black/40 cursor-not-allowed'}
-						`}
-					>
-						{lab ? 'save changes' : 'add lab'}
-					</button>
-					</div>
-				</div>
-
-				{confirmingDelete && (
-					<ConfirmDeleteDialog
-						label={lab.title}
-						onCancel={() => setConfirmingDelete(false)}
-						onConfirm={onDelete}
-					/>
-				)}
-			</form>
-		</div>
-	)
-}
-
 // ---- page ------------------------------------------------------------------
 
 export default function OfficerLabs({ openNew = false }) {
 	const router = useRouter()
 	const [labs, setLabs] = useState([])
 	const [error, setError] = useState(null)
+	// the card whose dots menu is open, and the one being asked about deleting
+	const [menuFor, setMenuFor] = useState(null)
+	const [deleting, setDeleting] = useState(null)
 
-	// null = closed. { lab: null } opens an empty dialog, { lab } loads that row
-	// into it — one dialog serving both the + and the dots.
-	const [editing, setEditing] = useState(openNew ? { lab: null } : null)
-
-	// Closing the form takes `?new` back off the URL, so a refresh doesn't
-	// reopen something you just dismissed. Done on close rather than on arrival
-	// because the parameter is what seeds the state above — stripping it the
-	// moment the page mounts would race that.
-	const closeEditor = () => {
-		setEditing(null)
-		if (openNew) router.replace('/labs')
-	}
+	// The dashboard's "New Lab" button still arrives as /labs?new — the form
+	// is its own page now, so pass it on there.
+	useEffect(() => {
+		if (openNew) router.replace('/labs/edit')
+	}, [openNew, router])
 
 	useEffect(() => {
 		let live = true
@@ -736,51 +458,22 @@ export default function OfficerLabs({ openNew = false }) {
 		return () => { live = false }
 	}, [])
 
-	// Confirming a delete takes the lab out and closes both layers at once,
-	// since the dialog it was opened from no longer has anything to edit.
-	//
-	// The API goes first here rather than the card: deleting takes every
-	// sign-up and quiz result with it, so a row vanishing from the sheet and
-	// then coming back because the call was refused is worse than a beat's wait.
+	// The API goes first rather than the card: deleting takes every sign-up
+	// and quiz result with it, so a row vanishing from the sheet and then
+	// coming back because the call was refused is worse than a beat's wait.
 	const deleteLab = async () => {
-		const target = editing.lab
+		const target = deleting
+		setDeleting(null)
 		setError(null)
 		try {
 			await labsApi.remove(target.id)
 			setLabs((prev) => prev.filter((lab) => lab.id !== target.id))
-			closeEditor()
 		} catch (err) {
 			setError(err.message)
-			closeEditor()
 		}
 	}
 
-	// Capacity isn't on the form, so a new lab takes the schema's default (20)
-	// and an edit leaves whatever it already had alone.
-	const saveLab = async (values) => {
-		const target = editing.lab
-		const body = {
-			title: values.title,
-			date: values.date,
-			description: values.description,
-			image: values.image,
-		}
-
-		setError(null)
-		try {
-			if (target) {
-				const saved = await labsApi.update(target.id, body)
-				setLabs((prev) => prev.map((lab) => (lab.id === target.id ? toCard(saved) : lab)))
-			} else {
-				const created = await labsApi.create(body)
-				setLabs((prev) => [...prev, toCard(created)])
-			}
-			closeEditor()
-		} catch (err) {
-			setError(err.message)
-			closeEditor()
-		}
-	}
+	const closeMenu = useCallback(() => setMenuFor(null), [])
 
 	return (
 		<DashboardShell>
@@ -819,7 +512,7 @@ export default function OfficerLabs({ openNew = false }) {
 				)}
 				<button
 					type="button"
-					onClick={() => setEditing({ lab: null })}
+					onClick={() => router.push('/labs/edit')}
 					aria-label="New lab"
 					className="
 						group
@@ -866,20 +559,30 @@ export default function OfficerLabs({ openNew = false }) {
 				{labs.map((lab) => (
 					<LabCard
 						key={lab.id}
-						title={lab.title}
-						date={lab.date}
-						image={lab.image}
-						onEdit={() => setEditing({ lab })}
+						lab={lab}
+						onOpen={() => router.push(`/labs/view?id=${lab.id}`)}
+						onMenu={() => setMenuFor((open) => (open === lab.id ? null : lab.id))}
+						menu={menuFor === lab.id && (
+							<CardMenu
+								title={lab.title}
+								onClose={closeMenu}
+								onQuiz={() => router.push(`/labs/quiz?id=${lab.id}`)}
+								onEdit={() => router.push(`/labs/edit?id=${lab.id}`)}
+								onDelete={() => {
+									setMenuFor(null)
+									setDeleting(lab)
+								}}
+							/>
+						)}
 					/>
 				))}
 			</div>
 
-			{editing && (
-				<LabDialog
-					lab={editing.lab}
-					onClose={closeEditor}
-					onSave={saveLab}
-					onDelete={editing.lab ? deleteLab : undefined}
+			{deleting && (
+				<ConfirmDeleteDialog
+					label={deleting.title}
+					onCancel={() => setDeleting(null)}
+					onConfirm={deleteLab}
 				/>
 			)}
 		</DashboardShell>

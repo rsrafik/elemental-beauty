@@ -1,18 +1,11 @@
-import DashboardShell from '@/components/dashboards/DashboardShell'
+'use client'
 
-// /events/view for officer / treasurer / admin: one event's details plus the
-// roster, check-in and edit/delete. Its own layout — design freely.
+import { useSearchParams } from 'next/navigation'
+import CheckInView from '@/components/checkin/CheckInView'
 
+// /events/view for officer / treasurer / admin: the event's check-in page —
+// the same page a lab gets (see CheckInView).
 export default function OfficerEventView() {
-	return (
-		<DashboardShell>
-			<h1 className="
-				font-reasons
-				text-[50px]
-				text-black
-			">
-				event
-			</h1>
-		</DashboardShell>
-	)
+	const id = useSearchParams().get('id')
+	return <CheckInView kind="event" id={id} />
 }

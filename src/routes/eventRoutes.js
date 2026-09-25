@@ -3,6 +3,7 @@ import jwt from 'jsonwebtoken'
 import prisma from '../prismaClient.js'
 import requireRole from '../middleware/requireRole.js'
 import { eventPoints } from '../points.js'
+import { mountRoster } from './roster.js'
 
 const router = express.Router()
 
@@ -91,7 +92,7 @@ router.get('/:id', async (req, res) => {
 // ---- officer+ event management ----
 
 router.post('/', requireRole('officer'), async (req, res) => {
-    const { title, type, track, categoryId, description, date, startTime, image, capacity } = req.body
+    const { title, type, track, categoryId, description, date, startTime, location, image, capacity } = req.body
 
     if (!title || !date) {
         return res.status(400).json({ message: 'title and date are required' })
@@ -123,6 +124,7 @@ router.post('/', requireRole('officer'), async (req, res) => {
                 description,
                 date: eventDate,
                 startTime: startTime || null,
+                location: location?.trim() || null,
                 image,
                 capacity
             }
@@ -145,6 +147,7 @@ router.put('/:id', requireRole('officer'), async (req, res) => {
     if (req.body.title !== undefined) { data.title = req.body.title }
     if (req.body.description !== undefined) { data.description = req.body.description }
     if (req.body.image !== undefined) { data.image = req.body.image }
+    if (req.body.location !== undefined) { data.location = req.body.location?.trim() || null }
     if (req.body.type !== undefined) {
         if (!EVENT_TYPES.includes(req.body.type)) {
             return res.status(400).json({ message: 'type must be official or social' })
@@ -202,6 +205,16 @@ router.delete('/:id', requireRole('officer'), async (req, res) => {
         console.error(err.message)
         res.sendStatus(500)
     }
+})
+
+// The check-in page's roster and its by-hand buttons (see roster.js).
+mountRoster(router, {
+    parentName: 'event',
+    linkName: 'memberEvent',
+    key: 'eventId',
+    compound: 'memberId_eventId',
+    points: (event) => eventPoints(event.type),
+    label: 'Event'
 })
 
 // ---- member actions ----

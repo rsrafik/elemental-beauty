@@ -1,18 +1,12 @@
-import DashboardShell from '@/components/dashboards/DashboardShell'
+'use client'
 
-// /labs/view for officer / treasurer / admin: one lab's details plus the
-// roster, the QR check-in and edit/delete. Its own layout — design freely.
+import { useSearchParams } from 'next/navigation'
+import CheckInView from '@/components/checkin/CheckInView'
 
+// /labs/view for officer / treasurer / admin: the lab's check-in page — the
+// QR camera and the not checked in / checked in / waitlist columns. Editing
+// the lab and its quiz are on the card's dots menu on /labs.
 export default function OfficerLabView() {
-	return (
-		<DashboardShell>
-			<h1 className="
-				font-reasons
-				text-[50px]
-				text-black
-			">
-				lab
-			</h1>
-		</DashboardShell>
-	)
+	const id = useSearchParams().get('id')
+	return <CheckInView kind="lab" id={id} />
 }

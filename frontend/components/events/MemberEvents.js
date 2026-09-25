@@ -174,6 +174,7 @@ function toCard(event) {
 		// time rides along separately and the card joins them for display
 		date: isoDate(event.date),
 		time: event.startTime ?? '',
+		location: event.location ?? '',
 		image: event.image,
 		taken: event.taken,
 		capacity: event.capacity,
@@ -212,6 +213,7 @@ function panels(rows) {
 				title: event.title,
 				date: event.date,
 				time: event.time,
+				location: event.location,
 				image: event.image,
 			})
 		}
@@ -239,7 +241,7 @@ function panels(rows) {
 // `availability` is optional: pass it and it rides on the title's line, pinned
 // to the right edge of the card. The current section has no seat count and no
 // action, so its cards are just the photo, the name and the date.
-function EventCard({ title, date, image, action, availability }) {
+function EventCard({ title, lines, image, action, availability }) {
 	return (
 		<div
 			className="
@@ -315,15 +317,22 @@ function EventCard({ title, date, image, action, availability }) {
 					)}
 				</div>
 
-				<p className="
-					font-vietnam
-					text-black/70
-					text-sm
-					mt-1
-					truncate
-				">
-					{date}
-				</p>
+				{/* date, time and room, a row each */}
+				<div className="mt-1">
+					{lines.map((line) => (
+						<p
+							key={line}
+							className="
+								font-vietnam
+								text-black/70
+								text-sm
+								truncate
+							"
+						>
+							{line}
+						</p>
+					))}
+				</div>
 
 				{/* an action gets its own centered row under the date, so the card can
 				    grow downward instead of fighting the date for the corner */}
@@ -368,10 +377,9 @@ function EventGrid({ items, renderAction }) {
 					<EventCard
 						key={event.id}
 						title={event.title}
-						/* the row carries 'YYYY-MM-DD' and the time separately so
-						   the date can be compared against today; the card is
-						   where the two become one line of prose */
-						date={[longDate(event.date), prettyTime(event.time)].filter(Boolean).join(' · ')}
+						/* the row carries 'YYYY-MM-DD' so the date can be compared
+						   against today; the card is where it becomes prose */
+						lines={[longDate(event.date), prettyTime(event.time), event.location].filter(Boolean)}
 						image={event.image}
 						action={renderAction?.(event)}
 						availability={

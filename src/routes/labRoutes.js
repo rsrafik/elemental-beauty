@@ -3,6 +3,7 @@ import jwt from 'jsonwebtoken'
 import prisma from '../prismaClient.js'
 import requireRole from '../middleware/requireRole.js'
 import { POINTS } from '../points.js'
+import { mountRoster } from './roster.js'
 
 const router = express.Router()
 const RANK_OFFICER = ['officer', 'treasurer', 'admin']
@@ -10,7 +11,7 @@ const RANK_OFFICER = ['officer', 'treasurer', 'admin']
 // Preview fields — what a member sees BEFORE passing the quiz
 const PREVIEW_SELECT = {
     labId: true, title: true, date: true, startTime: true, location: true,
-    description: true, image: true, capacity: true
+    description: true, image: true, capacity: true, published: true
 }
 
 // 'HH:MM' — what <input type="time"> hands back, same rule as events.
@@ -45,9 +46,11 @@ const TAKEN = { attendanceStatus: { in: ['rsvped', 'attended'] } }
 router.get('/', async (req, res) => {
     const { when } = req.query
 
-    let where = {}
-    if (when === 'upcoming') { where = { date: { gte: new Date() } } }
-    if (when === 'past') { where = { date: { lt: new Date() } } }
+    const where = {}
+    if (when === 'upcoming') { where.date = { gte: new Date() } }
+    if (when === 'past') { where.date = { lt: new Date() } }
+    // a lab that's only ever been saved as a draft doesn't exist for members
+    if (!RANK_OFFICER.includes(req.role)) { where.published = true }
 
     try {
         const labs = await prisma.lab.findMany({
@@ -59,13 +62,16 @@ router.get('/', async (req, res) => {
                     where: { memberId: req.userId },
                     select: { attendanceStatus: true, quizPassed: true }
                 },
-                _count: { select: { members: { where: TAKEN } } }
+                _count: { select: { members: { where: TAKEN } } },
+                ...(RANK_OFFICER.includes(req.role) ? { draft: true } : {})
             },
             orderBy: { date: when === 'past' ? 'desc' : 'asc' }
         })
 
-        res.json(labs.map(({ members, _count, ...lab }) => ({
+        res.json(labs.map(({ members, _count, draft, ...lab }) => ({
             ...lab,
+            // officers: whether there are unpublished edits waiting on it
+            hasDraft: draft != null,
             // the true total, this person included — the card doesn't have to
             // add itself back in
             taken: _count.members,
@@ -96,7 +102,8 @@ router.get('/:id', async (req, res) => {
         const link = await prisma.memberLab.findUnique({
             where: { memberId_labId: { memberId: req.userId, labId } }
         })
-        const unlocked = RANK_OFFICER.includes(req.role) || link?.quizPassed === true
+        const officer = RANK_OFFICER.includes(req.role)
+        const unlocked = officer || link?.quizPassed === true
         const quizOpen = !unlocked && link?.attendanceStatus === 'attended'
 
         const lab = unlocked
@@ -108,7 +115,7 @@ router.get('/:id', async (req, res) => {
                 where: { labId },
                 select: { ...PREVIEW_SELECT, ...(quizOpen ? { quizQuestions: QUIZ_SELECT } : {}) }
             })
-        if (!lab) { return res.status(404).json({ message: 'Lab not found' }) }
+        if (!lab || (!lab.published && !officer)) { return res.status(404).json({ message: 'Lab not found' }) }
 
         const taken = await prisma.memberLab.count({ where: { labId, ...TAKEN } })
 
@@ -127,10 +134,15 @@ router.get('/:id', async (req, res) => {
 
         // the file itself is its own request (GET /:id/lesson) — this only says
         // whether there is one
-        const { lessonPdfName, ...rest } = lab
+        // the drafts are the officers' business — a member who passed gets the
+        // full row but not what's still being worked on
+        const { lessonPdfName, draft, quizDraft, ...rest } = lab
         res.json({
             unlocked,
             ...rest,
+            ...(officer ? { draft: draft ?? null } : {}),
+            // the officer editor names the file it already has
+            ...(officer ? { lessonPdfName } : {}),
             hasLesson: Boolean(lessonPdfName),
             taken,
             mine: link?.attendanceStatus ?? null,
@@ -235,29 +247,57 @@ router.delete('/:id/lesson', requireRole('officer'), async (req, res) => {
     }
 })
 
-router.post('/', requireRole('officer'), async (req, res) => {
-    const { title, date, startTime, location, description, image, ingredients, equipment, safetyNote, instructions, capacity } = req.body
+// The fields the edit page sends, checked and turned into a Prisma `data`
+// object. Only what the body actually carries is touched, so a partial save
+// leaves the rest alone. Returns { data } or { error }.
+const TEXT_FIELDS = ['title', 'location', 'description', 'image', 'ingredients', 'equipment', 'safetyNote', 'instructions']
 
-    if (!title || !date) {
-        return res.status(400).json({ message: 'title and date are required' })
+function labData(body) {
+    const data = {}
+    for (const field of TEXT_FIELDS) {
+        if (body[field] !== undefined) { data[field] = body[field] === '' && field !== 'title' ? null : body[field] }
     }
-    const labDate = new Date(date)
-    if (isNaN(labDate.getTime())) {
-        return res.status(400).json({ message: 'date must be a valid date (YYYY-MM-DD)' })
+    if (body.startTime !== undefined) {
+        if (body.startTime && !TIME.test(body.startTime)) { return { error: 'startTime must be HH:MM' } }
+        data.startTime = body.startTime || null
     }
-    if (startTime && !TIME.test(startTime)) {
-        return res.status(400).json({ message: 'startTime must be HH:MM' })
+    // null clears it, which only a draft can get away with
+    if (body.date !== undefined) {
+        if (body.date === null || body.date === '') {
+            data.date = null
+        } else {
+            const labDate = new Date(body.date)
+            if (isNaN(labDate.getTime())) { return { error: 'date must be a valid date (YYYY-MM-DD)' } }
+            data.date = labDate
+        }
     }
-    if (capacity !== undefined && (!Number.isInteger(capacity) || capacity < 1)) {
-        return res.status(400).json({ message: 'capacity must be a positive integer' })
+    // null (or left blank) = unlimited seats
+    if (body.capacity !== undefined) {
+        if (body.capacity !== null && (!Number.isInteger(body.capacity) || body.capacity < 1)) {
+            return { error: 'capacity must be a positive integer, or null for unlimited' }
+        }
+        data.capacity = body.capacity
+    }
+    return { data }
+}
+
+// Body: the lab's fields, plus `published` — false is "save draft", which
+// keeps it off the members' pages until it's published. A draft only needs a
+// title; a published lab needs its date too.
+router.post('/', requireRole('officer'), async (req, res) => {
+    const publishing = req.body.published !== false
+    if (!req.body.title) {
+        return res.status(400).json({ message: 'title is required' })
+    }
+    const { data, error } = labData(req.body)
+    if (error) { return res.status(400).json({ message: error }) }
+    if (publishing && !data.date) {
+        return res.status(400).json({ message: 'a published lab needs a date' })
     }
 
     try {
         const lab = await prisma.lab.create({
-            data: {
-                title, date: labDate, startTime: startTime || null, location: location || null,
-                description, image, ingredients, equipment, safetyNote, instructions, capacity
-            }
+            data: { ...data, published: req.body.published !== false }
         })
         res.status(201).json(lab)
     } catch (err) {
@@ -266,37 +306,54 @@ router.post('/', requireRole('officer'), async (req, res) => {
     }
 })
 
+// Partial update. How a save lands depends on the lab:
+//
+//   published: true    the fields go onto the lab, it goes (or stays) live,
+//                      and any waiting draft is cleared — it's been published
+//   published: false   on a lab members can't see yet, the same but it stays
+//                      hidden. On a live lab it can't be the row itself —
+//                      people are signed up to what it says — so the fields
+//                      are parked in `draft` and the live lab is untouched.
+//   discardDraft       throws the parked edits away
+//   neither            a plain edit, as before
 router.put('/:id', requireRole('officer'), async (req, res) => {
     const labId = parseInt(req.params.id)
     if (isNaN(labId)) { return res.status(400).json({ message: 'Invalid lab id' }) }
 
-    // partial update: only touch fields the client actually sent
-    const data = {}
-    for (const field of ['title', 'location', 'description', 'image', 'ingredients', 'equipment', 'safetyNote', 'instructions']) {
-        if (req.body[field] !== undefined) { data[field] = req.body[field] }
-    }
-    if (req.body.startTime !== undefined) {
-        if (req.body.startTime && !TIME.test(req.body.startTime)) {
-            return res.status(400).json({ message: 'startTime must be HH:MM' })
-        }
-        data.startTime = req.body.startTime || null
-    }
-    if (req.body.date !== undefined) {
-        const labDate = new Date(req.body.date)
-        if (isNaN(labDate.getTime())) {
-            return res.status(400).json({ message: 'date must be a valid date (YYYY-MM-DD)' })
-        }
-        data.date = labDate
-    }
-    if (req.body.capacity !== undefined) {
-        if (!Number.isInteger(req.body.capacity) || req.body.capacity < 1) {
-            return res.status(400).json({ message: 'capacity must be a positive integer' })
-        }
-        data.capacity = req.body.capacity
+    const { data, error } = labData(req.body)
+    if (error) { return res.status(400).json({ message: error }) }
+    if (data.title !== undefined && !String(data.title).trim()) {
+        return res.status(400).json({ message: 'title cannot be empty' })
     }
 
     try {
-        const lab = await prisma.lab.update({ where: { labId }, data })
+        const current = await prisma.lab.findUnique({ where: { labId }, select: { published: true, date: true } })
+        if (!current) { return res.status(404).json({ message: 'Lab not found' }) }
+
+        // whatever a lab ends up live with has to have a date on it
+        const liveAfter = req.body.published === true || (current.published && req.body.published !== false && req.body.discardDraft !== true)
+        const dateAfter = data.date !== undefined ? data.date : current.date
+        if (liveAfter && !dateAfter) {
+            return res.status(400).json({ message: 'a published lab needs a date' })
+        }
+
+        let update = data
+        if (req.body.discardDraft === true) {
+            update = { draft: null }
+        } else if (req.body.published === true) {
+            update = { ...data, published: true, draft: null }
+        } else if (req.body.published === false) {
+            update = current.published
+                // stored as the body was sent, so the editor can load it back
+                ? { draft: Object.fromEntries(
+                    [...TEXT_FIELDS, 'startTime', 'date', 'capacity']
+                        .filter((field) => req.body[field] !== undefined)
+                        .map((field) => [field, req.body[field]])
+                ) }
+                : { ...data, published: false }
+        }
+
+        const lab = await prisma.lab.update({ where: { labId }, data: update })
         res.json(lab)
     } catch (err) {
         if (err.code === 'P2025') { return res.status(404).json({ message: 'Lab not found' }) }
@@ -379,6 +436,131 @@ router.post('/:labId/quiz', requireRole('officer'), async (req, res) => {
     }
 })
 
+// The quiz editor's view of the quiz: every question with its answer key,
+// plus the unpublished draft if there is one (which is what the editor opens
+// on, since it's the newer of the two).
+router.get('/:labId/quiz/edit', requireRole('officer'), async (req, res) => {
+    const labId = parseInt(req.params.labId)
+    if (isNaN(labId)) { return res.status(400).json({ message: 'Invalid lab id' }) }
+
+    try {
+        const lab = await prisma.lab.findUnique({
+            where: { labId },
+            select: {
+                labId: true,
+                title: true,
+                quizDraft: true,
+                quizQuestions: {
+                    orderBy: { questionId: 'asc' },
+                    select: {
+                        question: true,
+                        options: {
+                            orderBy: { optionId: 'asc' },
+                            select: { answerText: true, isCorrect: true }
+                        }
+                    }
+                }
+            }
+        })
+        if (!lab) { return res.status(404).json({ message: 'Lab not found' }) }
+        res.json({
+            labId: lab.labId,
+            title: lab.title,
+            questions: lab.quizQuestions,
+            draft: lab.quizDraft
+        })
+    } catch (err) {
+        console.error(err.message)
+        res.sendStatus(500)
+    }
+})
+
+// Save the whole quiz at once. Body: { questions: [{ question, options:
+// [{ answerText, isCorrect }] }], publish }.
+//
+// A draft is kept as it was typed — half-written questions and all — and
+// members never see it. Publishing swaps it in for the live questions, so it
+// has to be a quiz someone can take: every question worded, at least two
+// answers, and exactly one of them right (members pick one answer each, and
+// grading wants the picks to match the key exactly).
+router.put('/:labId/quiz', requireRole('officer'), async (req, res) => {
+    const labId = parseInt(req.params.labId)
+    if (isNaN(labId)) { return res.status(400).json({ message: 'Invalid lab id' }) }
+
+    const { questions, publish } = req.body
+    if (!Array.isArray(questions)) {
+        return res.status(400).json({ message: 'questions must be an array' })
+    }
+    const clean = questions.map((q) => ({
+        question: String(q?.question ?? '').trim(),
+        options: (Array.isArray(q?.options) ? q.options : []).map((o) => ({
+            answerText: String(o?.answerText ?? '').trim(),
+            isCorrect: o?.isCorrect === true
+        }))
+    }))
+
+    try {
+        const lab = await prisma.lab.findUnique({ where: { labId }, select: { labId: true } })
+        if (!lab) { return res.status(404).json({ message: 'Lab not found' }) }
+
+        if (publish !== true) {
+            await prisma.lab.update({ where: { labId }, data: { quizDraft: clean } })
+            return res.json({ message: 'Draft saved' })
+        }
+
+        // blank answer boxes are just unused slots
+        const live = clean.map((q) => ({ ...q, options: q.options.filter((o) => o.answerText) }))
+        for (const [i, q] of live.entries()) {
+            const n = i + 1
+            if (!q.question) { return res.status(400).json({ message: `Question ${n} needs wording` }) }
+            if (q.options.length < 2) { return res.status(400).json({ message: `Question ${n} needs at least two answers` }) }
+            if (q.options.filter((o) => o.isCorrect).length !== 1) {
+                return res.status(400).json({ message: `Question ${n} needs exactly one correct answer ticked` })
+            }
+        }
+
+        await prisma.$transaction(async (tx) => {
+            // options cascade with their question
+            await tx.labQuizQuestion.deleteMany({ where: { labId } })
+            for (const q of live) {
+                const created = await tx.labQuizQuestion.create({ data: { labId, question: q.question } })
+                await tx.quizAnswerOption.createMany({
+                    data: q.options.map((o) => ({ questionId: created.questionId, ...o }))
+                })
+            }
+            await tx.lab.update({ where: { labId }, data: { quizDraft: null } })
+        })
+        res.json({ message: 'Quiz published', count: live.length })
+    } catch (err) {
+        console.error(err.message)
+        res.sendStatus(500)
+    }
+})
+
+// Discard: throw away the quiz's unpublished draft.
+router.delete('/:labId/quiz/draft', requireRole('officer'), async (req, res) => {
+    const labId = parseInt(req.params.labId)
+    if (isNaN(labId)) { return res.status(400).json({ message: 'Invalid lab id' }) }
+    try {
+        await prisma.lab.update({ where: { labId }, data: { quizDraft: null }, select: { labId: true } })
+        res.json({ message: 'Draft discarded' })
+    } catch (err) {
+        if (err.code === 'P2025') { return res.status(404).json({ message: 'Lab not found' }) }
+        console.error(err.message)
+        res.sendStatus(500)
+    }
+})
+
+// The check-in page's roster and its by-hand buttons (see roster.js).
+mountRoster(router, {
+    parentName: 'lab',
+    linkName: 'memberLab',
+    key: 'labId',
+    compound: 'memberId_labId',
+    points: () => POINTS.lab,
+    label: 'Lab'
+})
+
 // ---- member actions ----
 
 // RSVP is capped at the lab's capacity. When full, the member goes on the
@@ -390,7 +572,7 @@ router.post('/:labId/rsvp', async (req, res) => {
 
     try {
         const lab = await prisma.lab.findUnique({ where: { labId } })
-        if (!lab) { return res.status(404).json({ message: 'Lab not found' }) }
+        if (!lab || !lab.published) { return res.status(404).json({ message: 'Lab not found' }) }
 
         const existing = await prisma.memberLab.findUnique({
             where: { memberId_labId: { memberId: req.userId, labId } }
@@ -409,7 +591,8 @@ router.post('/:labId/rsvp', async (req, res) => {
                 where: { labId, attendanceStatus: { in: ['rsvped', 'attended'] } }
             })
 
-            if (seatsTaken < lab.capacity) {
+            // no capacity = unlimited seats
+            if (lab.capacity == null || seatsTaken < lab.capacity) {
                 const rsvp = await tx.memberLab.create({
                     data: { memberId: req.userId, labId }   // status defaults to 'rsvped'
                 })
@@ -563,19 +746,22 @@ router.post('/:labId/admit-waitlist', requireRole('officer'), async (req, res) =
         const lab = await prisma.lab.findUnique({ where: { labId } })
         if (!lab) { return res.status(404).json({ message: 'Lab not found' }) }
 
-        const attendedCount = await prisma.memberLab.count({
-            where: { labId, attendanceStatus: 'attended' }
-        })
-        const seatsLeft = lab.capacity - attendedCount
-
-        if (seatsLeft <= 0) {
-            return res.json({ admitted: [], seatsLeft: 0, message: 'Lab is already at capacity' })
+        // null = unlimited, which admits everyone waiting
+        let seatsLeft = null
+        if (lab.capacity != null) {
+            const attendedCount = await prisma.memberLab.count({
+                where: { labId, attendanceStatus: 'attended' }
+            })
+            seatsLeft = lab.capacity - attendedCount
+            if (seatsLeft <= 0) {
+                return res.json({ admitted: [], seatsLeft: 0, message: 'Lab is already at capacity' })
+            }
         }
 
         const toAdmit = await prisma.memberLab.findMany({
             where: { labId, attendanceStatus: 'waitlisted' },
             orderBy: { waitlistedAt: 'asc' },            // oldest to newest
-            take: seatsLeft                              // never over capacity
+            ...(seatsLeft !== null ? { take: seatsLeft } : {})   // never over capacity
         })
 
         const memberIds = toAdmit.map(w => w.memberId)
@@ -598,7 +784,7 @@ router.post('/:labId/admit-waitlist', requireRole('officer'), async (req, res) =
         res.json({
             admitted: memberIds,
             pointsEach: POINTS.lab,
-            seatsLeft: seatsLeft - memberIds.length,
+            seatsLeft: seatsLeft === null ? null : seatsLeft - memberIds.length,
             stillWaitlisted
         })
     } catch (err) {

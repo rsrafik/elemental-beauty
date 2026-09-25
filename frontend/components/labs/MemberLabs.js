@@ -4,7 +4,7 @@ import { useEffect, useMemo, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import DashboardShell from '@/components/dashboards/DashboardShell'
 import { labs as labsApi } from '@/lib/api'
-import { isoDate, longDate, today } from '@/lib/dates'
+import { isoDate, longDate, prettyTime, today } from '@/lib/dates'
 
 // /labs for a user or member: browse upcoming labs, RSVP, look back at the
 // ones they've attended.
@@ -269,6 +269,8 @@ function toCard(lab) {
 		// kept as 'YYYY-MM-DD' — it compares against today as plain text, and
 		// the card formats it for display
 		date: isoDate(lab.date),
+		time: lab.startTime ?? '',
+		location: lab.location ?? '',
 		image: lab.image,
 		taken: lab.taken,
 		capacity: lab.capacity,
@@ -308,6 +310,8 @@ function panels(rows) {
 				id: lab.id,
 				title: lab.title,
 				date: lab.date,
+				time: lab.time,
+				location: lab.location,
 				image: lab.image,
 				status: lab.mine === 'attended'
 					? 'attended'
@@ -343,7 +347,7 @@ function panels(rows) {
 // rsvp button) is the one thing on it that doesn't — it stops the click on its
 // way out. The current section passes a plain `icon` instead, which is a status
 // marker, not a control.
-function LabCard({ title, date, image, icon, action, availability, onOpen }) {
+function LabCard({ title, lines, image, icon, action, availability, onOpen }) {
 	return (
 		<div
 			role="link"
@@ -428,25 +432,32 @@ function LabCard({ title, date, image, icon, action, availability, onOpen }) {
 					)}
 				</div>
 
-				{/* date line: the icon is the one bit that differs between sections.
-				    The gap and the icon's inset are tight because the cards get
-				    narrow once the grid drops to two or three across — every pixel
-				    spent here is one the date loses to its ellipsis. */}
+				{/* date, time and room, a row each, with the icon at the bottom
+				    right — the one bit that differs between sections. The gap and
+				    the icon's inset are tight because the cards get narrow once
+				    the grid drops to two or three across — every pixel spent here
+				    is one the lines lose to their ellipsis. */}
 				<div className="
 					flex
 					items-end
 					justify-between
 					gap-1.5
 				">
-					<p className="
-						font-vietnam
-						text-black/70
-						text-sm
-						min-w-0
-						truncate
-					">
-						{date}
-					</p>
+					<div className="min-w-0">
+						{lines.map((line) => (
+							<p
+								key={line}
+								className="
+									font-vietnam
+									text-black/70
+									text-sm
+									truncate
+								"
+							>
+								{line}
+							</p>
+						))}
+					</div>
 					<span className="
 						shrink-0
 						-translate-y-2
@@ -501,7 +512,7 @@ function LabGrid({ items, icons, renderAction }) {
 						title={lab.title}
 						/* the row carries 'YYYY-MM-DD' so it can be compared
 						   against today; the card is where it becomes prose */
-						date={longDate(lab.date)}
+						lines={[longDate(lab.date), prettyTime(lab.time), lab.location].filter(Boolean)}
 						image={lab.image}
 						icon={icons?.[lab.status]}
 						action={renderAction?.(lab)}
@@ -668,7 +679,8 @@ export default function MemberLabs() {
 	// what makes the button offer the waitlist instead of an rsvp.
 	const upcomingRows = upcoming.map((lab) => ({
 		...lab,
-		waitlist: lab.waitlisted || (!lab.going && lab.taken >= lab.capacity),
+		// no capacity = unlimited seats, so never full
+		waitlist: lab.waitlisted || (!lab.going && lab.capacity != null && lab.taken >= lab.capacity),
 	}))
 
 	// Both the slide and the hover peek move the same panel, so they share one

@@ -48,7 +48,11 @@ const __filename = fileURLToPath(import.meta.url)
 const __dirname = dirname(__filename)
 
 // Middleware
-app.use(express.json())
+//
+// Cover images still travel as data URLs inside the lab/event JSON (see the
+// edit pages), and a phone photo is a few megabytes of base64 — well past
+// express's 100kb default.
+app.use(express.json({ limit: '15mb' }))
 
 // Serve the built Next.js frontend (copied into public/ by `npm run build:frontend`).
 // extensions: ['html'] lets /labs resolve to public/labs.html — Next's static
