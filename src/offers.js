@@ -3,6 +3,7 @@ import prisma from './prismaClient.js'
 import { sendEmail } from './email.js'
 import { actionEmail } from './emailTemplate.js'
 import { APP_URL } from './verification.js'
+import { clubFormat, startsAt } from './clubTime.js'
 
 // Waitlist offers, for labs and events alike.
 //
@@ -49,18 +50,27 @@ export const KINDS = {
         key: 'eventId',
         compound: 'memberId_eventId',
         noun: 'event',
-        // members don't have a page per event yet
-        page: () => '/events'
+        page: (id) => `/events/view?id=${id}`
     }
 }
 
 const where = (kind, parentId, memberId) => ({ [kind.compound]: { memberId, [kind.key]: parentId } })
 
-// When a lab or event starts, in the server's own timezone — its date, at its
-// start time (the top of the day if it has none).
-export function startsAt(row) {
-    const day = row.date.toISOString().slice(0, 10)
-    return new Date(`${day}T${row.startTime || '00:00'}:00`)
+// When a lab or event starts — on the club's clock, whatever the server's is
+// (see clubTime.js). Re-exported: the routes ask it too.
+export { startsAt }
+
+// Take the lab's or event's row lock for the rest of the caller's transaction.
+// Every seat decision — count what's taken, then add or hand on a spot — runs
+// under it, so two of them for the same lab or event queue up instead of both
+// counting the same free seat. Postgres's default isolation doesn't do that on
+// its own: two transactions can each count 9 of 10 taken and each add one.
+export async function lockParent(tx, kindName, parentId) {
+    if (kindName === 'lab') {
+        await tx.$queryRaw`SELECT 1 FROM labs WHERE lab_id = ${parentId} FOR UPDATE`
+    } else {
+        await tx.$queryRaw`SELECT 1 FROM events WHERE event_id = ${parentId} FOR UPDATE`
+    }
 }
 
 // Hand the oldest waitlist place a spot, inside the caller's transaction.
@@ -193,6 +203,7 @@ export async function expireOffers() {
             if (!parent.date || startsAt(parent).getTime() - now <= OFFER_HOURS * HOUR) { continue }
             const parentId = row[kind.key]
             await prisma.$transaction(async (tx) => {
+                await lockParent(tx, kindName, parentId)
                 await tx[kind.link].delete({ where: where(kind, parentId, row.memberId) })
                 // the freed seat goes on down the waitlist, if there's room
                 // under the cap for it
@@ -238,6 +249,7 @@ async function enforceConfirmations(kindName, now) {
     let removed = 0
     for (const [parentId, memberIds] of byParent) {
         await prisma.$transaction(async (tx) => {
+            await lockParent(tx, kindName, parentId)
             const parent = await tx[kind.parent].findUnique({ where: { [kind.key]: parentId }, select: { capacity: true } })
             if (!parent || parent.capacity == null) { return }
             const waiting = await tx[kind.link].count({ where: { [kind.key]: parentId, attendanceStatus: 'waitlisted' } })
@@ -296,9 +308,9 @@ async function prelabOf(kindName, parentId) {
         : null
 }
 
-// 'Tuesday, September 29 at 5:00 PM'
+// 'Tuesday, September 29 at 5:00 PM' — on the club's clock, not the server's
 function deadlineText(at) {
-    return at.toLocaleString('en-US', {
+    return clubFormat(at, {
         weekday: 'long', month: 'long', day: 'numeric', hour: 'numeric', minute: '2-digit'
     })
 }

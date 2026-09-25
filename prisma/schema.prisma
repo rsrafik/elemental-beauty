@@ -182,6 +182,7 @@ model Member {
   labs           MemberLab[]
   events         MemberEvent[]
   reimbursements Reimbursement[]
+  dues           DuesPayment[]
 
   @@map("members")
 }
@@ -243,6 +244,10 @@ model Lab {
   // when the check-in page's "confirmation" last went out — after that,
   // anyone who takes a spot off the waitlist is sent the prelab too
   confirmSentAt DateTime? @map("confirm_sent_at") @db.Timestamptz()
+  // when the day-before reminder went out to everyone signed up (see
+  // src/reminders.js). Cleared when the date or time moves, so a rescheduled
+  // lab is reminded about again.
+  reminderSentAt DateTime? @map("reminder_sent_at") @db.Timestamptz()
   // A lab saved with "save draft" and never published is hidden from
   // members entirely. Existing labs were all live, hence the default.
   published     Boolean @default(true)
@@ -337,6 +342,8 @@ model Event {
   capacity    Int? // null = unlimited seats
   // when the check-in page's "confirmation" last went out (src/offers.js)
   confirmSentAt DateTime? @map("confirm_sent_at") @db.Timestamptz()
+  // the day-before reminder, same as a lab's (src/reminders.js)
+  reminderSentAt DateTime? @map("reminder_sent_at") @db.Timestamptz()
 
   // Deleting a tag off the calendar's legend leaves the events that used it
   // standing — they just stop being filed under anything.
@@ -409,6 +416,9 @@ model Grant {
   name            String
   org             String
   amountRequested Decimal     @map("amount_requested") @db.Decimal(10, 2)
+  // What was actually granted, which is often not what was asked for. Only
+  // an awarded grant has one; the tracker's "remaining" is counted from it.
+  amountAwarded   Decimal?    @map("amount_awarded") @db.Decimal(10, 2)
   status          GrantStatus @default(drafting)
   // the application deadline, which is what the tracker counts down to
   deadline        DateTime    @db.Date
@@ -428,6 +438,9 @@ model YearTarget {
   schoolYear    String  @id @map("school_year")
   incomeGoal    Decimal @map("income_goal") @db.Decimal(10, 2)
   expenseBudget Decimal @map("expense_budget") @db.Decimal(10, 2)
+  // What a member owes in dues that year — the dues card's default when the
+  // treasurer marks someone paid. 0 = not set yet.
+  duesAmount    Decimal @default(0) @map("dues_amount") @db.Decimal(10, 2)
 
   @@map("year_targets")
 }
@@ -479,8 +492,61 @@ model Transaction {
 
   grant         Grant?         @relation(fields: [grantId], references: [grantId], onDelete: Restrict)
   reimbursement Reimbursement? @relation(fields: [reimbursementId], references: [reimbursementId], onDelete: Restrict)
+  dues          DuesPayment?
 
   @@index([date])
   @@index([grantId])
   @@map("transactions")
+}
+
+// ---- Dues ----
+
+// One member's dues for one school year ('2025–26'), marked by the treasurer.
+// Paying writes an income row filed under 'dues' — the money is in the ledger
+// like any other — and `transactionId` is that row. A waived year is a payment
+// of 0 with no ledger row behind it.
+//
+// Deleting the ledger row takes the payment with it (the member reads as
+// unpaid again); deleting the member takes the payment but leaves the ledger
+// row, because the money did come in.
+model DuesPayment {
+  duesId        Int      @id @default(autoincrement()) @map("dues_id")
+  memberId      Int      @map("member_id")
+  schoolYear    String   @map("school_year")
+  amount        Decimal  @db.Decimal(10, 2)
+  paidOn        DateTime @default(dbgenerated("CURRENT_DATE")) @map("paid_on") @db.Date
+  transactionId Int?     @unique @map("transaction_id")
+
+  member      Member       @relation(fields: [memberId], references: [userId], onDelete: Cascade)
+  transaction Transaction? @relation(fields: [transactionId], references: [transactionId], onDelete: Cascade)
+
+  @@unique([memberId, schoolYear])
+  @@index([schoolYear])
+  @@map("dues_payments")
+}
+
+// ---- Activity log ----
+
+// Who did what to whom, for staff: role changes, points given and taken back,
+// students added and removed, dues marked. Written by src/activity.js.
+//
+// Names are copied in when the row is written, and there are no foreign keys:
+// the log is the record of a removed member, so it can't be deleted along with
+// them. `points` is the change to the target's points, when there was one —
+// which is also what a member's own points history reads its manual awards
+// from.
+model ActivityLog {
+  activityId Int      @id @default(autoincrement()) @map("activity_id")
+  actorId    Int?     @map("actor_id")
+  actorName  String   @map("actor_name")
+  action     String
+  targetId   Int?     @map("target_id")
+  targetName String?  @map("target_name")
+  points     Int?
+  details    Json?
+  createdAt  DateTime @default(now()) @map("created_at") @db.Timestamptz()
+
+  @@index([createdAt])
+  @@index([targetId])
+  @@map("activity_log")
 }

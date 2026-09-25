@@ -1,12 +1,14 @@
 import prisma from './prismaClient.js'
+import { clubToday, dateColumn } from './clubTime.js'
 
 // Once the day of a lab/event has ended, anyone still 'rsvped' never showed
 // up — mark them absent. Waitlisted rows are left alone: those members never
 // held a seat, so they aren't no-shows (and neither state earns points).
 // Runs on server boot and hourly (see server.js).
 export async function sweepAbsences() {
-    const today = new Date()
-    today.setHours(0, 0, 0, 0)   // any date strictly before today has ended
+    // any date strictly before today has ended — today on the club's clock,
+    // not the server's, which on a UTC host rolls over at 8pm in Indiana
+    const today = dateColumn(clubToday())
 
     const labs = await prisma.memberLab.updateMany({
         where: { attendanceStatus: 'rsvped', lab: { date: { lt: today } } },
