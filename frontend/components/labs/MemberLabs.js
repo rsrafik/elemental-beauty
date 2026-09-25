@@ -147,8 +147,8 @@ const ICON_CLASS = `
 //             one of the three that's open
 //   open      it's happening today, so check-in is live: bring the QR on your
 //             pass and an officer scans you in
-//   locked    yours, but shut — either it hasn't come round yet (you're RSVP'd
-//             for a future date) or it's been and gone without you
+//   locked    yours, but not yet — you're RSVP'd for a future date. (One
+//             that's been and gone without you isn't on the panel at all.)
 const currentIcons = {
 	attended: <UnlockIcon className={`${ICON_CLASS} text-green-dark`} />,
 	open: <CalendarIcon className={`${ICON_CLASS} text-blue`} />,
@@ -281,8 +281,11 @@ function toCard(lab) {
 // Which panel a lab belongs to, and what its corner icon says.
 //
 //   current   anything that is yours or is happening: a lab you're confirmed
-//             for, one running today, and every one that has already been. A
-//             waitlist place is NOT yours yet, so it doesn't qualify.
+//             for that's still to come (locked), one running today (open),
+//             and a past one you were checked in to (unlocked). A past lab
+//             you missed — signed up and never checked in, or only ever on
+//             the waitlist — drops off: there's nothing left to open. A
+//             waitlist place is NOT yours yet, so it doesn't qualify either.
 //   upcoming  everything still ahead, whether or not you're going — it's the
 //             browse-and-sign-up side, and a lab you've joined stays on it so
 //             you can still change your mind.
@@ -300,12 +303,13 @@ function panels(rows) {
 		// a confirmed seat. 'waitlisted' deliberately isn't one — you don't have
 		// a place until somebody drops out
 		const going = lab.mine === 'rsvped' || lab.mine === 'attended'
+		const attended = lab.mine === 'attended'
 
 		// Listed field by field rather than spread: a current card is a photo, a
 		// name, a date and the icon, and nothing else. Carrying `taken` and
 		// `capacity` across would put a seat counter on it — there's nothing
 		// left to sign up for here, so the number would only be noise.
-		if (past || isToday || going) {
+		if ((past && attended) || isToday || (going && !past)) {
 			current.push({
 				id: lab.id,
 				title: lab.title,
@@ -313,7 +317,7 @@ function panels(rows) {
 				time: lab.time,
 				location: lab.location,
 				image: lab.image,
-				status: lab.mine === 'attended'
+				status: attended
 					? 'attended'
 					: isToday ? 'open' : 'locked',
 			})
@@ -332,8 +336,9 @@ function panels(rows) {
 	// current reads newest first, so the lab you just signed up for — or the one
 	// running today — is at the front rather than buried under the club's back
 	// catalogue. Upcoming is soonest first, which is the order you'd sign up in.
-	current.sort((a, b) => b.date.localeCompare(a.date))
-	upcoming.sort((a, b) => a.date.localeCompare(b.date))
+	// same day: by start time, the same way round as the dates
+	current.sort((a, b) => b.date.localeCompare(a.date) || (b.time ?? '').localeCompare(a.time ?? ''))
+	upcoming.sort((a, b) => a.date.localeCompare(b.date) || (a.time ?? '').localeCompare(b.time ?? ''))
 	return { current, upcoming }
 }
 

@@ -6,6 +6,7 @@ import authMiddleware from '../middleware/authMiddleware.js'
 import { sendEmail } from '../email.js'
 import { fromEmail, takenMessage } from '../accountEmail.js'
 import { APP_URL, sendVerificationEmail } from '../verification.js'
+import { actionEmail } from '../emailTemplate.js'
 
 const router = express.Router()
 
@@ -293,9 +294,15 @@ router.post('/forgot-password', async (req, res) => {
             await sendEmail({
                 to: user.email,
                 subject: 'Reset your Elemental Beauty password',
-                text: link
-                    ? `Someone requested a password reset for your account.\n\nReset it here (expires in 15 minutes):\n${link}\n\nIf this wasn't you, ignore this email.`
-                    : `Someone requested a password reset for your account.\n\nYour reset code (expires in 15 minutes):\n\n${resetToken}\n\nIf this wasn't you, ignore this email.`
+                ...(link
+                    ? actionEmail({
+                        heading: 'Reset your password',
+                        lines: ['Someone asked to reset the password on your Elemental Beauty account. Choose a new one here:'],
+                        button: { label: 'Choose a new password', url: link },
+                        after: ['The link works once, for 15 minutes. Your current password keeps working until you use it.'],
+                        reason: `You’re getting this because a password reset was requested for ${user.email}. If that wasn’t you, ignore this email — nothing has changed.`
+                    })
+                    : { text: `Someone requested a password reset for your account.\n\nYour reset code (expires in 15 minutes):\n\n${resetToken}\n\nIf this wasn't you, ignore this email.` })
             })
             if (IS_DEV) { response.resetToken = resetToken }   // dev only
         }

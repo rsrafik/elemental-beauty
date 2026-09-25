@@ -231,8 +231,9 @@ function panels(rows) {
 	// current reads newest first, so the event you just signed up for — or the
 	// one running today — is at the front rather than buried under the club's
 	// back catalogue. Upcoming is soonest first, the order you'd sign up in.
-	current.sort((a, b) => b.date.localeCompare(a.date))
-	upcoming.sort((a, b) => a.date.localeCompare(b.date))
+	// same day: by start time, the same way round as the dates
+	current.sort((a, b) => b.date.localeCompare(a.date) || (b.time ?? '').localeCompare(a.time ?? ''))
+	upcoming.sort((a, b) => a.date.localeCompare(b.date) || (a.time ?? '').localeCompare(b.time ?? ''))
 	return { current, upcoming }
 }
 

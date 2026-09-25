@@ -24,8 +24,11 @@ for (const key of ['DATABASE_URL', 'JWT_SECRET', 'QR_SECRET']) {
         process.exit(1)
     }
 }
-if (process.env.NODE_ENV === 'production' && !process.env.RESEND_API_KEY) {
-    console.error('RESEND_API_KEY is required in production (email verification + password resets)')
+// one way or another the verification and reset emails have to go out —
+// through a Gmail account or through Resend (see email.js)
+const canEmail = (process.env.GMAIL_USER && process.env.GMAIL_APP_PASSWORD) || process.env.RESEND_API_KEY
+if (process.env.NODE_ENV === 'production' && !canEmail) {
+    console.error('Email is required in production (verification + password resets): set GMAIL_USER + GMAIL_APP_PASSWORD, or RESEND_API_KEY')
     process.exit(1)
 }
 // the links in those emails are built on it

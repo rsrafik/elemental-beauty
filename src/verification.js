@@ -1,5 +1,6 @@
 import jwt from 'jsonwebtoken'
 import { sendEmail } from './email.js'
+import { actionEmail } from './emailTemplate.js'
 
 // Where emailed links point. Set for real on the production host; in local
 // development it falls back to the Next dev server, so the link printed to
@@ -18,8 +19,16 @@ export async function sendVerificationEmail(user) {
     const link = `${APP_URL}/verify?token=${verificationToken}`
     await sendEmail({
         to: user.email,
-        subject: 'Verify your Elemental Beauty email',
-        text: `Welcome to Elemental Beauty!\n\nConfirm your email by opening this link (it expires in 24 hours):\n${link}\n\nOnce it's confirmed and you've signed the waiver on the site, you're a member.`
+        subject: 'Confirm your Elemental Beauty email',
+        ...actionEmail({
+            heading: user.firstName ? `Welcome, ${user.firstName}!` : 'Welcome to Elemental Beauty!',
+            lines: ['Confirm this is your email address and you’re one step closer to being an Elementist.'],
+            button: { label: 'Confirm my email', url: link },
+            after: [
+                'The link works for 24 hours. Once your email is confirmed and you’ve signed the waiver on the site, you’re a member.'
+            ],
+            reason: `You’re getting this because an Elemental Beauty account was made with ${user.email}. If that wasn’t you, you can ignore this email.`
+        })
     })
     return verificationToken
 }

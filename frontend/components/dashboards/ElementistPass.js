@@ -252,12 +252,17 @@ export default function ElementistPass() {
 					    front is much taller than it is wide.
 
 					    White rather than the grey placeholder: a QR has to be dark
-					    on light to scan, and the card's salmon isn't light enough. */}
+					    on light to scan, and the card's salmon isn't light enough.
+
+					    Sized by its height, with the width following it: capping
+					    the height of a fixed-width box is what left it wider than
+					    tall, with white bands either side of the code. Square, the
+					    code's own margin is the same all the way round. */}
 					<div className="
 						bg-white
-						w-[225px]
+						h-[min(260px,74%)]
+						w-auto
 						max-w-full
-						max-h-[60%]
 						aspect-square
 						rounded-md
 						overflow-hidden

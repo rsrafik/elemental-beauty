@@ -547,13 +547,12 @@ export default function LabEditor({ id }) {
 					<div
 						className="
 							w-full
-							max-w-[291px]
-							mx-auto
-							lg:mx-0
 							lg:w-[291px]
 							shrink-0
 							lg:ml-[27px]
-							pr-[6px]
+							px-[36px]
+							lg:pl-0
+							lg:pr-[6px]
 							lg:h-full
 							lg:overflow-y-auto
 							lg:[scrollbar-width:none]
@@ -563,6 +562,10 @@ export default function LabEditor({ id }) {
 						// is the shell's padding down — a real 32px at any zoom.
 						// The 6px on the right is room for the image's x, which
 						// hangs off its corner and the scroll box would clip.
+						// Stacked, it runs the full width with the same 36px in
+						// from each side as the column under it, so every box on
+						// the page lines up with materials and equipment and the
+						// whole thing sits in the middle.
 						style={wide ? { paddingTop: SHELL_PAD / zoom + 11.3 } : undefined}
 					>
 						<Cover image={form.image} onRemove={() => update({ image: null })} />
@@ -714,13 +717,15 @@ export default function LabEditor({ id }) {
 					{/* ---- right: materials and instructions --------------------
 					    The 36px on its left is room for the sections' red minus,
 					    which hangs out past the boxes and the scroll box would
-					    otherwise clip. */}
+					    otherwise clip. Stacked, the right gets the same so the
+					    page stays centred; side by side, the right edge is set
+					    from the window's (the style below). */}
 					<div
 						className="
 							flex-1
 							min-w-0
 							lg:ml-[20.5px]
-							pl-[36px]
+							px-[36px]
 							lg:h-full
 							lg:overflow-y-auto
 							pb-[29.6px]
