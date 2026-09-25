@@ -79,7 +79,9 @@ export function metaLine(lab) {
 // between them taking up the slack. Whatever the stage needs under the
 // description (the rsvp button, the QR button) comes in as children and sits
 // in the text column. Below `lg` the photo goes on top.
-export function LabIntro({ lab, children }) {
+// `accent` is the title's colour class — salmon for a lab, and the event page
+// (which borrows this layout) passes its own.
+export function LabIntro({ lab, accent = 'text-salmon', children }) {
 	return (
 		<div className="
 			flex
@@ -105,15 +107,15 @@ export function LabIntro({ lab, children }) {
 				">
 					{metaLine(lab)}
 				</p>
-				<h1 className="
+				<h1 className={`
 					font-beachday
 					text-[40px]
 					sm:text-[54px]
 					leading-[1.05]
-					text-salmon
+					${accent}
 					mt-[7px]
 					break-words
-				">
+				`}>
 					{lab.title}
 				</h1>
 				{lab.description && (

@@ -146,14 +146,17 @@ export function toExpenses(transactions) {
 		}))
 }
 
-// GET /grants. `amount` is what was asked for, and `due` is the application
-// deadline — an application that isn't awarded yet has no other date on it.
+// GET /grants. `amount` is what was asked for, `awarded` what was actually
+// granted (null until it is — often less than was asked), and `due` is the
+// application deadline — an application that isn't awarded yet has no other
+// date on it.
 export function toGrants(grants) {
 	return grants.map((row) => ({
 		id: row.grantId,
 		name: row.name,
 		org: row.org,
 		amount: Number(row.amountRequested),
+		awarded: row.amountAwarded == null ? null : Number(row.amountAwarded),
 		status: row.status,
 		due: day(row.deadline),
 	}))
@@ -258,10 +261,11 @@ export function inYear(entries, year) {
 
 // Which years the picker offers. Read off the ledgers rather than listed by
 // hand, so a row dated into a year nobody has used yet brings that year with
-// it instead of disappearing into a view that can't be selected. YEARS is
-// folded in so an empty year the club is partway through still shows up.
+// it instead of disappearing into a view that can't be selected. YEARS and the
+// year we're in now are folded in, so an empty year the club is partway
+// through still shows up (and its dues can be marked before any money lands).
 export function yearsIn(...lists) {
-	const found = new Set(YEARS)
+	const found = new Set([...YEARS, schoolYear(today())])
 	for (const entry of lists.flat()) found.add(schoolYear(entry.date))
 	return [...found].sort().reverse()
 }
@@ -350,4 +354,15 @@ export function monthStats(income, expenses) {
 		spendings: { value: spendings, delta: spendings - spentBefore, change: change(spendings, spentBefore) },
 		balance: { value: balance, delta: net, change: change(balance, balance - net) },
 	}
+}
+
+// What an awarded grant is actually worth: what was granted if that's been
+// recorded, what was asked for until then.
+export function grantValue(grant) {
+	return grant.awarded ?? grant.amount
+}
+
+// '2025–26' -> '2026-07-31', the last day of its ledger (see yearStart)
+export function yearEnd(year) {
+	return `${Number(year.slice(0, 4)) + 1}-07-31`
 }

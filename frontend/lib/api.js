@@ -99,6 +99,36 @@ export async function api(path, { method = 'GET', body, auth = true } = {}) {
 	return payload
 }
 
+// A file the API hands back (a CSV export), saved through the browser. It can't
+// be a plain link: the endpoint wants the Authorization header like everything
+// else, and <a href> can't send one. So it's fetched as a blob and handed to a
+// throwaway link with `download` on it; the name comes from the server's
+// Content-Disposition when it sends one.
+export async function download(path, fallbackName = 'download') {
+	let response
+	try {
+		response = await fetch(`/api${path}`, { headers: { Authorization: `Bearer ${getToken()}` } })
+	} catch {
+		throw new ApiError(0, 'Could not reach the server. Is it running?')
+	}
+	if (!response.ok) {
+		let message = `Download failed (${response.status})`
+		try { message = (await response.json()).message || message } catch {}
+		if (response.status === 401) setToken(null)
+		throw new ApiError(response.status, message)
+	}
+	const disposition = response.headers.get('Content-Disposition') ?? ''
+	const name = /filename="([^"]+)"/.exec(disposition)?.[1] ?? fallbackName
+	const url = URL.createObjectURL(await response.blob())
+	const link = document.createElement('a')
+	link.href = url
+	link.download = name
+	document.body.appendChild(link)
+	link.click()
+	link.remove()
+	setTimeout(() => URL.revokeObjectURL(url), 1000)
+}
+
 // ---- the calls the pages actually make -------------------------------------
 //
 // Grouped by the page that uses them rather than by HTTP verb, so a page can
@@ -134,6 +164,9 @@ export const auth = {
 
 	forgotPassword: (email) =>
 		api('/auth/forgot-password', { method: 'POST', body: { email }, auth: false }),
+
+	// /account's "delete my account" — asks for the password again
+	deleteAccount: (password) => api('/auth/me', { method: 'DELETE', body: { password } }),
 }
 
 export const members = {
@@ -146,7 +179,22 @@ export const members = {
 	add: (student) => api('/members', { method: 'POST', body: student }),
 	remove: (id) => api(`/members/${id}`, { method: 'DELETE' }),
 	setRole: (id, role) => api(`/members/${id}/role`, { method: 'PUT', body: { role } }),
+	// action: instagram_repost | instagram_follow | discord_join — the server
+	// decides what each is worth (src/points.js)
 	awardPoints: (id, action) => api(`/members/${id}/points`, { method: 'POST', body: { action } }),
+	// what's behind /account's five numbers: { points, labs, events, awards, earlier }
+	history: () => api('/members/me/history'),
+}
+
+// The staff activity log (/students' "activity"): { entries, more }.
+// `before` is the last id you have, for the next page.
+export const activity = {
+	list: ({ before, targetId, limit = 50 } = {}) => {
+		const query = new URLSearchParams({ limit: String(limit) })
+		if (before) query.set('before', String(before))
+		if (targetId) query.set('targetId', String(targetId))
+		return api(`/activity?${query}`)
+	},
 }
 
 export const announcements = {
@@ -188,6 +236,10 @@ export const events = {
 	// the check-in page's "confirmation": everyone signed up who hasn't
 	// confirmed is emailed a link to, by `deadline` (an ISO time)
 	confirmAll: (id, deadline) => api(`/events/${id}/confirm-all`, { method: 'POST', body: { deadline } }),
+	// a member confirming their own spot from the event's page
+	confirm: (id) => api(`/events/${id}/confirm`, { method: 'POST' }),
+	// the check-in page's attendance spreadsheet
+	exportAttendance: (id) => download(`/events/${id}/attendance`, 'attendance.csv'),
 }
 
 // A waitlist offer's "Accept my spot" link (the /offer page) — no login, the
@@ -259,6 +311,8 @@ export const labs = {
 	confirmAll: (id, deadline) => api(`/labs/${id}/confirm-all`, { method: 'POST', body: { deadline } }),
 	// a member confirming their own spot from the lab's page
 	confirm: (id) => api(`/labs/${id}/confirm`, { method: 'POST' }),
+	// the check-in page's attendance spreadsheet
+	exportAttendance: (id) => download(`/labs/${id}/attendance`, 'attendance.csv'),
 
 	// Officers: the prelab handout, same shape as the lesson below.
 	uploadPrelab: (id, file) => uploadPdf(`/api/labs/${id}/prelab`, file),
@@ -285,6 +339,13 @@ export const finances = {
 	createTransaction: (row) => api('/transactions', { method: 'POST', body: row }),
 	updateTransaction: (id, row) => api(`/transactions/${id}`, { method: 'PUT', body: row }),
 	removeTransaction: (id) => api(`/transactions/${id}`, { method: 'DELETE' }),
+	// the ledger as a spreadsheet; `from` / `to` are 'YYYY-MM-DD', both optional
+	exportLedger: ({ from, to } = {}) => {
+		const query = new URLSearchParams()
+		if (from) query.set('from', from)
+		if (to) query.set('to', to)
+		return download(`/transactions/export${query.size ? `?${query}` : ''}`, 'ledger.csv')
+	},
 
 	grants: () => api('/grants'),
 	createGrant: (grant) => api('/grants', { method: 'POST', body: grant }),
@@ -301,4 +362,15 @@ export const finances = {
 			method: 'PUT',
 			body: { status, denialExplanation },
 		}),
+}
+
+// Dues, for the treasurer — one payment per member per school year. Marking
+// someone paid writes an income row under 'dues' (src/routes/duesRoutes.js).
+export const dues = {
+	// { schoolYear, duesAmount, members: [{ userId, firstName, lastName, username, role, payment }] }
+	list: (schoolYear) => api(`/dues?schoolYear=${encodeURIComponent(schoolYear)}`),
+	// amount 0 = waived
+	pay: ({ memberId, schoolYear, amount, paidOn }) =>
+		api('/dues', { method: 'POST', body: { memberId, schoolYear, amount, paidOn } }),
+	remove: (duesId) => api(`/dues/${duesId}`, { method: 'DELETE' }),
 }

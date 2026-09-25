@@ -57,7 +57,7 @@ function Offer() {
 		}
 	}
 
-	const href = result.kind === 'lab' && result.id ? `/labs/view?id=${result.id}` : result.kind === 'event' ? '/events' : '/dashboard'
+	const href = result.kind === 'lab' && result.id ? `/labs/view?id=${result.id}` : result.kind === 'event' && result.id ? `/events/view?id=${result.id}` : '/dashboard'
 
 	return (
 		<main className="

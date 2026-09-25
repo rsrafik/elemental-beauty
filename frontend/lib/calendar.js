@@ -7,7 +7,9 @@
 //
 // The shape both calendars read is:
 //
-//   { '2026-08': { 6: [ { type, title, track, time }, … ], … }, … }
+//   { '2026-08': { 6: [ { type, title, track, time, href }, … ], … }, … }
+//
+// `href` is the thing's own page — what the member calendar links a day to.
 //
 // A day is always a list, even with one thing on it. The member grid has room
 // for one and takes the first; the officer grid stacks them.
@@ -50,6 +52,7 @@ export function buildMonths(labs = [], events = []) {
 			title: lab.title,
 			track: LAB_TRACK,
 			time: null,
+			href: `/labs/view?id=${lab.labId}`,
 		})
 	}
 
@@ -60,6 +63,7 @@ export function buildMonths(labs = [], events = []) {
 			title: event.title,
 			track: event.track,
 			time: event.startTime ?? null,
+			href: `/events/view?id=${event.eventId}`,
 		})
 	}
 

@@ -25,7 +25,8 @@ import {
 // numbers; the right ones keep their answers and are sent along again, since the
 // server always grades the whole quiz.
 
-function ShowQrButton({ onClick }) {
+// exported for the event page, which shows the same code at its door
+export function ShowQrButton({ onClick }) {
 	return (
 		<button
 			type="button"
@@ -55,7 +56,9 @@ function ShowQrButton({ onClick }) {
 	)
 }
 
-function QrPopup({ onClose }) {
+const LAB_NOTE = 'Show this to an officer at the door to check in. The quiz opens here as soon as you’re scanned.'
+
+export function QrPopup({ onClose, note = LAB_NOTE }) {
 	const qr = usePassQr(true)
 
 	return (
@@ -68,8 +71,7 @@ function QrPopup({ onClose }) {
 						text-black/60
 						mt-3
 					">
-						Show this to an officer at the door to check in. The quiz opens
-						here as soon as you&apos;re scanned.
+						{note}
 					</p>
 					<div className="
 						mt-6

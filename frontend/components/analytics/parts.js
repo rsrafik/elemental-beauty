@@ -1,7 +1,7 @@
 'use client'
 
 import { useEffect, useRef, useState } from 'react'
-import { STATUS_PILL, money, prettyDate, statusLabel, sum } from '@/lib/finances'
+import { STATUS_PILL, grantValue, money, prettyDate, statusLabel, sum } from '@/lib/finances'
 import { useDismiss } from '@/lib/dismiss'
 
 // The pieces both analytics pages are built out of — the card, the pills, the
@@ -1660,7 +1660,8 @@ export function GrantTracker({ grants, onEdit, onAdd }) {
 	// card to look at, and last year's awards sit underneath it.
 	const listed = [...grants].sort((a, b) => b.due.localeCompare(a.due))
 
-	const awarded = sum(grants.filter((grant) => grant.status === 'awarded').map((grant) => grant.amount))
+	// what was granted, not what was asked for — the two are rarely the same
+	const awarded = sum(grants.filter((grant) => grant.status === 'awarded').map(grantValue))
 	const requested = sum(grants.map((grant) => grant.amount))
 	const waiting = sum(
 		grants
@@ -1829,7 +1830,12 @@ export function GrantTracker({ grants, onEdit, onAdd }) {
 								text-black
 								tabular-nums
 							">
-								{money(grant.amount, false)}
+								{grant.status === 'awarded' && grant.awarded != null && grant.awarded !== grant.amount
+									? <>
+										{money(grant.awarded, false)}
+										<span className="ml-1 font-normal text-black/40 line-through">{money(grant.amount, false)}</span>
+									</>
+									: money(grant.amount, false)}
 							</span>
 						</div>
 
