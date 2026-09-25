@@ -302,7 +302,8 @@ export const labs = {
 	roster: (id) => api(`/labs/${id}/roster`),
 	// action: checkin | uncheck | admit | offer | remove (with memberId) or add (with username)
 	rosterAction: (id, body) => api(`/labs/${id}/roster`, { method: 'POST', body }),
-	checkin: (id, qrToken) => api(`/labs/${id}/checkin`, { method: 'POST', body: { qrToken } }),
+	// `dues` answers a DUES_UNPAID reply: 'paid' (taken at the door) or 'waive'
+	checkin: (id, qrToken, dues) => api(`/labs/${id}/checkin`, { method: 'POST', body: { qrToken, dues } }),
 	// the check-in page's "email all": { subject, message } to everyone signed up
 	emailAll: (id, message) => api(`/labs/${id}/email-all`, { method: 'POST', body: message }),
 	// the check-in page's "confirmation": everyone signed up who hasn't

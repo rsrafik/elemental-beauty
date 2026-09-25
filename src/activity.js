@@ -13,13 +13,15 @@ import prisma from './prismaClient.js'
 //   account_deleted  someone deleted their own account    details { role, points }
 //   dues_paid        the treasurer marked dues paid       details { schoolYear, amount }
 //   dues_cleared     the treasurer took that back         details { schoolYear, amount }
+//   dues_waived      an officer let someone into a lab    details { schoolYear, kind, id, title }
+//                    without paying, at the door
 //
 // Names are copied in as they are at the time, so the log still reads right
 // after someone is renamed or removed.
 
 export const ACTIONS = [
     'role_changed', 'points_awarded', 'checked_in', 'checkin_undone',
-    'member_added', 'member_removed', 'account_deleted', 'dues_paid', 'dues_cleared'
+    'member_added', 'member_removed', 'account_deleted', 'dues_paid', 'dues_cleared', 'dues_waived'
 ]
 
 export const fullName = (user) =>

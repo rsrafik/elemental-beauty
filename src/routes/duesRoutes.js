@@ -1,6 +1,7 @@
 import express from 'express'
 import prisma from '../prismaClient.js'
-import { log, fullName } from '../activity.js'
+import { log } from '../activity.js'
+import { recordDues } from '../dues.js'
 
 // Dues, for the treasurer (mounted behind requireRole('treasurer') in
 // server.js). One payment per member per school year; marking one paid writes
@@ -52,9 +53,7 @@ router.get('/', async (req, res) => {
     }
 })
 
-// Mark someone paid. 0 is a waived year: recorded, but no money moved, so no
-// ledger row. The ledger row is dated the day it was paid, which decides the
-// month it lands in on the balance line.
+// Mark someone paid. 0 is a waived year — see recordDues in src/dues.js.
 router.post('/', async (req, res) => {
     const memberId = Number(req.body?.memberId)
     const { schoolYear } = req.body ?? {}
@@ -76,30 +75,9 @@ router.post('/', async (req, res) => {
         if (!member) { return res.status(404).json({ message: 'Member not found' }) }
         const day = paidOn ? new Date(`${paidOn}T00:00:00.000Z`) : undefined
 
-        const payment = await prisma.$transaction(async (tx) => {
-            const ledger = amount > 0
-                ? await tx.transaction.create({
-                    data: {
-                        type: 'income',
-                        source: `Dues ${schoolYear} — ${fullName(member.user)}`,
-                        amount,
-                        category: 'dues',
-                        ...(day ? { date: day } : {})
-                    }
-                })
-                : null
-            const created = await tx.duesPayment.create({
-                data: {
-                    memberId,
-                    schoolYear,
-                    amount,
-                    transactionId: ledger?.transactionId ?? null,
-                    ...(day ? { paidOn: day } : {})
-                }
-            })
-            await log({ actorId: req.userId, action: 'dues_paid', targetId: memberId, details: { schoolYear, amount } }, tx)
-            return created
-        })
+        const payment = await prisma.$transaction((tx) => recordDues(tx, {
+            memberId, user: member.user, schoolYear, amount, day, actorId: req.userId
+        }))
         res.status(201).json({
             ...payment,
             amount: Number(payment.amount),

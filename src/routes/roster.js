@@ -5,6 +5,7 @@ import { expireOffers, lockParent, offerNext, sendConfirmations, sendOffer } fro
 import { emailAll, readMessage } from '../emailAll.js'
 import { log } from '../activity.js'
 import { csvCell } from '../csv.js'
+import { DUES_ANSWERS, duesOwed, duesUnpaid, settleDues } from '../dues.js'
 
 // The officer check-in page's roster, shared by labs and events: the same
 // three columns (not checked in / checked in / waitlist) and the same buttons
@@ -14,7 +15,9 @@ import { csvCell } from '../csv.js'
 //   POST /:id/roster     { action, memberId | username }
 //
 //     checkin   rsvped, offered (or absent) -> attended, points awarded (the
-//               green tick)
+//               green tick). At a lab, someone who owes dues comes back
+//               DUES_UNPAID, the same as the QR scan, and is answered with
+//               `dues` ('paid' | 'waive') — see src/dues.js
 //     uncheck   attended -> rsvped, points taken back (the x on checked in)
 //     admit     waitlisted -> offered, seat or no seat — an officer at the
 //               door can overrule the cap (the yellow button). The spot's
@@ -258,7 +261,19 @@ export function mountRoster(router, kind) {
                 if (!['rsvped', 'absent', 'offered'].includes(status)) {
                     return res.status(409).json({ message: 'Only a signed-up member can be checked in' })
                 }
+                const { dues } = req.body
+                if (dues !== undefined && !DUES_ANSWERS.includes(dues)) {
+                    return res.status(400).json({ message: "dues must be 'paid' or 'waive'" })
+                }
+                // dues are a lab's business — events don't ask
+                const owed = kindName === 'lab'
+                    ? await duesOwed(prisma, memberId, row.date?.toISOString().slice(0, 10))
+                    : null
+                if (owed && !dues) { return duesUnpaid(res, memberId, owed) }
                 await prisma.$transaction(async (tx) => {
+                    if (owed) {
+                        await settleDues(tx, { owed, dues, memberId, actorId: req.userId, lab: { id: parentId, title: row.title } })
+                    }
                     await tx[linkName].update({ where: where(parentId, memberId), data: { attendanceStatus: 'attended', offerSentAt: null } })
                     await tx.member.update({ where: { userId: memberId }, data: { points: { increment: worth } } })
                     await log({
@@ -327,6 +342,8 @@ export function mountRoster(router, kind) {
             res.status(400).json({ message: 'action must be one of: checkin, uncheck, admit, offer, remove, add' })
         } catch (err) {
             if (err.status) { return res.status(err.status).json({ message: err.message }) }
+            // the treasurer marked them paid while the dues popup was up
+            if (err.code === 'P2002' && action === 'checkin') { return res.status(409).json({ message: 'Their dues were just marked paid — check them in again' }) }
             console.error(err.message)
             res.sendStatus(500)
         }

@@ -196,6 +196,17 @@ Content-Type: application/json
     "qrToken": "PASTE_SCANNED_QR_TOKEN_HERE"
 }
 
+### Unpaid dues come back 202 DUES_UNPAID (not checked in) — answer with
+### "paid" (marks the year paid, into the ledger) or "waive" (this lab only)
+POST {{base}}/labs/1/checkin
+Authorization: Bearer {{token}}
+Content-Type: application/json
+
+{
+    "qrToken": "PASTE_SCANNED_QR_TOKEN_HERE",
+    "dues": "paid"
+}
+
 ### Attendance as a CSV (officer+) — same route under /events
 GET {{base}}/labs/1/attendance
 Authorization: Bearer {{token}}

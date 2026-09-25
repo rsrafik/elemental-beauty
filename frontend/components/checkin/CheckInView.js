@@ -7,6 +7,7 @@ import QrScanner from '@/components/checkin/QrScanner'
 import { INSET, EditorButton, IconLabel, UploadIcon } from '@/components/labs/EditorParts'
 import EmailAllPopup from '@/components/EmailAllPopup'
 import ConfirmationPopup from '@/components/ConfirmationPopup'
+import DuesPopup from '@/components/checkin/DuesPopup'
 import { labs as labsApi, events as eventsApi, members as membersApi } from '@/lib/api'
 
 // The officer's check-in page for one lab or one event — where clicking its
@@ -147,7 +148,7 @@ function RowButton({ tone, label, onClick, disabled, children }) {
 				hover:brightness-105
 				active:scale-95
 				disabled:opacity-50
-				disabled:cursor-wait
+				disabled:cursor-default
 				${TONES[tone]}
 			`}
 		>
@@ -427,6 +428,9 @@ export default function CheckInView({ kind, id }) {
 	const [error, setError] = useState(null)
 	// member ids with a request out, so a button can't be hit twice
 	const [busy, setBusy] = useState(() => new Set())
+	// a check-in (scanned or ticked) that came back DUES_UNPAID, waiting on
+	// the officer's answer: { reply, answer(choice), close() } — see DuesPopup
+	const [duesAsk, setDuesAsk] = useState(null)
 
 	const loadRoster = useCallback(async () => {
 		try {
@@ -464,7 +468,19 @@ export default function CheckInView({ kind, id }) {
 		setBusy((prev) => new Set(prev).add(memberId))
 		setError(null)
 		try {
-			await api.rosterAction(id, { memberId, action })
+			const reply = await api.rosterAction(id, { memberId, action })
+			// the green tick on someone who owes dues: ask first, and send
+			// the tick again with the answer
+			if (reply?.code === 'DUES_UNPAID') {
+				setDuesAsk({
+					reply,
+					answer: async (dues) => {
+						await api.rosterAction(id, { memberId, action, dues })
+						await loadRoster()
+					},
+					close: () => {},
+				})
+			}
 			await loadRoster()
 		} catch (err) {
 			setError(err.message)
@@ -482,17 +498,8 @@ export default function CheckInView({ kind, id }) {
 		await loadRoster()
 	}
 
-	// What the camera found: check it in, re-read the lists, and say who it
-	// was. The code is the member's signed id; its payload is readable here,
-	// which is enough to put a name to the result.
-	const scanned = async (token) => {
-		let who = null
-		try {
-			const payload = JSON.parse(atob(token.split('.')[1].replace(/-/g, '+').replace(/_/g, '/')))
-			who = payload.id
-		} catch {}
-
-		const reply = await api.checkin(id, token)
+	// A check-in reply as the scanner's flash, once the lists are re-read.
+	const flashFor = async (reply, who) => {
 		const rows = await loadRoster()
 		const row = rows?.find((r) => r.memberId === who)
 		const name = row ? fullName(row) : 'member'
@@ -504,6 +511,33 @@ export default function CheckInView({ kind, id }) {
 			ALREADY_WAITLISTED: `${name} is on the waitlist`,
 		}[reply.code] ?? reply.message
 		return { tone, text }
+	}
+
+	// What the camera found: check it in, re-read the lists, and say who it
+	// was. The code is the member's signed id; its payload is readable here,
+	// which is enough to put a name to the result.
+	//
+	// Someone who owes dues isn't checked in yet: the dues popup opens, and
+	// this doesn't resolve until it's answered — the scanner holds off reading
+	// more codes until then.
+	const scanned = async (token) => {
+		let who = null
+		try {
+			const payload = JSON.parse(atob(token.split('.')[1].replace(/-/g, '+').replace(/_/g, '/')))
+			who = payload.id
+		} catch {}
+
+		const reply = await api.checkin(id, token)
+		if (reply.code === 'DUES_UNPAID') {
+			return new Promise((resolve) => setDuesAsk({
+				reply,
+				// waive / paid: scan them again with the answer
+				answer: async (dues) => resolve(await flashFor(await api.checkin(id, token, dues), reply.memberId)),
+				// wait (or the popup closing after an answer, when this does nothing)
+				close: () => resolve({ tone: 'yellow', text: `${reply.name ?? 'member'} not checked in — dues unpaid` }),
+			}))
+		}
+		return flashFor(reply, who)
 	}
 
 	const { waiting, here, waitlist } = useMemo(() => ({
@@ -886,6 +920,18 @@ export default function CheckInView({ kind, id }) {
 					</Column>
 				</div>
 			</div>
+			{duesAsk && (
+				<DuesPopup
+					name={duesAsk.reply.name}
+					schoolYear={duesAsk.reply.schoolYear}
+					amount={duesAsk.reply.amount}
+					onChoose={duesAsk.answer}
+					onClose={() => {
+						duesAsk.close()
+						setDuesAsk(null)
+					}}
+				/>
+			)}
 			{confirming && item && (
 				<ConfirmationPopup
 					count={unconfirmed}

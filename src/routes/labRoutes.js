@@ -6,6 +6,7 @@ import { POINTS } from '../points.js'
 import { mountRoster } from './roster.js'
 import { acceptOffer, confirmSpot, expireOffers, lockParent, offerNext, startsAt } from '../offers.js'
 import { log } from '../activity.js'
+import { DUES_ANSWERS, duesOwed, duesUnpaid, settleDues } from '../dues.js'
 
 const router = express.Router()
 const RANK_OFFICER = ['officer', 'jboard', 'treasurer', 'admin']
@@ -766,12 +767,22 @@ router.delete('/:labId/rsvp', async (req, res) => {
 // with a distinct code so the scanner UI can show it. Waitlisted members are
 // moved up from the check-in page's waitlist column (roster.js 'admit'), not
 // by re-scanning.
+//
+// Dues: someone who hasn't paid for the lab's school year isn't checked in —
+// the reply is DUES_UNPAID and the page asks the officer what to do. Their
+// answer comes back as a second scan with `dues` set, 'paid' or 'waive' (see
+// src/dues.js); "wait" never reaches the server, so they stay not checked in.
+//
+// Body: { qrToken, dues? }
 router.post('/:labId/checkin', requireRole('officer'), async (req, res) => {
     const labId = parseInt(req.params.labId)
     if (isNaN(labId)) { return res.status(400).json({ message: 'Invalid lab id' }) }
 
-    const { qrToken } = req.body
+    const { qrToken, dues } = req.body
     if (!qrToken) { return res.status(400).json({ message: 'qrToken is required' }) }
+    if (dues !== undefined && !DUES_ANSWERS.includes(dues)) {
+        return res.status(400).json({ message: "dues must be 'paid' or 'waive'" })
+    }
 
     let decoded
     try {
@@ -781,7 +792,7 @@ router.post('/:labId/checkin', requireRole('officer'), async (req, res) => {
     }
 
     try {
-        const lab = await prisma.lab.findUnique({ where: { labId }, select: { title: true } })
+        const lab = await prisma.lab.findUnique({ where: { labId }, select: { title: true, date: true } })
         if (!lab) { return res.status(404).json({ message: 'Lab not found' }) }
         const existing = await prisma.memberLab.findUnique({
             where: { memberId_labId: { memberId: decoded.id, labId } }
@@ -811,9 +822,16 @@ router.post('/:labId/checkin', requireRole('officer'), async (req, res) => {
             return res.status(202).json({ code: 'ALREADY_WAITLISTED', message: 'Still on the waitlist' })
         }
 
+        // owes dues for the lab's year (today's, for one with no date)?
+        const owed = await duesOwed(prisma, decoded.id, lab.date?.toISOString().slice(0, 10))
+        if (owed && !dues) { return duesUnpaid(res, decoded.id, owed) }
+
         // rsvped → attended; lab points awarded atomically with the transition
         // (only this transition earns — rescans hit the guards above)
         const attendance = await prisma.$transaction(async (tx) => {
+            if (owed) {
+                await settleDues(tx, { owed, dues, memberId: decoded.id, actorId: req.userId, lab: { id: labId, title: lab.title } })
+            }
             const row = await tx.memberLab.update({
                 where: { memberId_labId: { memberId: decoded.id, labId } },
                 data: { attendanceStatus: 'attended', offerSentAt: null }
@@ -831,6 +849,8 @@ router.post('/:labId/checkin', requireRole('officer'), async (req, res) => {
         res.json({ code: 'CHECKED_IN', message: `Checked in (+${POINTS.lab} points)`, attendance })
     } catch (err) {
         if (err.code === 'P2003') { return res.status(404).json({ message: 'Lab or member not found' }) }
+        // the treasurer marked them paid while the popup was up — scan again
+        if (err.code === 'P2002') { return res.status(409).json({ message: 'Their dues were just marked paid — scan them again' }) }
         console.error(err.message)
         res.sendStatus(500)
     }

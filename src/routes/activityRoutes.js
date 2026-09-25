@@ -6,7 +6,7 @@ const router = express.Router()
 
 // Dues are the treasurer's books, which j-board doesn't get (see denyRole in
 // server.js) — so their lines are left out of the log j-board reads.
-const BOOKS = ['dues_paid', 'dues_cleared']
+const BOOKS = ['dues_paid', 'dues_cleared', 'dues_waived']
 
 // The activity log, newest first — /students' "activity" popup.
 //

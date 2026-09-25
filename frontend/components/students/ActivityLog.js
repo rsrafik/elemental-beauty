@@ -45,6 +45,8 @@ function sentence(entry) {
 				: <>{actor} waived {target}&apos;s {d.schoolYear} dues</>
 		case 'dues_cleared':
 			return <>{actor} took back {target}&apos;s {d.schoolYear} dues</>
+		case 'dues_waived':
+			return <>{actor} let {target} into {d.title} without paying {d.schoolYear} dues</>
 		default:
 			return <>{actor} — {entry.action}</>
 	}
@@ -60,6 +62,7 @@ const DOT = {
 	account_deleted: 'bg-red',
 	dues_paid: 'bg-yellow',
 	dues_cleared: 'bg-black/30',
+	dues_waived: 'bg-yellow',
 }
 
 function when(at) {

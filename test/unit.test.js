@@ -7,6 +7,7 @@ import { hashPassword, needsRehash, passwordProblem, checkPassword } from '../sr
 import { wantsEmail } from '../src/emailPrefs.js'
 import { readMessage } from '../src/emailAll.js'
 import { fromEmail } from '../src/accountEmail.js'
+import { schoolYearOf } from '../src/dues.js'
 
 // ---- the club's clock ------------------------------------------------------
 
@@ -93,4 +94,13 @@ test('an email-all needs a subject and a message', () => {
 test('the username is the part of the email before the @', () => {
     assert.deepEqual(fromEmail('  Lauren7712@Purdue.edu '), { email: 'lauren7712@purdue.edu', username: 'lauren7712' })
     assert.ok(fromEmail('not an email').error)
+})
+
+// ---- dues ------------------------------------------------------------------
+
+test('a lab\'s school year turns over on August 1st', () => {
+    assert.equal(schoolYearOf('2026-07-31'), '2025–26')
+    assert.equal(schoolYearOf('2026-08-01'), '2026–27')
+    assert.equal(schoolYearOf('2027-01-15'), '2026–27')
+    assert.equal(schoolYearOf('2099-12-31'), '2099–00')
 })
