@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from 'react'
 import DashboardShell from '@/components/dashboards/DashboardShell'
+import DuesCard from '@/components/analytics/DuesCard'
 import { useDismiss } from '@/lib/dismiss'
 import {
 	Card,
@@ -57,6 +58,8 @@ import {
 	total,
 	totalsByCategory,
 	yearsIn,
+	yearEnd,
+	yearStart,
 } from '@/lib/finances'
 
 // /analytics for the treasurer: the same books the officers read, plus every
@@ -74,6 +77,9 @@ import {
 //   the queue — every officer's compensation requests, not just their own.
 //     Approving says the club owes it; reimbursing says it's been paid, and
 //     writes the expense row that says where the money went.
+//   dues — who's paid for the year, marked here (DuesCard); paying writes an
+//     income row under 'dues'.
+//   export — the year's ledger as a CSV, from the button by the year picker.
 //
 // The seeds are placeholders until this is talking to the API. Nothing here
 // posts anywhere yet — it all lives in this page's state.
@@ -735,6 +741,7 @@ function GrantDialog({ grant, onClose, onSave }) {
 		name: grant?.name ?? '',
 		org: grant?.org ?? '',
 		amount: grant ? String(grant.amount) : '',
+		awarded: grant?.awarded != null ? String(grant.awarded) : '',
 		status: grant?.status ?? GRANT_STATUSES[0],
 		due: grant?.due ?? today(),
 	})
@@ -743,13 +750,19 @@ function GrantDialog({ grant, onClose, onSave }) {
 		setForm((previous) => ({ ...previous, [key]: event.target.value }))
 
 	const amount = Number(form.amount)
+	// what was actually granted — only asked for once it's awarded, and
+	// optional even then (blank = the amount asked for, until it's known)
+	const isAwarded = form.status === 'awarded'
+	const awarded = form.awarded === '' ? null : Number(form.awarded)
+	const awardedOk = !isAwarded || awarded === null || (Number.isFinite(awarded) && awarded > 0)
 	const ready =
 		form.name.trim() !== '' &&
 		form.org.trim() !== '' &&
 		form.due !== '' &&
 		form.amount !== '' &&
 		Number.isFinite(amount) &&
-		amount > 0
+		amount > 0 &&
+		awardedOk
 
 	const submit = (event) => {
 		event.preventDefault()
@@ -759,6 +772,7 @@ function GrantDialog({ grant, onClose, onSave }) {
 				name: form.name.trim(),
 				org: form.org.trim(),
 				amount,
+				awarded: isAwarded ? awarded : null,
 				status: form.status,
 				due: form.due,
 			})
@@ -859,6 +873,35 @@ function GrantDialog({ grant, onClose, onSave }) {
 						/>
 					</div>
 				</label>
+
+				{isAwarded && (
+					<label className="block">
+						<Label>amount granted</Label>
+						<div className="relative">
+							<span className="
+								pointer-events-none
+								absolute
+								left-4
+								top-1/2
+								-translate-y-1/2
+								font-vietnam
+								text-sm
+								text-black/45
+							">
+								$
+							</span>
+							<input
+								type="number"
+								min="0"
+								step="50"
+								value={form.awarded}
+								onChange={set('awarded')}
+								placeholder={form.amount || '0.00'}
+								className={`${FIELD} pl-8 tabular-nums`}
+							/>
+						</div>
+					</label>
+				)}
 			</div>
 
 			<DialogActions
@@ -1504,6 +1547,10 @@ export default function TreasurerAnalytics() {
 	// the request being read rather than acted on
 	const [viewing, setViewing] = useState(null)
 	const [error, setError] = useState(null)
+	const [exporting, setExporting] = useState(false)
+	// bumped when something outside the dues card changes a payment (deleting
+	// its ledger row), which remounts the card so it re-reads
+	const [duesVersion, setDuesVersion] = useState(0)
 
 	// Every figure on this page is a sum over these four lists, so a write that
 	// could move more than one of them reloads the lot rather than trying to
@@ -1562,6 +1609,7 @@ export default function TreasurerAnalytics() {
 					name: values.name,
 					org: values.org,
 					amountRequested: values.amount,
+					amountAwarded: values.awarded,
 					status: values.status,
 					deadline: values.due,
 				}
@@ -1624,6 +1672,11 @@ export default function TreasurerAnalytics() {
 			await financesApi.removeTransaction(row.id)
 			const setList = kind === 'income' ? setIncome : setExpenses
 			setList((previous) => previous.filter((entry) => entry.id !== row.id))
+			// a paid receipt's row takes its request back to 'approved', and a
+			// dues row un-pays that member — both on the server — so the queue
+			// and the dues card have to be re-read to show it
+			await load()
+			setDuesVersion((n) => n + 1)
 		} catch (err) {
 			setError(err.message)
 		}
@@ -1682,6 +1735,20 @@ export default function TreasurerAnalytics() {
 
 	const queue = [...requests].sort((a, b) => b.date.localeCompare(a.date))
 
+	// the year on screen, August to July, as a spreadsheet
+	const exportLedger = async () => {
+		if (!shownYear) return
+		setExporting(true)
+		setError(null)
+		try {
+			await financesApi.exportLedger({ from: yearStart(shownYear), to: yearEnd(shownYear) })
+		} catch (err) {
+			setError(err.message)
+		} finally {
+			setExporting(false)
+		}
+	}
+
 	return (
 		// The scrolling column is pushed out to the window's top, bottom and right
 		// edge — the negative margins cancel the shell's own p-8 on those three
@@ -1712,6 +1779,38 @@ export default function TreasurerAnalytics() {
 				gap-6
 			">
 				<PageControls>
+					<button
+						type="button"
+						onClick={exportLedger}
+						disabled={!shownYear || exporting}
+						title={shownYear ? `Download the ${shownYear} ledger as a CSV` : undefined}
+						className="
+							rounded-full
+							border
+							border-black/25
+							bg-white
+							px-4
+							py-2
+							font-vietnam
+							font-semibold
+							text-sm
+							text-black
+							cursor-pointer
+							transition-all
+							duration-200
+							ease-out
+							hover:-translate-y-0.5
+							hover:border-black
+							hover:shadow-lg
+							hover:shadow-black/10
+							disabled:opacity-40
+							disabled:cursor-not-allowed
+							disabled:hover:translate-y-0
+							disabled:hover:shadow-none
+						"
+					>
+						{exporting ? 'exporting…' : 'export csv'}
+					</button>
 					<Select
 						value={shownYear}
 						onChange={setYear}
@@ -1806,6 +1905,14 @@ export default function TreasurerAnalytics() {
 					onReimburse={reimburse}
 					onView={setViewing}
 				/>
+
+				{shownYear && (
+					<DuesCard
+						key={`${shownYear}-${duesVersion}`}
+						year={shownYear}
+						onChange={() => load().catch((err) => setError(err.message))}
+					/>
+				)}
 			</div>
 
 			{editing && editing.kind === 'grants' && (
@@ -1838,7 +1945,7 @@ export default function TreasurerAnalytics() {
 					title={`delete this ${LEDGERS[deleting.kind].noun}?`}
 					body={
 						deleting.row.requestId
-							? `${deleting.row.title} — ${money(deleting.row.amount)}. This row is ${deleting.row.who}'s reimbursement, and deleting it takes the payout off the books while their request still says reimbursed.`
+							? `${deleting.row.title} — ${money(deleting.row.amount)}. This row is ${deleting.row.who}'s reimbursement. Deleting it takes the payout off the books and moves their request back to approved, so it can be paid again.`
 							: `${deleting.row.source ?? deleting.row.title ?? deleting.row.name} — ${money(deleting.row.amount)}. Every total on this page is a sum over these rows, so they all move. This can't be undone.`
 					}
 					confirmLabel="delete it"
