@@ -1,0 +1,13 @@
+node_modules
+frontend/node_modules
+frontend/.next
+frontend/out
+public
+src/generated
+.env
+.env.*
+.git
+.github
+.claude
+*.log
+.DS_Store

@@ -11,7 +11,8 @@
     "start": "node --experimental-strip-types ./src/server.js",
     "db:reset": "npx prisma migrate reset --force --skip-generate && npm run db:seed",
     "db:seed": "node --env-file=.env --experimental-strip-types prisma/seed.js",
-    "test": "echo \"Error: no test specified\" && exit 1"
+    "test": "node --env-file-if-exists=.env.test --experimental-strip-types --test \"test/**/*.test.js\"",
+    "lint:frontend": "npm run lint --prefix frontend"
   },
   "repository": {
     "type": "git",
