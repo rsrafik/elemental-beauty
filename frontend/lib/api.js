@@ -139,8 +139,9 @@ export const auth = {
 export const members = {
 	list: () => api('/members'),
 	me: () => api('/members/me'),
-	// { email, provider } — which mail service "email all" should open
-	mail: () => api('/members/me/mail'),
+	// the dashboard's "Email All" — sent by the server to everyone who wants
+	// club-wide email; the reply is { sent }
+	emailAll: (message) => api('/members/email-all', { method: 'POST', body: message }),
 	update: (fields) => api('/members/me', { method: 'PUT', body: fields }),
 	add: (student) => api('/members', { method: 'POST', body: student }),
 	remove: (id) => api(`/members/${id}`, { method: 'DELETE' }),
@@ -179,9 +180,17 @@ export const events = {
 
 	// Officers, on the check-in page — see src/routes/roster.js.
 	roster: (id) => api(`/events/${id}/roster`),
-	// action: checkin | uncheck | admit | remove (with memberId) or add (with username)
+	// action: checkin | uncheck | admit | offer | remove (with memberId) or add (with username)
 	rosterAction: (id, body) => api(`/events/${id}/roster`, { method: 'POST', body }),
 	checkin: (id, qrToken) => api(`/events/${id}/checkin`, { method: 'POST', body: { qrToken } }),
+	// the check-in page's "email all": { subject, message } to everyone signed up
+	emailAll: (id, message) => api(`/events/${id}/email-all`, { method: 'POST', body: message }),
+}
+
+// A waitlist offer's "Accept my spot" link (the /offer page) — no login, the
+// token from the email is the proof.
+export const offers = {
+	accept: (token) => api('/offers/accept', { method: 'POST', body: { token }, auth: false }),
 }
 
 export const labs = {
@@ -232,9 +241,11 @@ export const labs = {
 
 	// Officers, on the check-in page — see src/routes/roster.js.
 	roster: (id) => api(`/labs/${id}/roster`),
-	// action: checkin | uncheck | admit | remove (with memberId) or add (with username)
+	// action: checkin | uncheck | admit | offer | remove (with memberId) or add (with username)
 	rosterAction: (id, body) => api(`/labs/${id}/roster`, { method: 'POST', body }),
 	checkin: (id, qrToken) => api(`/labs/${id}/checkin`, { method: 'POST', body: { qrToken } }),
+	// the check-in page's "email all": { subject, message } to everyone signed up
+	emailAll: (id, message) => api(`/labs/${id}/email-all`, { method: 'POST', body: message }),
 
 	// Officers, on the quiz editor. The read carries the answer key and any
 	// unpublished draft; the save is the whole quiz, as a draft or published.

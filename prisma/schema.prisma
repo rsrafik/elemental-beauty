@@ -26,11 +26,15 @@ enum MemberRole {
   @@map("member_role")
 }
 
+// `offered` is someone moved off the waitlist into a spot that's theirs if
+// they accept — it holds the seat, and accepting (the emailed link, or the
+// lab's page) makes it `rsvped`. See src/offers.js.
 enum AttendanceStatus {
   rsvped
   attended
   absent
   waitlisted
+  offered
 
   @@map("attendance_status")
 }
@@ -231,6 +235,14 @@ model Lab {
   // download button saves it as, and doubles as "is there a lesson at all".
   lessonPdf     Bytes?  @map("lesson_pdf")
   lessonPdfName String? @map("lesson_pdf_name")
+  // The prelab handout, uploaded on the check-in page and attached to the
+  // confirmation emails (src/offers.js). Kept like the lesson: in the row,
+  // left out of every query by default.
+  prelabPdf     Bytes?  @map("prelab_pdf")
+  prelabPdfName String? @map("prelab_pdf_name")
+  // when the check-in page's "confirmation" last went out — after that,
+  // anyone who takes a spot off the waitlist is sent the prelab too
+  confirmSentAt DateTime? @map("confirm_sent_at") @db.Timestamptz()
   // A lab saved with "save draft" and never published is hidden from
   // members entirely. Existing labs were all live, hence the default.
   published     Boolean @default(true)
@@ -323,6 +335,8 @@ model Event {
   location    String?
   image       String?
   capacity    Int? // null = unlimited seats
+  // when the check-in page's "confirmation" last went out (src/offers.js)
+  confirmSentAt DateTime? @map("confirm_sent_at") @db.Timestamptz()
 
   // Deleting a tag off the calendar's legend leaves the events that used it
   // standing — they just stop being filed under anything.
@@ -342,6 +356,13 @@ model MemberLab {
   attendanceStatus AttendanceStatus @default(rsvped) @map("attendance_status")
   quizPassed       Boolean?         @map("quiz_passed")
   waitlistedAt     DateTime?        @map("waitlisted_at") @db.Timestamptz()
+  // when an officer last emailed an offer (null = not yet) — an offer left
+  // unanswered for 48 hours lapses, see src/offers.js
+  offerSentAt      DateTime?        @map("offer_sent_at") @db.Timestamptz()
+  // "confirmation": when they were asked to confirm their spot, and when
+  // they did — asked and not confirmed in 48 hours lapses (src/offers.js)
+  confirmSentAt    DateTime?        @map("confirm_sent_at") @db.Timestamptz()
+  confirmedAt      DateTime?        @map("confirmed_at") @db.Timestamptz()
 
   member Member @relation(fields: [memberId], references: [userId], onDelete: Cascade)
   lab    Lab    @relation(fields: [labId], references: [labId], onDelete: Cascade)
@@ -356,6 +377,11 @@ model MemberEvent {
   eventId          Int              @map("event_id")
   attendanceStatus AttendanceStatus @default(rsvped) @map("attendance_status")
   waitlistedAt     DateTime?        @map("waitlisted_at") @db.Timestamptz()
+  offerSentAt      DateTime?        @map("offer_sent_at") @db.Timestamptz()
+  // "confirmation": when they were asked to confirm their spot, and when
+  // they did — asked and not confirmed in 48 hours lapses (src/offers.js)
+  confirmSentAt    DateTime?        @map("confirm_sent_at") @db.Timestamptz()
+  confirmedAt      DateTime?        @map("confirmed_at") @db.Timestamptz()
 
   member Member @relation(fields: [memberId], references: [userId], onDelete: Cascade)
   event  Event  @relation(fields: [eventId], references: [eventId], onDelete: Cascade)

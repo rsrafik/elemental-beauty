@@ -10,6 +10,8 @@ import { LabIntro, ChunkyButton, ButtonCaption } from '@/components/labs/LabView
 //   rsvped          green YOU'RE REGISTERED!, click again to give the seat up
 //   waitlisted      yellow YOU'RE WAITLISTED!, your place in the queue, click
 //                   again to leave it
+//   offered         a spot came free and it's held for you (src/offers.js):
+//                   green ACCEPT MY SPOT, or turn it down
 //
 // Whether a sign-up lands a seat or a waitlist place is the server's call — the
 // button flips straight to "registered" and then `onChange` re-reads the lab,
@@ -27,15 +29,33 @@ export default function MemberLabSignup({ lab, ended, onChange }) {
 	const mine = pending ?? lab.mine
 	const going = mine === 'rsvped'
 	const waitlisted = mine === 'waitlisted'
+	const offered = mine === 'offered'
 	// null capacity = unlimited seats: never full, and no count to show
 	const unlimited = lab.capacity == null
 	const left = unlimited ? Infinity : Math.max(0, lab.capacity - lab.taken)
+
+	// accepting is the same call as signing up — the server sees the offer
+	const accept = async () => {
+		if (busy) return
+		setBusy(true)
+		setError(null)
+		setPending('rsvped')
+		try {
+			await labsApi.rsvp(lab.labId)
+			await onChange()
+		} catch (err) {
+			setError(err.message)
+		} finally {
+			setPending(null)
+			setBusy(false)
+		}
+	}
 
 	const toggle = async () => {
 		if (busy) return
 		setBusy(true)
 		setError(null)
-		const leaving = going || waitlisted
+		const leaving = going || waitlisted || offered
 		setPending(leaving ? 'none' : 'rsvped')
 		try {
 			if (leaving) await labsApi.unrsvp(lab.labId)
@@ -56,6 +76,26 @@ export default function MemberLabSignup({ lab, ended, onChange }) {
 	} else if (going) {
 		button = <ChunkyButton tone="green" onClick={toggle}>YOU&apos;RE REGISTERED!</ChunkyButton>
 		caption = 'click again to unregister'
+	} else if (offered) {
+		button = <ChunkyButton tone="green" onClick={accept}>ACCEPT MY SPOT</ChunkyButton>
+		caption = (
+			<>
+				a spot opened up and it&apos;s being held for you
+				<br />
+				<button
+					type="button"
+					onClick={toggle}
+					className="
+						underline
+						underline-offset-2
+						cursor-pointer
+						hover:text-black
+					"
+				>
+					no thanks, give it to the next person
+				</button>
+			</>
+		)
 	} else if (waitlisted) {
 		const away = lab.waitlistPosition
 		button = <ChunkyButton tone="yellow" onClick={toggle}>YOU&apos;RE WAITLISTED!</ChunkyButton>

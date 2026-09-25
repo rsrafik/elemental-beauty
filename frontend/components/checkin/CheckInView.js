@@ -5,7 +5,7 @@ import DashboardShell from '@/components/dashboards/DashboardShell'
 import { BackButton, metaLine, useDesignZoom } from '@/components/labs/LabViewParts'
 import QrScanner from '@/components/checkin/QrScanner'
 import { INSET, EditorButton } from '@/components/labs/EditorParts'
-import { openCompose, useMailProvider } from '@/lib/compose'
+import EmailAllPopup from '@/components/EmailAllPopup'
 import { labs as labsApi, events as eventsApi, members as membersApi } from '@/lib/api'
 
 // The officer's check-in page for one lab or one event — where clicking its
@@ -15,9 +15,10 @@ import { labs as labsApi, events as eventsApi, members as membersApi } from '@/l
 //   not checked in   signed up and not here yet — tick checks them in by
 //                    hand, x drops their spot (which goes to the waitlist)
 //   checked in       here — x undoes the check-in
-//   waitlist         in the order they joined — the yellow button gives them
-//                    a spot, x takes them off, and manual add puts someone on
-//                    by username
+//   waitlist         in the order they joined — the yellow button offers them
+//                    a spot (they move up with a blue envelope, which emails
+//                    them an "accept" link — src/offers.js), x takes them off,
+//                    and manual add puts someone on by username
 //
 // Laid out in the design's pixels and zoomed to the window like the member
 // lab pages (see Scaled in LabViewParts). The columns run to the bottom of the
@@ -53,6 +54,23 @@ function CrossIcon({ className }) {
 	)
 }
 
+function EnvelopeIcon({ className }) {
+	return (
+		<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" className={className} aria-hidden="true">
+			<rect x="4.5" y="6.5" width="15" height="11" rx="1.8" />
+			<path d="M5 7.5l7 5.2 7-5.2" />
+		</svg>
+	)
+}
+
+// '3h ago', '2d ago' — for the envelope's tooltip
+function ago(when) {
+	const hours = Math.floor((Date.now() - new Date(when).getTime()) / 3_600_000)
+	if (hours < 1) return 'just now'
+	if (hours < 48) return `${hours}h ago`
+	return `${Math.floor(hours / 24)}d ago`
+}
+
 // a person with a tick beside them — let them in
 function AdmitIcon({ className }) {
 	return (
@@ -80,6 +98,9 @@ const TONES = {
 	green: 'bg-green text-white',
 	red: 'bg-red text-white',
 	yellow: 'bg-[#EBD24A] text-white',
+	// the envelope: solid until the offer's gone out, pale after
+	blue: 'bg-blue text-white',
+	'blue-sent': 'bg-blue-light text-blue-med',
 }
 
 function RowButton({ tone, label, onClick, disabled, children }) {
@@ -352,7 +373,7 @@ function ManualAdd({ onAdd, people }) {
 export default function CheckInView({ kind, id }) {
 	const api = API[kind]
 	const zoom = useDesignZoom()
-	const mail = useMailProvider()
+	const [emailing, setEmailing] = useState(false)
 	const [item, setItem] = useState(null)
 	const [roster, setRoster] = useState([])
 	const [people, setPeople] = useState([])
@@ -439,18 +460,22 @@ export default function CheckInView({ kind, id }) {
 	}
 
 	const { waiting, here, waitlist } = useMemo(() => ({
-		waiting: roster.filter((r) => r.status === 'rsvped' || r.status === 'absent').sort(byName),
+		// open offers first — they're the ones waiting on an officer or an answer
+		waiting: roster
+			.filter((r) => r.status === 'rsvped' || r.status === 'absent' || r.status === 'offered')
+			.sort((a, b) => (b.status === 'offered') - (a.status === 'offered') || byName(a, b)),
 		here: roster.filter((r) => r.status === 'attended').sort(byName),
 		waitlist: roster
 			.filter((r) => r.status === 'waitlisted')
 			.sort((a, b) => new Date(a.waitlistedAt) - new Date(b.waitlistedAt)),
 	}), [roster])
 
-	// "email all": everyone who signed up (both "not checked in" and "checked
-	// in" — not the waitlist) and hasn't turned lab & event emails off (the
-	// roster leaves their address out), in BCC, in the officer's own mail service (see
-	// lib/compose.js), with the lab or event's name as the subject
+	// "email all": everyone with a confirmed spot (both "not checked in" and
+	// "checked in" — not the waitlist, and not an offer nobody's accepted yet)
+	// who hasn't turned lab & event emails off (the roster leaves their address
+	// out). The server works out the same list when it sends.
 	const recipients = [...waiting, ...here]
+		.filter((row) => row.status !== 'offered')
 		.map((row) => row.email)
 		.filter(Boolean)
 
@@ -531,7 +556,7 @@ export default function CheckInView({ kind, id }) {
 									"
 									disabled={recipients.length === 0}
 									title={recipients.length === 0 ? 'Nobody has signed up yet' : `Email ${recipients.length} ${recipients.length === 1 ? 'person' : 'people'}`}
-									onClick={() => openCompose({ provider: mail.provider, from: mail.email, bcc: recipients, subject: item.title })}
+									onClick={() => setEmailing(true)}
 								>
 									email all
 								</EditorButton>
@@ -571,9 +596,33 @@ export default function CheckInView({ kind, id }) {
 						{waiting.length === 0 && <Empty>nobody waiting to check in</Empty>}
 						{waiting.map((row) => (
 							<Row key={row.memberId}>
-								<div className="pl-[18px] min-w-0">
-									<Person row={row} />
-								</div>
+								{row.status === 'offered' ? (
+									// off the waitlist, spot held until they accept: the
+									// envelope emails them the offer (again, once sent)
+									<div className="
+										pl-[8px]
+										min-w-0
+										flex
+										items-center
+										gap-[8px]
+									">
+										<RowButton
+											tone={row.offerSentAt ? 'blue-sent' : 'blue'}
+											label={row.offerSentAt
+												? `Offer sent to ${fullName(row)} ${ago(row.offerSentAt)} — send again`
+												: `Email ${fullName(row)} their offer`}
+											onClick={() => act(row.memberId, 'offer')}
+											disabled={busy.has(row.memberId)}
+										>
+											<EnvelopeIcon className="w-[16px] h-[16px]" />
+										</RowButton>
+										<Person row={row} />
+									</div>
+								) : (
+									<div className="pl-[18px] min-w-0">
+										<Person row={row} />
+									</div>
+								)}
 								<div className="
 									flex
 									gap-[15.5px]
@@ -635,7 +684,7 @@ export default function CheckInView({ kind, id }) {
 								">
 									<RowButton
 										tone="yellow"
-										label={`Give ${fullName(row)} a spot`}
+										label={`Offer ${fullName(row)} a spot`}
 										onClick={() => act(row.memberId, 'admit')}
 										disabled={busy.has(row.memberId)}
 									>
@@ -655,6 +704,16 @@ export default function CheckInView({ kind, id }) {
 					</Column>
 				</div>
 			</div>
+			{emailing && item && (
+				<EmailAllPopup
+					count={recipients.length}
+					who={`everyone signed up for ${item.title}`}
+					defaultSubject={item.title}
+					addresses={recipients}
+					onSend={(message) => api.emailAll(id, message)}
+					onClose={() => setEmailing(false)}
+				/>
+			)}
 		</DashboardShell>
 	)
 }

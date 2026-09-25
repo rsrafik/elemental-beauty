@@ -25,7 +25,7 @@ function escape(value) {
 // {
 //   heading   the big line — "Confirm your email"
 //   lines     the paragraphs above the button
-//   button    { label, url }
+//   button    { label, url } — optional: an officer's message has none
 //   after     paragraphs under the button (expiry, what happens next)
 //   reason    the small print: why this landed in their inbox
 // }
@@ -39,8 +39,7 @@ export function actionEmail({ heading, lines = [], button, after = [], reason })
         heading,
         '',
         ...lines.flatMap((line) => [line, '']),
-        `${button.label}: ${button.url}`,
-        '',
+        ...(button ? [`${button.label}: ${button.url}`, ''] : []),
         ...after.flatMap((line) => [line, '']),
         ...(replies ? [replies, ''] : []),
         '—',
@@ -61,12 +60,12 @@ export function actionEmail({ heading, lines = [], button, after = [], reason })
 <p style="margin:0 0 20px;font-family:${FONT};font-size:12px;font-weight:bold;letter-spacing:2px;text-transform:uppercase;color:${ORANGE};">Elemental Beauty</p>
 <h1 style="margin:0 0 16px;font-family:${FONT};font-size:22px;line-height:1.3;color:${INK};">${escape(heading)}</h1>
 ${lines.map(paragraph).join('\n')}
-<table role="presentation" cellpadding="0" cellspacing="0" style="margin:8px 0 20px;">
+${button ? `<table role="presentation" cellpadding="0" cellspacing="0" style="margin:8px 0 20px;">
 <tr><td style="border-radius:999px;background:${ORANGE};">
 <a href="${escape(button.url)}" style="display:inline-block;padding:12px 28px;font-family:${FONT};font-size:15px;font-weight:bold;color:#FFFFFF;text-decoration:none;border-radius:999px;">${escape(button.label)}</a>
 </td></tr>
 </table>
-<p style="margin:0 0 20px;font-family:${FONT};font-size:12px;line-height:1.5;color:${MUTED};">If the button doesn't work, paste this into your browser:<br><a href="${escape(button.url)}" style="color:${MUTED};word-break:break-all;">${escape(button.url)}</a></p>
+<p style="margin:0 0 20px;font-family:${FONT};font-size:12px;line-height:1.5;color:${MUTED};">If the button doesn't work, paste this into your browser:<br><a href="${escape(button.url)}" style="color:${MUTED};word-break:break-all;">${escape(button.url)}</a></p>` : ''}
 ${after.map(paragraph).join('\n')}
 ${replies ? paragraph(replies) : ''}
 </td></tr>

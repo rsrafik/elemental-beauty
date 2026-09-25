@@ -4,6 +4,7 @@ import prisma from '../prismaClient.js'
 import requireRole from '../middleware/requireRole.js'
 import { eventPoints } from '../points.js'
 import { mountRoster } from './roster.js'
+import { acceptOffer, offerNext } from '../offers.js'
 
 const router = express.Router()
 
@@ -15,7 +16,8 @@ const TIME = /^([01][0-9]|2[0-3]):[0-5][0-9]$/
 
 // Seats spoken for. A waitlisted row is NOT one of them — that's the whole
 // point of the waitlist — so the count is what fills the cap and nothing else.
-const TAKEN = { attendanceStatus: { in: ['rsvped', 'attended'] } }
+// An open waitlist offer holds a seat too (see src/offers.js).
+const TAKEN = { attendanceStatus: { in: ['rsvped', 'attended', 'offered'] } }
 
 // ---- member-visible reads ----
 
@@ -209,6 +211,7 @@ router.delete('/:id', requireRole('officer'), async (req, res) => {
 
 // The check-in page's roster and its by-hand buttons (see roster.js).
 mountRoster(router, {
+    kindName: 'event',
     parentName: 'event',
     linkName: 'memberEvent',
     key: 'eventId',
@@ -234,6 +237,11 @@ router.post('/:eventId/rsvp', async (req, res) => {
             where: { memberId_eventId: { memberId: req.userId, eventId } }
         })
         if (existing) {
+            // pressing the button while holding an offer accepts it
+            if (existing.attendanceStatus === 'offered') {
+                await acceptOffer('event', eventId, req.userId)
+                return res.status(201).json({ code: 'ACCEPTED', message: 'Spot accepted — you\'re signed up' })
+            }
             if (existing.attendanceStatus === 'waitlisted') {
                 return res.status(202).json({ code: 'ALREADY_WAITLISTED', message: 'You are already on the waitlist' })
             }
@@ -243,7 +251,7 @@ router.post('/:eventId/rsvp', async (req, res) => {
         const result = await prisma.$transaction(async (tx) => {
             if (event.capacity !== null) {
                 const seatsTaken = await tx.memberEvent.count({
-                    where: { eventId, attendanceStatus: { in: ['rsvped', 'attended'] } }
+                    where: { eventId, ...TAKEN }
                 })
                 if (seatsTaken >= event.capacity) {
                     const rsvp = await tx.memberEvent.create({
@@ -277,8 +285,8 @@ router.post('/:eventId/rsvp', async (req, res) => {
     }
 })
 
-// Un-RSVP. If a confirmed seat frees up on a capped event, the oldest
-// waitlisted member is auto-promoted in the same transaction.
+// Un-RSVP (or turn down an offer). If a held seat frees up, the oldest
+// waitlisted member is offered it in the same transaction — see src/offers.js.
 router.delete('/:eventId/rsvp', async (req, res) => {
     const eventId = parseInt(req.params.eventId)
     if (isNaN(eventId)) { return res.status(400).json({ message: 'Invalid event id' }) }
@@ -297,24 +305,16 @@ router.delete('/:eventId/rsvp', async (req, res) => {
                 where: { memberId_eventId: { memberId: req.userId, eventId } }
             })
 
-            // leaving the waitlist frees no seat — only a confirmed RSVP does
-            if (existing.attendanceStatus !== 'rsvped') { return null }
-
-            const next = await tx.memberEvent.findFirst({
-                where: { eventId, attendanceStatus: 'waitlisted' },
-                orderBy: { waitlistedAt: 'asc' }
-            })
-            if (!next) { return null }
-
-            return tx.memberEvent.update({
-                where: { memberId_eventId: { memberId: next.memberId, eventId } },
-                data: { attendanceStatus: 'rsvped', waitlistedAt: null }
-            })
+            // leaving the waitlist frees no seat — only a held one (a
+            // confirmed RSVP or an open offer) does, and it's offered to the
+            // front of the waitlist, who has to accept it (src/offers.js)
+            if (existing.attendanceStatus !== 'rsvped' && existing.attendanceStatus !== 'offered') { return null }
+            return offerNext(tx, 'event', eventId)
         })
 
         res.json({
             message: 'RSVP cancelled',
-            promotedFromWaitlist: promoted ? promoted.memberId : null
+            offeredTo: promoted
         })
     } catch (err) {
         console.error(err.message)

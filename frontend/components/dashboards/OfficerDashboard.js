@@ -6,7 +6,7 @@ import Sidebar from '@/components/dashboards/Sidebar'
 import { useRole, useSignOut } from '@/lib/session'
 import { navFor, showInstagramFor } from '@/lib/nav'
 import { announcements as announcementsApi, events as eventsApi, labs as labsApi, members } from '@/lib/api'
-import { openCompose, useMailProvider } from '@/lib/compose'
+import EmailAllPopup from '@/components/EmailAllPopup'
 import { isoDate, shortDate, today } from '@/lib/dates'
 
 // Shown to officer / treasurer / admin.
@@ -101,13 +101,13 @@ export default function OfficerDashboard() {
 	// so it can't disagree with the roster on /students.
 	const [board, setBoard] = useState([])
 
-	// Everyone who wants club-wide email, for "Email All": members unless
-	// they've turned it off, staff only if they've turned it on (the server
-	// works that out — see src/emailPrefs.js). Held from the same /members read as
+	// Everyone who wants club-wide email, for the "Email All" form's count and
+	// its "copy addresses": members unless they've turned it off, staff only if
+	// they've turned it on (the server works that out — see src/emailPrefs.js). Held from the same /members read as
 	// the board, so the click can open Gmail straight away: a window opened
 	// after waiting on a request gets stopped by the popup blocker.
 	const [memberEmails, setMemberEmails] = useState([])
-	const mail = useMailProvider()
+	const [emailing, setEmailing] = useState(false)
 
 	// The next three things on the calendar, labs and events together — the club
 	// doesn't think of them as separate queues, and neither does this panel.
@@ -309,13 +309,13 @@ export default function OfficerDashboard() {
 					    form to keep in step. `?new` asks that page to open its form
 					    on arrival, so it's still one click from here.
 
-					    "Email All" opens a new message with every member in BCC, so
-					    nobody sees anyone else's address, in whichever mail service
-					    the officer's own address is on — Outlook for @purdue.edu,
-					    Gmail for @gmail.com (see lib/compose.js). */}
+					    "Email All" opens a form here for a subject and message, which
+					    the server sends from the club's address to everyone who wants
+					    club-wide email, in BCC, with replies going to the club's inbox
+					    (see components/EmailAllPopup.js and src/emailAll.js). */}
 					<button
 						type="button"
-						onClick={() => openCompose({ provider: mail.provider, from: mail.email, bcc: memberEmails })}
+						onClick={() => setEmailing(true)}
 						disabled={memberEmails.length === 0}
 						title={`Email ${memberEmails.length} ${memberEmails.length === 1 ? 'person' : 'people'}`}
 						className="
@@ -782,6 +782,15 @@ export default function OfficerDashboard() {
 					</h1>
 				</div>
 			</section>
+			{emailing && (
+				<EmailAllPopup
+					count={memberEmails.length}
+					who="everyone who gets club-wide email"
+					addresses={memberEmails}
+					onSend={(message) => members.emailAll(message)}
+					onClose={() => setEmailing(false)}
+				/>
+			)}
 		</main>
 	)
 }

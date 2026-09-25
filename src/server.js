@@ -15,6 +15,8 @@ import transactionRoutes from './routes/transactionRoutes.js'
 import authMiddleware from './middleware/authMiddleware.js'
 import requireRole, { denyRole } from './middleware/requireRole.js'
 import { sweepAbsences } from './sweepAbsences.js'
+import { expireOffers } from './offers.js'
+import offerRoutes from './routes/offerRoutes.js'
 
 // Refuse to boot misconfigured — a missing secret must crash here, loudly,
 // not surface later as broken tokens or leaked reset codes.
@@ -74,6 +76,9 @@ app.use(express.static(path.join(__dirname, '../public'), { extensions: ['html']
 // API routes — all under /api so they can never collide with frontend pages
 // (frontend /labs is a page; /api/labs is the API).
 app.use('/api/auth', authLimiter, authRoutes)
+// a waitlist offer's "accept" link — no login, the link is the proof — held to
+// the same limit as the other token-in-hand routes
+app.use('/api/offers', authLimiter, offerRoutes)
 app.use('/api/members', authMiddleware, requireRole('member'), memberRoutes)
 app.use('/api/labs', authMiddleware, requireRole('member'), labRoutes)
 app.use('/api/events', authMiddleware, requireRole('member'), eventRoutes)
@@ -99,6 +104,14 @@ app.use('/api/grants', authMiddleware, requireRole('officer'), denyRole('jboard'
 sweepAbsences().catch(err => console.error('Absence sweep failed:', err.message))
 setInterval(
     () => sweepAbsences().catch(err => console.error('Absence sweep failed:', err.message)),
+    60 * 60 * 1000
+)
+
+// Pass on waitlist offers left unanswered 48 hours (see offers.js) — on boot,
+// then hourly. Each check-in page also runs it when it loads its roster.
+expireOffers().catch(err => console.error('Offer sweep failed:', err.message))
+setInterval(
+    () => expireOffers().catch(err => console.error('Offer sweep failed:', err.message)),
     60 * 60 * 1000
 )
 

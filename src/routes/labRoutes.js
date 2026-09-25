@@ -4,6 +4,7 @@ import prisma from '../prismaClient.js'
 import requireRole from '../middleware/requireRole.js'
 import { POINTS } from '../points.js'
 import { mountRoster } from './roster.js'
+import { acceptOffer, confirmSpot, offerNext } from '../offers.js'
 
 const router = express.Router()
 const RANK_OFFICER = ['officer', 'jboard', 'treasurer', 'admin']
@@ -35,7 +36,8 @@ const QUIZ_SELECT = {
 
 // Seats spoken for. A waitlisted row is NOT one of them — that's the whole
 // point of the waitlist — so the count is what fills the cap and nothing else.
-const TAKEN = { attendanceStatus: { in: ['rsvped', 'attended'] } }
+// An open waitlist offer holds a seat too (see src/offers.js).
+const TAKEN = { attendanceStatus: { in: ['rsvped', 'attended', 'offered'] } }
 
 // List labs. Always preview fields — full content is unlocked per-lab.
 // ?when=upcoming|past derived against today at query time, never stored.
@@ -147,6 +149,9 @@ router.get('/:id', async (req, res) => {
             taken,
             mine: link?.attendanceStatus ?? null,
             quizPassed: link?.quizPassed ?? null,
+            // asked to confirm their spot (the check-in page's "confirmation")
+            // and hasn't yet — the lab's page offers the button
+            confirmPending: link?.attendanceStatus === 'rsvped' && Boolean(link.confirmSentAt) && !link.confirmedAt,
             waitlistPosition
         })
     } catch (err) {
@@ -284,6 +289,75 @@ function labData(body) {
 // Body: the lab's fields, plus `published` — false is "save draft", which
 // keeps it off the members' pages until it's published. A draft only needs a
 // title; a published lab needs its date too.
+// The prelab handout — uploaded on the check-in page, attached to the
+// confirmation emails (src/offers.js). Same shape as the lesson: the PDF as the
+// request body, its name in X-Filename. Officers can read it back to check it.
+router.get('/:id/prelab', requireRole('officer'), async (req, res) => {
+    const labId = parseInt(req.params.id)
+    if (isNaN(labId)) { return res.status(400).json({ message: 'Invalid lab id' }) }
+    try {
+        const lab = await prisma.lab.findUnique({ where: { labId }, select: { prelabPdf: true, prelabPdfName: true } })
+        if (!lab?.prelabPdf) { return res.status(404).json({ message: 'This lab has no prelab yet' }) }
+        res.set({
+            'Content-Type': 'application/pdf',
+            'Content-Length': lab.prelabPdf.length,
+            'Content-Disposition': `inline; filename="prelab.pdf"; filename*=UTF-8''${encodeURIComponent(lab.prelabPdfName)}`,
+            'Cache-Control': 'private, no-store'
+        })
+        res.end(Buffer.from(lab.prelabPdf))
+    } catch (err) {
+        console.error(err.message)
+        res.sendStatus(500)
+    }
+})
+
+router.put('/:id/prelab', requireRole('officer'), express.raw({ type: 'application/pdf', limit: LESSON_LIMIT }), async (req, res) => {
+    const labId = parseInt(req.params.id)
+    if (isNaN(labId)) { return res.status(400).json({ message: 'Invalid lab id' }) }
+    const bytes = req.body
+    if (!Buffer.isBuffer(bytes) || bytes.subarray(0, 5).toString('latin1') !== '%PDF-') {
+        return res.status(400).json({ message: 'Send the prelab as a PDF (Content-Type: application/pdf)' })
+    }
+    let name = 'prelab.pdf'
+    try { name = decodeURIComponent(req.get('X-Filename') || name) } catch {}
+    name = name.slice(0, 200)
+    try {
+        await prisma.lab.update({ where: { labId }, data: { prelabPdf: bytes, prelabPdfName: name }, select: { labId: true } })
+        res.json({ message: 'Prelab uploaded', prelabPdfName: name, size: bytes.length })
+    } catch (err) {
+        if (err.code === 'P2025') { return res.status(404).json({ message: 'Lab not found' }) }
+        console.error(err.message)
+        res.sendStatus(500)
+    }
+})
+
+router.delete('/:id/prelab', requireRole('officer'), async (req, res) => {
+    const labId = parseInt(req.params.id)
+    if (isNaN(labId)) { return res.status(400).json({ message: 'Invalid lab id' }) }
+    try {
+        await prisma.lab.update({ where: { labId }, data: { prelabPdf: null, prelabPdfName: null }, select: { labId: true } })
+        res.json({ message: 'Prelab removed' })
+    } catch (err) {
+        if (err.code === 'P2025') { return res.status(404).json({ message: 'Lab not found' }) }
+        console.error(err.message)
+        res.sendStatus(500)
+    }
+})
+
+// A member confirming their spot from the lab's page rather than the email.
+router.post('/:labId/confirm', async (req, res) => {
+    const labId = parseInt(req.params.labId)
+    if (isNaN(labId)) { return res.status(400).json({ message: 'Invalid lab id' }) }
+    try {
+        const result = await confirmSpot('lab', labId, req.userId)
+        if (result.status === 'gone') { return res.status(404).json({ message: 'You have no spot to confirm' }) }
+        res.json({ message: 'Spot confirmed', ...result })
+    } catch (err) {
+        console.error(err.message)
+        res.sendStatus(500)
+    }
+})
+
 router.post('/', requireRole('officer'), async (req, res) => {
     const publishing = req.body.published !== false
     if (!req.body.title) {
@@ -553,6 +627,7 @@ router.delete('/:labId/quiz/draft', requireRole('officer'), async (req, res) => 
 
 // The check-in page's roster and its by-hand buttons (see roster.js).
 mountRoster(router, {
+    kindName: 'lab',
     parentName: 'lab',
     linkName: 'memberLab',
     key: 'labId',
@@ -578,6 +653,11 @@ router.post('/:labId/rsvp', async (req, res) => {
             where: { memberId_labId: { memberId: req.userId, labId } }
         })
         if (existing) {
+            // pressing the button while holding an offer accepts it
+            if (existing.attendanceStatus === 'offered') {
+                await acceptOffer('lab', labId, req.userId)
+                return res.status(201).json({ code: 'ACCEPTED', message: 'Spot accepted — you\'re signed up' })
+            }
             if (existing.attendanceStatus === 'waitlisted') {
                 return res.status(202).json({ code: 'ALREADY_WAITLISTED', message: 'You are already on the waitlist' })
             }
@@ -588,7 +668,7 @@ router.post('/:labId/rsvp', async (req, res) => {
         // can't both grab the last seat
         const result = await prisma.$transaction(async (tx) => {
             const seatsTaken = await tx.memberLab.count({
-                where: { labId, attendanceStatus: { in: ['rsvped', 'attended'] } }
+                where: { labId, ...TAKEN }
             })
 
             // no capacity = unlimited seats
@@ -625,8 +705,8 @@ router.post('/:labId/rsvp', async (req, res) => {
     }
 })
 
-// Un-RSVP. If a confirmed seat opens, the oldest waitlisted member is
-// auto-promoted to rsvped in the same transaction.
+// Un-RSVP (or turn down an offer). If a held seat opens, the oldest
+// waitlisted member is offered it in the same transaction — see src/offers.js.
 router.delete('/:labId/rsvp', async (req, res) => {
     const labId = parseInt(req.params.labId)
     if (isNaN(labId)) { return res.status(400).json({ message: 'Invalid lab id' }) }
@@ -645,24 +725,16 @@ router.delete('/:labId/rsvp', async (req, res) => {
                 where: { memberId_labId: { memberId: req.userId, labId } }
             })
 
-            // leaving the waitlist frees no seat — only a confirmed RSVP does
-            if (existing.attendanceStatus !== 'rsvped') { return null }
-
-            const next = await tx.memberLab.findFirst({
-                where: { labId, attendanceStatus: 'waitlisted' },
-                orderBy: { waitlistedAt: 'asc' }         // oldest waits shortest
-            })
-            if (!next) { return null }
-
-            return tx.memberLab.update({
-                where: { memberId_labId: { memberId: next.memberId, labId } },
-                data: { attendanceStatus: 'rsvped', waitlistedAt: null }
-            })
+            // leaving the waitlist frees no seat — only a held one (a
+            // confirmed RSVP or an open offer) does, and it's offered to the
+            // front of the waitlist, who has to accept it (src/offers.js)
+            if (existing.attendanceStatus !== 'rsvped' && existing.attendanceStatus !== 'offered') { return null }
+            return offerNext(tx, 'lab', labId)
         })
 
         res.json({
             message: 'RSVP cancelled',
-            promotedFromWaitlist: promoted ? promoted.memberId : null
+            offeredTo: promoted
         })
     } catch (err) {
         console.error(err.message)

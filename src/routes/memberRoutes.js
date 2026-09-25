@@ -7,8 +7,8 @@ import requireRole from '../middleware/requireRole.js'
 import { POINTS, MANUAL_ACTIONS } from '../points.js'
 import { fromEmail, takenMessage } from '../accountEmail.js'
 import { sendVerificationEmail } from '../verification.js'
-import { mailProvider } from '../mailProvider.js'
 import { STAFF, wantsEmail } from '../emailPrefs.js'
+import { emailAll, readMessage } from '../emailAll.js'
 
 const router = express.Router()
 
@@ -110,17 +110,33 @@ router.get('/me', async (req, res) => {
     }
 })
 
-// Which mail service the signed-in person's address is on (see
-// mailProvider.js) — "email all" opens that one. Asked once when a page with
-// the button loads, so the click itself can open the tab without waiting.
-router.get('/me/mail', async (req, res) => {
+// The officer dashboard's "Email All": a message the server sends to everyone
+// who wants club-wide email — members unless they've turned it off, staff only
+// if they've turned it on (see emailPrefs.js / emailAll.js).
+router.post('/email-all', requireRole('officer'), async (req, res) => {
+    const { subject, message, error } = readMessage(req.body)
+    if (error) { return res.status(400).json({ message: error }) }
+
     try {
-        const user = await prisma.user.findUnique({ where: { userId: req.userId }, select: { email: true } })
-        if (!user) { return res.status(404).json({ message: 'Account not found' }) }
-        res.json({ email: user.email, provider: await mailProvider(user.email) })
+        const everyone = await prisma.member.findMany({
+            select: { role: true, user: { select: { email: true, emailClub: true } } }
+        })
+        const recipients = everyone
+            .filter((row) => wantsEmail(row.user.emailClub, row.role))
+            .map((row) => row.user.email)
+        if (recipients.length === 0) {
+            return res.status(400).json({ message: 'Nobody wants club-wide emails right now' })
+        }
+        const sent = await emailAll({
+            recipients,
+            subject,
+            message,
+            reason: 'You’re getting this because you’re a member of Elemental Beauty. You can turn these emails off on your account page.'
+        })
+        res.json({ message: `Sent to ${sent} ${sent === 1 ? 'person' : 'people'}`, sent })
     } catch (err) {
         console.error(err.message)
-        res.sendStatus(500)
+        res.status(502).json({ message: err.message })
     }
 })
 

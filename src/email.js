@@ -47,13 +47,15 @@ function gmailFrom() {
 }
 
 // `html` is optional — the formatted version (see emailTemplate.js); `text`
-// is always sent too, for mail apps that don't show HTML.
-export async function sendEmail({ to, subject, text, html }) {
+// is always sent too, for mail apps that don't show HTML. `bcc` is optional,
+// for a message to a list (see emailAll.js). `attachments` is optional too —
+// [{ filename, content: Buffer }], e.g. a lab's prelab PDF.
+export async function sendEmail({ to, bcc, subject, text, html, attachments }) {
     const replyTo = process.env.EMAIL_REPLY_TO || undefined
 
     if (process.env.GMAIL_USER && process.env.GMAIL_APP_PASSWORD) {
         try {
-            await gmailTransport().sendMail({ from: gmailFrom(), to, replyTo, subject, text, html })
+            await gmailTransport().sendMail({ from: gmailFrom(), to, bcc, replyTo, subject, text, html, attachments })
             return true
         } catch (err) {
             console.error(`Email send failed (Gmail): ${err.message}`)
@@ -62,7 +64,8 @@ export async function sendEmail({ to, subject, text, html }) {
     }
 
     if (!process.env.RESEND_API_KEY) {
-        console.log(`[email fallback] To: ${to} | Subject: ${subject}\n${text}\n`)
+        const files = attachments?.length ? ` | Attached: ${attachments.map((a) => a.filename).join(', ')}` : ''
+        console.log(`[email fallback] To: ${to}${bcc?.length ? ` + ${bcc.length} bcc` : ''} | Subject: ${subject}${files}\n${text}\n`)
         return false
     }
 
@@ -76,10 +79,14 @@ export async function sendEmail({ to, subject, text, html }) {
             body: JSON.stringify({
                 from: process.env.EMAIL_FROM || 'Elemental Beauty <onboarding@resend.dev>',
                 to: [to],
+                ...(bcc?.length ? { bcc } : {}),
                 ...(replyTo ? { reply_to: replyTo } : {}),
                 subject,
                 text,
-                ...(html ? { html } : {})
+                ...(html ? { html } : {}),
+                ...(attachments?.length
+                    ? { attachments: attachments.map((a) => ({ filename: a.filename, content: Buffer.from(a.content).toString('base64') })) }
+                    : {})
             })
         })
         if (!res.ok) {

@@ -165,7 +165,9 @@ const currentIcons = {
 // `attended` is not a state of this button, it's the absence of one: once you've
 // been checked in there is no RSVP left to cancel, so the card says so instead
 // of offering a toggle the API would refuse. Everything else is a real control.
-function RsvpButton({ going, waitlist, attended, onClick }) {
+// `offered` is a spot come free off the waitlist and held for you — the
+// button accepts it (see src/offers.js).
+function RsvpButton({ going, waitlist, attended, offered = false, onClick }) {
 	if (attended) {
 		return (
 			<span
@@ -193,10 +195,14 @@ function RsvpButton({ going, waitlist, attended, onClick }) {
 		)
 	}
 
-	const label = going
-		? waitlist ? 'waitlisted' : 'going'
-		: waitlist ? 'waitlist' : 'rsvp'
-	const tone = waitlist
+	const label = offered
+		? 'accept spot'
+		: going
+			? waitlist ? 'waitlisted' : 'going'
+			: waitlist ? 'waitlist' : 'rsvp'
+	const tone = offered
+		? 'bg-green text-green-dark hover:brightness-95 ring-2 ring-green-dark/30'
+		: waitlist
 		? 'bg-yellow text-black hover:brightness-95'
 		: going
 			? 'bg-green text-green-dark hover:brightness-95'
@@ -328,6 +334,7 @@ function panels(rows) {
 				...lab,
 				going,
 				waitlisted: lab.mine === 'waitlisted',
+				offered: lab.mine === 'offered',
 				attended: lab.mine === 'attended',
 			})
 		}
@@ -653,6 +660,24 @@ export default function MemberLabs() {
 		// what the row said before, to put back if the call is refused
 		const before = { mine: lab.mine, taken: lab.taken }
 
+		// accepting an offer: the seat's already counted, it just becomes yours
+		if (lab.offered) {
+			patch({ mine: 'rsvped' })
+			try {
+				await labsApi.rsvp(lab.id)
+			} catch (err) {
+				patch(before)
+				setError(err.message)
+			} finally {
+				setBusy((prev) => {
+					const next = new Set(prev)
+					next.delete(lab.id)
+					return next
+				})
+			}
+			return
+		}
+
 		patch(
 			leaving
 				? { mine: null, taken: lab.taken - (lab.going ? 1 : 0) }
@@ -810,6 +835,7 @@ export default function MemberLabs() {
 								<RsvpButton
 									going={lab.going || lab.waitlisted}
 									waitlist={lab.waitlist}
+									offered={lab.offered}
 									attended={lab.attended}
 									onClick={() => toggleRsvp(lab)}
 								/>

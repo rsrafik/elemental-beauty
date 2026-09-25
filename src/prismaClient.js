@@ -5,13 +5,13 @@ import { PrismaClient } from './generated/prisma/client.ts'
 import { PrismaPg } from '@prisma/adapter-pg'
 
 const adapter = new PrismaPg({ connectionString: process.env.DATABASE_URL })
-// A lab's lesson PDF is megabytes of bytea that almost nothing needs, so it's
-// left out of every query by default — listing labs, reading one, updating one
-// never drags the file along. The one route that serves it asks for it back
-// with `omit: { lessonPdf: false }`.
+// A lab's lesson and prelab PDFs are megabytes of bytea that almost nothing
+// needs, so they're left out of every query by default — listing labs, reading
+// one, updating one never drags a file along. The routes that serve them (and
+// the confirmation emails, which attach the prelab) select them explicitly.
 const prisma = new PrismaClient({
     adapter,
-    omit: { lab: { lessonPdf: true } }
+    omit: { lab: { lessonPdf: true, prelabPdf: true } }
 })
 
 export default prisma

@@ -51,7 +51,7 @@ function hasStarted(lab) {
 function stageFor(lab) {
 	if (lab.mine === 'attended') return lab.quizPassed ? 'lab' : 'quiz'
 	const ended = isoDate(lab.date) < today()
-	const holding = lab.mine === 'rsvped' || lab.mine === 'waitlisted'
+	const holding = lab.mine === 'rsvped' || lab.mine === 'waitlisted' || lab.mine === 'offered'
 	if (!ended && holding && hasStarted(lab)) return 'checkin'
 	return 'signup'
 }
