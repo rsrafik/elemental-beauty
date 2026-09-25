@@ -59,7 +59,11 @@ function toRow(row) {
 		id: row.userId,
 		first: row.user?.firstName ?? '',
 		last: row.user?.lastName ?? '',
-		username: row.user?.username ?? '',
+		// the "username" column lists people by their email (officers get it
+		// on the roster); the username itself — the email's first half — is
+		// kept too, so a search for it without the @ still finds them
+		username: row.user?.email || row.user?.username || '',
+		handle: row.user?.username ?? '',
 		role: row.role,
 		points: row.points,
 		joined: String(row.user?.createdAt ?? row.dateJoined ?? '').slice(0, 10),
@@ -747,7 +751,7 @@ function AddStudentDialog({ roles, onClose, onSave }) {
 	const [form, setForm] = useState({
 		first: '',
 		last: '',
-		username: '',
+		email: '',
 		role: 'member',
 		password: '',
 	})
@@ -766,7 +770,7 @@ function AddStudentDialog({ roles, onClose, onSave }) {
 	const ready =
 		form.first.trim() !== '' &&
 		form.last.trim() !== '' &&
-		form.username.trim() !== '' &&
+		form.email.trim() !== '' &&
 		form.password !== ''
 
 	const submit = (event) => {
@@ -777,7 +781,7 @@ function AddStudentDialog({ roles, onClose, onSave }) {
 				...form,
 				first: form.first.trim(),
 				last: form.last.trim(),
-				username: form.username.trim(),
+				email: form.email.trim(),
 			})
 		)
 	}
@@ -894,13 +898,14 @@ function AddStudentDialog({ roles, onClose, onSave }) {
 						</label>
 					</div>
 
+					{/* their username is the part before the @, as when signing up */}
 					<label className="block">
-						<Label>username</Label>
+						<Label>email</Label>
 						<input
-							type="text"
-							value={form.username}
-							onChange={set('username')}
-							placeholder="daisy22"
+							type="email"
+							value={form.email}
+							onChange={set('email')}
+							placeholder="daisy22@purdue.edu"
 							autoComplete="off"
 							className={FIELD}
 						/>
@@ -1230,7 +1235,7 @@ export default function OfficerStudents() {
 		.filter((student) => roles.length === 0 || roles.includes(student.role))
 		.filter((student) =>
 			needle === '' ||
-			[student.first, student.last, student.username, student.role, String(student.id)]
+			[student.first, student.last, student.username, student.handle, student.role, String(student.id)]
 				.some((field) => field.toLowerCase().includes(needle))
 		)
 		// Ties break on id so equal points (or duplicate names) hold a stable
@@ -1356,7 +1361,7 @@ export default function OfficerStudents() {
 			const created = await membersApi.add({
 				firstName: values.first,
 				lastName: values.last,
-				username: values.username,
+				email: values.email,
 				password: values.password,
 				role: values.role,
 			})

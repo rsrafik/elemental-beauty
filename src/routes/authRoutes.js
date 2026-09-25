@@ -4,6 +4,7 @@ import jwt from 'jsonwebtoken'
 import prisma from '../prismaClient.js'
 import authMiddleware from '../middleware/authMiddleware.js'
 import { sendEmail } from '../email.js'
+import { fromEmail, takenMessage } from '../accountEmail.js'
 
 const router = express.Router()
 
@@ -53,38 +54,37 @@ async function sendVerificationEmail(user) {
     return verificationToken
 }
 
-// The sign-up form asks for a purdue username, a password, and an instagram
-// handle it marks optional — no name, which is why first/last default to empty
-// on the row and get filled in from /account afterwards. `firstName` and
-// `lastName` are still accepted here, because /students creates accounts through
-// this same shape and does collect them.
-//
-// The address is the username with the domain on the end, which is what
-// /account writes on the page rather than asking for a second time. An `email`
-// in the body still wins, so a non-purdue account can be made by hand.
+// The sign-up form asks for an email, a password, the person's name and an
+// instagram handle it marks optional. The username isn't asked for: it's the
+// part of the email before the @ (see accountEmail.js), and any domain will do.
 //
 // What comes out is an account with NO member row — role 'user'. That's the
 // onboarding dashboard, and the labs / events / calendar menu isn't offered
 // until the waiver promotes them.
 router.post('/register', async (req, res) => {
-    const { username, email, password, firstName, lastName, instagram } = req.body
+    const { password, firstName, lastName, instagram } = req.body
 
-    if (!username || !password) {
-        return res.status(400).json({ message: 'username and password are required' })
+    if (!req.body.email || !password) {
+        return res.status(400).json({ message: 'email and password are required' })
     }
     if (String(password).length < 8) {
         return res.status(400).json({ message: 'password must be at least 8 characters' })
     }
 
-    const handle = String(username).trim()
-    if (!handle) { return res.status(400).json({ message: 'username cannot be blank' }) }
+    const { email, username: handle, error } = fromEmail(req.body.email)
+    if (error) { return res.status(400).json({ message: error }) }
 
     try {
+        // checked first: the same address is the more useful thing to be told
+        // about than the username it shares with itself
+        if (await prisma.user.findUnique({ where: { email }, select: { userId: true } })) {
+            return res.status(409).json({ message: 'An account with that email already exists' })
+        }
         const passwordHash = await bcrypt.hash(password, 8)
         const user = await prisma.user.create({
             data: {
                 username: handle,
-                email: email?.trim() || `${handle}@purdue.edu`,
+                email,
                 passwordHash,
                 firstName: firstName?.trim() || '',
                 lastName: lastName?.trim() || '',
@@ -101,7 +101,7 @@ router.post('/register', async (req, res) => {
         res.status(201).json({ token, message: 'Account created' })
     } catch (err) {
         if (err.code === 'P2002') {           // Prisma unique violation
-            return res.status(409).json({ message: 'Username or email already taken' })
+            return res.status(409).json({ message: takenMessage(err, handle) })
         }
         console.error(err.message)
         res.sendStatus(500)
@@ -151,15 +151,20 @@ router.get('/me', authMiddleware, async (req, res) => {
     }
 })
 
+// Signs in with the username, or with the whole email address — whichever
+// someone types, since the username is only the address's first half.
 router.post('/login', async (req, res) => {
-    const { username, password } = req.body
+    const { password } = req.body
+    const login = String(req.body.username ?? '').trim().toLowerCase()
 
-    if (!username || !password) {
+    if (!login || !password) {
         return res.status(400).json({ message: 'username and password are required' })
     }
 
     try {
-        const user = await prisma.user.findUnique({ where: { username } })
+        const user = await prisma.user.findUnique({
+            where: login.includes('@') ? { email: login } : { username: login }
+        })
 
         // Same response whether the username or the password is wrong
         if (!user) {
@@ -254,7 +259,7 @@ router.post('/waiver', authMiddleware, async (req, res) => {
 // user's CURRENT password hash — so it dies the moment the password changes
 // (single-use) with no extra database table needed.
 router.post('/forgot-password', async (req, res) => {
-    const { email } = req.body
+    const email = String(req.body.email ?? '').trim().toLowerCase()
     if (!email) { return res.status(400).json({ message: 'email is required' }) }
 
     try {

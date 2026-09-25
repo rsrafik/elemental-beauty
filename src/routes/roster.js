@@ -5,7 +5,7 @@ import requireRole from '../middleware/requireRole.js'
 // three columns (not checked in / checked in / waitlist) and the same buttons
 // on each row, over member_lab or member_event.
 //
-//   GET  /:id/roster   everyone with a row, name and handle included
+//   GET  /:id/roster   everyone with a row, name, handle and email included
 //   POST /:id/roster   { action, memberId | username }
 //
 //     checkin   rsvped (or absent) -> attended, points awarded (the green tick)
@@ -25,7 +25,7 @@ const TAKEN = { attendanceStatus: { in: ['rsvped', 'attended'] } }
 const USER_SELECT = {
     member: {
         select: {
-            user: { select: { username: true, firstName: true, lastName: true } }
+            user: { select: { username: true, firstName: true, lastName: true, email: true } }
         }
     }
 }
@@ -58,7 +58,9 @@ export function mountRoster(router, kind) {
                 waitlistedAt: row.waitlistedAt,
                 username: member.user.username,
                 firstName: member.user.firstName,
-                lastName: member.user.lastName
+                lastName: member.user.lastName,
+                // for the page's "email all" — officers only, like the route
+                email: member.user.email
             })))
         } catch (err) {
             console.error(err.message)
@@ -76,10 +78,11 @@ export function mountRoster(router, kind) {
             if (!row) { return res.status(404).json({ message: `${label} not found` }) }
 
             if (action === 'add') {
-                const username = String(req.body.username ?? '').trim().replace(/^@/, '')
+                // a username ('@' in front or not), or a whole email address
+                const username = String(req.body.username ?? '').trim().toLowerCase().replace(/^@/, '')
                 if (!username) { return res.status(400).json({ message: 'username is required' }) }
                 const user = await prisma.user.findUnique({
-                    where: { username },
+                    where: username.includes('@') ? { email: username } : { username },
                     select: { userId: true, member: { select: { userId: true } } }
                 })
                 if (!user?.member) { return res.status(404).json({ message: `No member called @${username}` }) }

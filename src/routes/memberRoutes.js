@@ -5,6 +5,7 @@ import QRCode from 'qrcode'
 import prisma from '../prismaClient.js'
 import requireRole from '../middleware/requireRole.js'
 import { POINTS, MANUAL_ACTIONS } from '../points.js'
+import { fromEmail, takenMessage } from '../accountEmail.js'
 
 const router = express.Router()
 
@@ -21,8 +22,8 @@ function canManage(actorRole, targetRole) {
     return actorRole === 'admin' || targetRole === 'member'
 }
 
-// Roster — whitelisted fields only; email and passwordHash never leave the
-// server. The name, the handle and the picture live on the user row, so they
+// Roster — whitelisted fields only; passwordHash never leaves the server, and
+// the email only goes to officers (the /students table lists people by it). The name, the handle and the picture live on the user row, so they
 // come through the relation: /students draws every one of them, and so does
 // the leaderboard on /account.
 router.get('/', async (req, res) => {
@@ -40,7 +41,8 @@ router.get('/', async (req, res) => {
                         lastName: true,
                         instagram: true,
                         profilePicture: true,
-                        createdAt: true
+                        createdAt: true,
+                        email: ['officer', 'treasurer', 'admin'].includes(req.role)
                     }
                 }
             },
@@ -110,11 +112,11 @@ router.get('/me/qr', async (req, res) => {
 //
 // Everything editable on /account is on the user row, and deliberately so: the
 // form is offered to somebody with an account and no membership too, so it can't
-// depend on a member row existing. Changing the username changes the address the
-// club writes to — the page derives one from the other — so the email moves with
-// it and has to be verified again.
+// depend on a member row existing. The email is what's edited, and the username
+// is its first half (see accountEmail.js), so the two always move together; a
+// new address has to be verified again.
 router.put('/me', async (req, res) => {
-    const { firstName, lastName, username, instagram, profilePicture } = req.body
+    const { firstName, lastName, instagram, profilePicture } = req.body
 
     const data = {}
     if (firstName !== undefined) {
@@ -125,11 +127,11 @@ router.put('/me', async (req, res) => {
         if (!String(lastName).trim()) { return res.status(400).json({ message: 'lastName cannot be empty' }) }
         data.lastName = String(lastName).trim()
     }
-    if (username !== undefined) {
-        const handle = String(username).trim()
-        if (!handle) { return res.status(400).json({ message: 'username cannot be empty' }) }
-        data.username = handle
-        data.email = `${handle}@purdue.edu`
+    if (req.body.email !== undefined) {
+        const { email, username, error } = fromEmail(req.body.email)
+        if (error) { return res.status(400).json({ message: error }) }
+        data.email = email
+        data.username = username
     }
     if (instagram !== undefined) { data.instagram = instagram }
     if (profilePicture !== undefined) { data.profilePicture = profilePicture }
@@ -158,7 +160,7 @@ router.put('/me', async (req, res) => {
         })
         res.json(me)
     } catch (err) {
-        if (err.code === 'P2002') { return res.status(409).json({ message: 'Username or email already taken' }) }
+        if (err.code === 'P2002') { return res.status(409).json({ message: takenMessage(err, data.username) }) }
         if (err.code === 'P2025') { return res.status(404).json({ message: 'Account not found' }) }
         console.error(err.message)
         res.sendStatus(500)
@@ -216,10 +218,10 @@ router.post('/:id/points', requireRole('officer'), async (req, res) => {
 // The password is a starter one they change from /account, which is why the
 // dialog asks for it in plain sight rather than mailing an invitation.
 router.post('/', requireRole('officer'), async (req, res) => {
-    const { firstName, lastName, username, password, role = 'member', email, instagram } = req.body
+    const { firstName, lastName, password, role = 'member', instagram } = req.body
 
-    if (!firstName?.trim() || !lastName?.trim() || !username?.trim() || !password) {
-        return res.status(400).json({ message: 'firstName, lastName, username, and password are required' })
+    if (!firstName?.trim() || !lastName?.trim() || !req.body.email || !password) {
+        return res.status(400).json({ message: 'firstName, lastName, email, and password are required' })
     }
     if (!ROLES.includes(role)) {
         return res.status(400).json({ message: `role must be one of: ${ROLES.join(', ')}` })
@@ -228,7 +230,9 @@ router.post('/', requireRole('officer'), async (req, res) => {
         return res.status(403).json({ message: `Only an admin can add ${role}s` })
     }
 
-    const handle = username.trim()
+    // the username is the email's first half, same as signing up
+    const { email, username: handle, error } = fromEmail(req.body.email)
+    if (error) { return res.status(400).json({ message: error }) }
 
     try {
         const passwordHash = await bcrypt.hash(password, 8)
@@ -239,7 +243,7 @@ router.post('/', requireRole('officer'), async (req, res) => {
             const user = await tx.user.create({
                 data: {
                     username: handle,
-                    email: email?.trim() || `${handle}@purdue.edu`,
+                    email,
                     passwordHash,
                     firstName: firstName.trim(),
                     lastName: lastName.trim(),
@@ -257,6 +261,7 @@ router.post('/', requireRole('officer'), async (req, res) => {
         res.status(201).json({
             userId: created.user.userId,
             username: created.user.username,
+            email: created.user.email,
             firstName: created.user.firstName,
             lastName: created.user.lastName,
             instagram: created.user.instagram,
@@ -267,7 +272,7 @@ router.post('/', requireRole('officer'), async (req, res) => {
         })
     } catch (err) {
         if (err.code === 'P2002') {
-            return res.status(409).json({ message: 'Username or email already taken' })
+            return res.status(409).json({ message: takenMessage(err, handle) })
         }
         console.error(err.message)
         res.sendStatus(500)

@@ -449,7 +449,7 @@ function SignUp({ front, onCome, onSubmit, onDone }) {
 	const [form, setForm] = useState({
 		first: '',
 		last: '',
-		username: '',
+		email: '',
 		password: '',
 		verify: '',
 		instagram: '',
@@ -465,7 +465,7 @@ function SignUp({ front, onCome, onSubmit, onDone }) {
 	const ready =
 		form.first.trim() !== '' &&
 		form.last.trim() !== '' &&
-		form.username.trim() !== '' &&
+		form.email.trim() !== '' &&
 		form.password !== '' &&
 		form.verify !== '' &&
 		!busy
@@ -491,7 +491,7 @@ function SignUp({ front, onCome, onSubmit, onDone }) {
 			await onSubmit({
 				firstName: form.first.trim(),
 				lastName: form.last.trim(),
-				username: form.username.trim(),
+				email: form.email.trim(),
 				password: form.password,
 				instagram: form.instagram.trim(),
 			})
@@ -565,16 +565,22 @@ function SignUp({ front, onCome, onSubmit, onDone }) {
 				</div>
 			</div>
 
-			<p className={`${LABEL} mt-[21px]`}>PURDUE USERNAME</p>
+			<p className={`${LABEL} mt-[21px]`}>EMAIL</p>
 			<input
-				type="text"
-				name="purdue-username"
-				autoComplete="username"
-				value={form.username}
-				onChange={set('username')}
+				type="email"
+				name="email"
+				autoComplete="email"
+				value={form.email}
+				onChange={set('email')}
 				className={`${FIELD} mt-[9px] bg-[#FFCC6E]`}
 			/>
-			<p className={`${HINT} mt-[10px]`}>without the &apos;@purdue.edu&apos;</p>
+			{/* the username isn't asked for — it's whatever comes before the @,
+			    so the hint says what it'll be as it's typed */}
+			<p className={`${HINT} mt-[10px]`}>
+				{form.email.includes('@') && form.email.split('@')[0].trim()
+					? `you'll log in as ${form.email.split('@')[0].trim().toLowerCase()}`
+					: 'your username is the part before the @'}
+			</p>
 
 			<p className={`${LABEL} mt-[21px]`}>PASSWORD</p>
 			<input
@@ -628,12 +634,10 @@ function SignUp({ front, onCome, onSubmit, onDone }) {
 // at /reset-password. So this dialog's job is to say where the link is going and
 // then confirm it went, which is also why it never asks for the old one.
 //
-// The address is the purdue username with the domain on the end, the same way
-// /account derives it, so this asks for the username rather than making anyone
-// type an address the club already knows.
+// It asks for the email the account was made with — the link goes there.
 //
 // The reply is identical whether or not the account exists — that's the API
-// refusing to confirm which usernames are real, and the dialog has to keep that
+// refusing to confirm which addresses are real, and the dialog has to keep that
 // line rather than reporting "no such user" back.
 //
 // The page's content is keyed on the step, which remounts it and so restarts
@@ -669,13 +673,13 @@ function ForgotPasswordDialog({ onClose }) {
 	const { closing, dismiss } = useDismiss()
 	const close = () => dismiss(onClose)
 
-	const [username, setUsername] = useState('')
+	const [typed, setTyped] = useState('')
 	const [sent, setSent] = useState(false)
 	const [busy, setBusy] = useState(false)
 	const [error, setError] = useState(null)
 
-	const handle = username.trim()
-	const email = handle ? `${handle}@purdue.edu` : 'your purdue email'
+	const handle = typed.trim()
+	const email = handle || 'your email'
 
 	useEffect(() => {
 		const onKey = event => {
@@ -799,15 +803,15 @@ function ForgotPasswordDialog({ onClose }) {
 						</div>
 					) : (
 						<div className="px-[22px]">
-							<p className={RESET_LABEL}>PURDUE USERNAME</p>
+							<p className={RESET_LABEL}>EMAIL</p>
 							<input
-								type="text"
-								name="username"
-								autoComplete="username"
+								type="email"
+								name="email"
+								autoComplete="email"
 								autoFocus
-								value={username}
+								value={typed}
 								onChange={event => {
-									setUsername(event.target.value)
+									setTyped(event.target.value)
 									setError(null)
 								}}
 								className={RESET_FIELD}

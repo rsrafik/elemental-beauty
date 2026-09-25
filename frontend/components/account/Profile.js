@@ -37,10 +37,10 @@ import { useDismiss } from '@/lib/dismiss'
 // than blanks: the strip is five cells wide either way, and a member who really
 // has done nothing yet sees the same thing.
 //
-// No email field anywhere on this page: the username *is* the purdue username,
-// so the address is it with the domain on the end. users.email agrees with that
-// — PUT /members/me moves the two together — and the page derives it rather
-// than showing a second copy that could say something different.
+// The email is what's edited here, and the username beside it is only ever its
+// first half — the part before the @, which is what you log in with. PUT
+// /members/me moves the two together, so the page derives the username rather
+// than letting it be typed and disagree.
 const NO_STATS = { pastLabs: 0, rsvpLabs: 0, pastEvents: 0, rsvpEvents: 0 }
 
 // GET /members returns the roster with the user row nested under it. The board
@@ -576,13 +576,41 @@ function Masthead({ role, profile, draft, onPick, onClear }) {
 							text-black/50
 							truncate
 						">
-							{draft.username}@purdue.edu
+							{draft.email}
 						</p>
 					</div>
 				</div>
 			</div>
 		</section>
 	)
+}
+
+function VerifiedTag() {
+	return (
+		<span className="
+			shrink-0
+			inline-flex
+			items-center
+			gap-1
+			rounded-full
+			bg-green
+			px-2
+			py-0.5
+			font-vietnam
+			font-semibold
+			text-[10px]
+			text-green-dark
+		">
+			<CheckIcon className="w-2.5 h-2.5" />
+			verified
+		</span>
+	)
+}
+
+// 'lauren7712@purdue.edu' -> 'lauren7712' — the server's rule, shown as you type
+function usernameOf(email) {
+	const at = email.indexOf('@')
+	return (at === -1 ? email : email.slice(0, at)).trim().toLowerCase()
 }
 
 // ---- the counter -----------------------------------------------------------
@@ -673,21 +701,29 @@ function Counter({ points, stats }) {
 
 // A line to write on rather than a box to fill in: the underline is the whole
 // field, and it takes the club's salmon while you're in it.
-function Line({ label, value, onChange, placeholder, autoComplete = 'off' }) {
+// `tag` rides at the right end of the label's line — the email's "verified".
+function Line({ label, value, onChange, placeholder, type = 'text', autoComplete = 'off', tag = null }) {
 	return (
 		<label className="block">
 			<span className="
-				block
-				font-vietnam
-				text-[11px]
-				uppercase
-				tracking-[0.14em]
-				text-black/45
+				flex
+				items-center
+				justify-between
+				gap-2
 			">
-				{label}
+				<span className="
+					font-vietnam
+					text-[11px]
+					uppercase
+					tracking-[0.14em]
+					text-black/45
+				">
+					{label}
+				</span>
+				{tag}
 			</span>
 			<input
-				type="text"
+				type={type}
 				value={value}
 				onChange={onChange}
 				placeholder={placeholder}
@@ -766,23 +802,24 @@ function DetailsCard({ draft, dirty, ready, saved, saving, error, verified, onCh
 					autoComplete="family-name"
 				/>
 				<Line
-					label="purdue username"
-					value={draft.username}
-					onChange={onChange('username')}
-					placeholder="isabel887"
+					label="email"
+					type="email"
+					value={draft.email}
+					onChange={onChange('email')}
+					placeholder="isabel887@purdue.edu"
+					autoComplete="email"
+					tag={verified && <VerifiedTag />}
 				/>
 
-				{/* Not a field: the address is the purdue username with the domain on
-				    the end, so it's written out here as it changes rather than typed
-				    in twice and left to disagree. Its line is drawn but never lights
-				    up, and the reset link goes to whatever this says.
+				{/* Not a field: the username is the email's first half, so it's
+				    written out here as the email changes rather than typed in twice
+				    and left to disagree. Its line is drawn but never lights up.
 
-				    It sits beside the username rather than under it — the two are
-				    the same fact, and the pairing is what says so. */}
+				    It sits beside the email rather than under it — the two are the
+				    same fact, and the pairing is what says so. */}
 				<div>
 					{/* the tag rides on the label line rather than the value line, so
-					    the address gets the full width of the column and a long
-					    username isn't truncated to make room for it */}
+					    the username gets the full width of the column */}
 					<div className="
 						flex
 						items-center
@@ -796,27 +833,8 @@ function DetailsCard({ draft, dirty, ready, saved, saving, error, verified, onCh
 							tracking-[0.14em]
 							text-black/45
 						">
-							email
+							username
 						</span>
-						{verified && (
-							<span className="
-								shrink-0
-								inline-flex
-								items-center
-								gap-1
-								rounded-full
-								bg-green
-								px-2
-								py-0.5
-								font-vietnam
-								font-semibold
-								text-[10px]
-								text-green-dark
-							">
-								<CheckIcon className="w-2.5 h-2.5" />
-								verified
-							</span>
-						)}
 					</div>
 					<div className="
 						mt-1
@@ -833,8 +851,7 @@ function DetailsCard({ draft, dirty, ready, saved, saving, error, verified, onCh
 							text-black/60
 							truncate
 						">
-							{draft.username || <span className="text-black/25">username</span>}
-							<span className="text-black/35">@purdue.edu</span>
+							{usernameOf(draft.email) || <span className="text-black/25">username</span>}
 						</p>
 					</div>
 				</div>
@@ -1482,7 +1499,7 @@ export default function Profile() {
 	const [profile, setProfile] = useState(() => ({
 		first: user?.firstName ?? '',
 		last: user?.lastName ?? '',
-		username: user?.username ?? '',
+		email: user?.email ?? '',
 		photo: user?.profilePicture ?? null,
 		emailVerified: user?.emailVerified ?? false,
 		joined: user?.dateJoined ?? user?.createdAt ?? null,
@@ -1492,7 +1509,7 @@ export default function Profile() {
 	const [draft, setDraft] = useState(() => ({
 		first: user?.firstName ?? '',
 		last: user?.lastName ?? '',
-		username: user?.username ?? '',
+		email: user?.email ?? '',
 		photo: user?.profilePicture ?? null,
 	}))
 	const [saved, setSaved] = useState(false)
@@ -1551,7 +1568,7 @@ export default function Profile() {
 	const dirty =
 		draft.first !== profile.first ||
 		draft.last !== profile.last ||
-		draft.username !== profile.username ||
+		draft.email !== profile.email ||
 		draft.photo !== profile.photo
 
 	// a name nobody can read is worse than the one you had, so an empty field
@@ -1559,10 +1576,10 @@ export default function Profile() {
 	const filled =
 		draft.first.trim() !== '' &&
 		draft.last.trim() !== '' &&
-		draft.username.trim() !== ''
+		draft.email.trim() !== ''
 
-	// PUT /members/me takes all four: the names, the username (which moves the
-	// email with it) and the picture. The picture is still a data URL held in
+	// PUT /members/me takes all four: the names, the email (which moves the
+	// username with it) and the picture. The picture is still a data URL held in
 	// the browser — there's nowhere to upload a file to yet — so what's stored
 	// is whatever the picker produced.
 	//
@@ -1575,7 +1592,7 @@ export default function Profile() {
 		const clean = {
 			first: draft.first.trim(),
 			last: draft.last.trim(),
-			username: draft.username.trim(),
+			email: draft.email.trim().toLowerCase(),
 			photo: draft.photo,
 		}
 
@@ -1585,7 +1602,7 @@ export default function Profile() {
 			await membersApi.update({
 				firstName: clean.first,
 				lastName: clean.last,
-				username: clean.username,
+				email: clean.email,
 				profilePicture: clean.photo,
 			})
 			setDraft(clean)
@@ -1603,7 +1620,7 @@ export default function Profile() {
 		setDraft({
 			first: profile.first,
 			last: profile.last,
-			username: profile.username,
+			email: profile.email,
 			photo: profile.photo,
 		})
 		setError(null)
@@ -1700,7 +1717,7 @@ export default function Profile() {
 							saved={saved}
 							saving={saving}
 							error={error}
-							verified={profile.emailVerified && draft.username === profile.username}
+							verified={profile.emailVerified && draft.email === profile.email}
 							onChange={set}
 							onSave={save}
 							onRevert={revert}
@@ -1729,7 +1746,7 @@ export default function Profile() {
 
 			{resetting && (
 				<ResetPasswordDialog
-					email={`${profile.username}@purdue.edu`}
+					email={profile.email}
 					onClose={() => setResetting(false)}
 				/>
 			)}

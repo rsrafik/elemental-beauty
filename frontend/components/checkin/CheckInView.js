@@ -4,7 +4,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import DashboardShell from '@/components/dashboards/DashboardShell'
 import { BackButton, metaLine, useDesignZoom } from '@/components/labs/LabViewParts'
 import QrScanner from '@/components/checkin/QrScanner'
-import { INSET } from '@/components/labs/EditorParts'
+import { INSET, EditorButton } from '@/components/labs/EditorParts'
 import { labs as labsApi, events as eventsApi, members as membersApi } from '@/lib/api'
 
 // The officer's check-in page for one lab or one event — where clicking its
@@ -32,6 +32,14 @@ function fullName(row) {
 }
 
 const byName = (a, b) => fullName(a).localeCompare(fullName(b))
+
+// Gmail's compose window, in a new tab, with everyone who signed up (both
+// "not checked in" and "checked in" — not the waitlist) in BCC so nobody sees anyone
+// else's address, and the lab or event's name as the subject.
+function gmailTo(emails, subject) {
+	const params = new URLSearchParams({ view: 'cm', fs: '1', bcc: emails.join(','), su: subject })
+	return `https://mail.google.com/mail/?${params}`
+}
 
 // ---- icons -----------------------------------------------------------------
 
@@ -443,6 +451,10 @@ export default function CheckInView({ kind, id }) {
 			.sort((a, b) => new Date(a.waitlistedAt) - new Date(b.waitlistedAt)),
 	}), [roster])
 
+	const recipients = [...waiting, ...here]
+		.map((row) => row.email)
+		.filter(Boolean)
+
 	const back = kind === 'lab'
 		? { href: '/labs', label: 'Back to labs' }
 		: { href: '/events', label: 'Back to events' }
@@ -510,6 +522,20 @@ export default function CheckInView({ kind, id }) {
 								">
 									{item.title}
 								</h1>
+								<EditorButton
+									className="
+										mt-[14px]
+										mx-auto
+										lg:mx-0
+										w-[121.7px]
+										h-[32px]
+									"
+									disabled={recipients.length === 0}
+									title={recipients.length === 0 ? 'Nobody has signed up yet' : `Email ${recipients.length} ${recipients.length === 1 ? 'person' : 'people'}`}
+									onClick={() => window.open(gmailTo(recipients, item.title), '_blank', 'noopener')}
+								>
+									email all
+								</EditorButton>
 							</>
 						)}
 						{error && (
