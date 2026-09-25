@@ -21,11 +21,11 @@
 // survive a reseed — officers edit that list from the page and it isn't
 // fixture data.
 
-import bcrypt from 'bcryptjs'
 import prisma from '../src/prismaClient.js'
 import { readFile } from 'fs/promises'
 import { LAB_DESCRIPTIONS } from './labDescriptions.js'
 import { SOAP_BAR_CONTENT, SOAP_BAR_LESSON_FILE } from './soapBarContent.js'
+import { hashPassword } from '../src/passwords.js'
 
 // One account per role. `role: null` is the one with no member row at all.
 const ACCOUNTS = [
@@ -55,12 +55,16 @@ const EXTRAS = [
 // Order matters: children before parents, so nothing trips a foreign key.
 // `users` is last and takes members / member_lab / member_event with it.
 async function wipe() {
+    await prisma.activityLog.deleteMany()
+    await prisma.duesPayment.deleteMany()
     await prisma.transaction.deleteMany()
     await prisma.reimbursement.deleteMany()
     await prisma.grant.deleteMany()
     await prisma.yearTarget.deleteMany()
     await prisma.announcement.deleteMany()
-    await prisma.quizAnswerOption.deleteMany()
+    // questions, not their options first: options cascade with the question,
+    // and deleting the options on their own leaves a question with no right
+    // answer, which the deferred trigger refuses at commit
     await prisma.labQuizQuestion.deleteMany()
     await prisma.labLesson.deleteMany()
     await prisma.memberLab.deleteMany()
@@ -72,12 +76,16 @@ async function wipe() {
 }
 
 async function createAccount({ username, firstName, lastName, role, points }) {
-    const passwordHash = await bcrypt.hash(username, 8)
+    const passwordHash = await hashPassword(username)
 
     const user = await prisma.user.create({
         data: {
             username,
-            email: `${username}@purdue.edu`,
+            // example.com is reserved for exactly this and never delivers —
+            // the dev server sends real mail when Gmail is set up in .env, and
+            // the day-before reminders go out on their own, so a fixture
+            // account must never be somebody's actual inbox
+            email: `${username}@example.com`,
             passwordHash,
             firstName,
             lastName,
