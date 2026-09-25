@@ -29,6 +29,21 @@ for (const key of ['DATABASE_URL', 'JWT_SECRET', 'QR_SECRET']) {
         process.exit(1)
     }
 }
+// In production the two secrets have to be real ones: long, random, and not
+// each other. A short or shared one would let anyone who guesses it sign in as
+// any member (JWT_SECRET) or forge their check-in QR code (QR_SECRET).
+if (process.env.NODE_ENV === 'production') {
+    for (const key of ['JWT_SECRET', 'QR_SECRET']) {
+        if (process.env[key].length < 32) {
+            console.error(`${key} is too short for production — use at least 32 random characters (see .env.production.example)`)
+            process.exit(1)
+        }
+    }
+    if (process.env.JWT_SECRET === process.env.QR_SECRET) {
+        console.error('JWT_SECRET and QR_SECRET must be different')
+        process.exit(1)
+    }
+}
 // one way or another the verification and reset emails have to go out —
 // through a Gmail account or through Resend (see email.js)
 const canEmail = (process.env.GMAIL_USER && process.env.GMAIL_APP_PASSWORD) || process.env.RESEND_API_KEY
