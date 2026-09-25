@@ -4,7 +4,7 @@ import prisma from '../prismaClient.js'
 import requireRole from '../middleware/requireRole.js'
 import { eventPoints } from '../points.js'
 import { mountRoster } from './roster.js'
-import { acceptOffer, offerNext } from '../offers.js'
+import { acceptOffer, expireOffers, offerNext } from '../offers.js'
 
 const router = express.Router()
 
@@ -272,9 +272,12 @@ router.post('/:eventId/rsvp', async (req, res) => {
         })
 
         if (result.code === 'WAITLISTED') {
+            // someone waiting is what makes missed confirmation deadlines
+            // count — see enforceConfirmations in src/offers.js
+            expireOffers().catch((err) => console.error(`Offer sweep failed: ${err.message}`))
             return res.status(202).json({
                 code: 'WAITLISTED',
-                message: 'Event is full — you are on the waitlist and will be auto-RSVP\'d if a seat opens',
+                message: 'Event is full — you are on the waitlist and will be offered a spot if one opens',
                 rsvp: result.rsvp
             })
         }

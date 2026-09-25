@@ -5,9 +5,10 @@ import Link from 'next/link'
 import { useSearchParams } from 'next/navigation'
 import { offers, getToken } from '@/lib/api'
 
-// Where the "Accept my spot" button in a waitlist offer email lands:
-// /offer?token=…. It accepts straight away — no login needed, the link is the
-// proof — and says how it went. See src/offers.js.
+// Where the "Accept my spot" button in a waitlist offer email, and the
+// "Confirm my spot" button in a confirmation email, land: /offer?token=…. It
+// does it straight away — no login needed, the link is the proof — and says
+// how it went. See src/offers.js.
 
 function Offer() {
 	const token = useSearchParams().get('token')
@@ -27,12 +28,23 @@ function Offer() {
 	const what = result.title ?? 'it'
 
 	// straight apostrophes in the headings: their font has no curly one
-	let title = 'accepting…'
-	let body = 'One moment.'
+	let title = 'one moment…'
+	let body = 'Just checking your link.'
 	if (result !== 'working') {
 		if (result.error) {
 			title = "that didn't work"
-			body = `${result.error}. If the spot's still yours, you can also accept it from the club's site.`
+			body = `${result.error}. If the spot's still yours, you can also do this from the club's site.`
+		} else if (result.action === 'confirm') {
+			if (result.status === 'confirmed') {
+				title = "you're confirmed!"
+				body = `Thanks — your spot in ${what} is locked in. See you there.`
+			} else if (result.status === 'already') {
+				title = 'already confirmed'
+				body = `Your spot in ${what} was already confirmed. Nothing else to do.`
+			} else {
+				title = 'this spot has ended'
+				body = `You're no longer signed up for ${what} — the spot may have gone to someone on the waitlist.`
+			}
 		} else if (result.status === 'accepted') {
 			title = "you're in!"
 			body = `Your spot in ${what} is confirmed — see you there.`

@@ -22,12 +22,13 @@ import { APP_URL } from './verification.js'
 // offer: an officer's yellow button, a seat freed by someone un-RSVPing or
 // being removed, and a lapsed offer handing on.
 //
-// Confirmations work the same way the other way round. The check-in page's
+// Confirmations work much the same the other way round. The check-in page's
 // "confirmation" emails everyone signed up who hasn't confirmed yet a
-// "Confirm my spot" button (with a lab's prelab PDF attached). Anyone who
-// hasn't confirmed 48 hours after that email, while the lab or event is still
-// more than 48 hours off, loses the spot — and it's offered on down the
-// waitlist. Once a confirmation round has gone out, accepting an offer counts
+// "Confirm my spot" button (with a lab's prelab PDF attached) and a deadline
+// the officer picks in its popup. Missing it only costs someone their spot
+// when the waitlist needs it: then just enough of those who missed it are
+// picked at random, and their spots offered on down the waitlist. With nobody
+// waiting, the deadline isn't enforced (see enforceConfirmations). Once a confirmation round has gone out, accepting an offer counts
 // as confirming, and a lab's prelab is emailed to whoever accepts.
 
 export const OFFER_HOURS = 48
@@ -167,9 +168,12 @@ export async function acceptOffer(kindName, parentId, memberId) {
     return { status: 'accepted', title }
 }
 
-// Lapse every offer that's run out (see the top of this file). Run hourly and
-// whenever a check-in page loads its roster, so the page never shows one
-// that should already have moved on.
+const HELD = { in: ['rsvped', 'attended', 'offered'] }
+
+// Lapse every offer that's run out, and enforce missed confirmation deadlines
+// where the waitlist needs the spots (see the top of this file). Run hourly,
+// whenever a check-in page loads its roster, and when someone joins a
+// waitlist — so the page never shows something that should have moved on.
 export async function expireOffers() {
     const now = Date.now()
     const cutoff = new Date(now - OFFER_HOURS * HOUR)
@@ -177,14 +181,11 @@ export async function expireOffers() {
 
     for (const kindName of Object.keys(KINDS)) {
         const kind = KINDS[kindName]
-        // an offer nobody accepted, and a spot nobody confirmed
+
+        // an offer nobody accepted in 48 hours — left alone in the last 48
+        // hours before the lab or event, where the door handles it
         const stale = await prisma[kind.link].findMany({
-            where: {
-                OR: [
-                    { attendanceStatus: 'offered', offerSentAt: { lte: cutoff } },
-                    { attendanceStatus: 'rsvped', confirmedAt: null, confirmSentAt: { lte: cutoff } }
-                ]
-            },
+            where: { attendanceStatus: 'offered', offerSentAt: { lte: cutoff } },
             include: { [kind.parent]: { select: { date: true, startTime: true, capacity: true } } }
         })
         for (const row of stale) {
@@ -196,16 +197,77 @@ export async function expireOffers() {
                 // the freed seat goes on down the waitlist, if there's room
                 // under the cap for it
                 if (parent.capacity == null) { return }
-                const taken = await tx[kind.link].count({
-                    where: { [kind.key]: parentId, attendanceStatus: { in: ['rsvped', 'attended', 'offered'] } }
-                })
+                const taken = await tx[kind.link].count({ where: { [kind.key]: parentId, attendanceStatus: HELD } })
                 if (taken < parent.capacity) { await offerNext(tx, kindName, parentId) }
             })
             lapsed++
         }
+
+        lapsed += await enforceConfirmations(kindName, now)
     }
     if (lapsed > 0) { console.log(`Offer sweep: ${lapsed} unanswered offer(s) or confirmation(s) passed on`) }
     return lapsed
+}
+
+// Missed confirmation deadlines only cost anyone their spot when somebody on
+// the waitlist actually needs it. Per lab or event:
+//
+//   nobody waiting   the deadline isn't enforced — everyone who missed it
+//                    keeps their spot, until someone joins the waitlist
+//   people waiting   just enough of those who missed it are picked, at
+//                    random, to make room for them: each is removed and their
+//                    spot offered to the top of the waitlist. With 10 seats
+//                    all taken, 2 who missed it and 1 waiting, one of the 2
+//                    goes.
+//
+// No cap means no queue for seats, so there's nothing to enforce.
+async function enforceConfirmations(kindName, now) {
+    const kind = KINDS[kindName]
+    const missed = await prisma[kind.link].findMany({
+        where: { attendanceStatus: 'rsvped', confirmedAt: null, confirmBy: { lte: new Date(now) } },
+        select: { memberId: true, [kind.key]: true }
+    })
+    // grouped by lab or event
+    const byParent = new Map()
+    for (const row of missed) {
+        const id = row[kind.key]
+        if (!byParent.has(id)) { byParent.set(id, []) }
+        byParent.get(id).push(row.memberId)
+    }
+
+    let removed = 0
+    for (const [parentId, memberIds] of byParent) {
+        await prisma.$transaction(async (tx) => {
+            const parent = await tx[kind.parent].findUnique({ where: { [kind.key]: parentId }, select: { capacity: true } })
+            if (!parent || parent.capacity == null) { return }
+            const waiting = await tx[kind.link].count({ where: { [kind.key]: parentId, attendanceStatus: 'waitlisted' } })
+            if (waiting === 0) { return }
+            const taken = await tx[kind.link].count({ where: { [kind.key]: parentId, attendanceStatus: HELD } })
+
+            // enough seats to fit everyone waiting under the cap — no more
+            // than missed the deadline, and none if there's already room
+            const needed = Math.min(memberIds.length, Math.max(0, taken + waiting - parent.capacity))
+            const out = shuffle(memberIds).slice(0, needed)
+            for (const memberId of out) {
+                await tx[kind.link].delete({ where: where(kind, parentId, memberId) })
+            }
+            // hand every free seat on, one per person waiting
+            let free = parent.capacity - (taken - out.length)
+            while (free > 0 && await offerNext(tx, kindName, parentId)) { free-- }
+            removed += out.length
+        })
+    }
+    return removed
+}
+
+// Fisher–Yates, on a copy — who loses their spot is left to chance
+function shuffle(list) {
+    const copy = [...list]
+    for (let i = copy.length - 1; i > 0; i--) {
+        const j = Math.floor(Math.random() * (i + 1))
+        ;[copy[i], copy[j]] = [copy[j], copy[i]]
+    }
+    return copy
 }
 
 // For the /offer page: who and what a link is for — an offer to accept or a
@@ -234,9 +296,20 @@ async function prelabOf(kindName, parentId) {
         : null
 }
 
+// 'Tuesday, September 29 at 5:00 PM'
+function deadlineText(at) {
+    return at.toLocaleString('en-US', {
+        weekday: 'long', month: 'long', day: 'numeric', hour: 'numeric', minute: '2-digit'
+    })
+}
+
 // "confirmation": email everyone signed up who hasn't confirmed yet a link to
-// confirm their spot, with the prelab attached. Returns { sent, attached }.
-export async function sendConfirmations(kindName, parentId) {
+// confirm their spot by `deadline` (a Date), with the prelab attached.
+// Returns { sent, attached }.
+export async function sendConfirmations(kindName, parentId, deadline) {
+    if (!(deadline instanceof Date) || isNaN(deadline.getTime()) || deadline.getTime() <= Date.now()) {
+        throw Object.assign(new Error('Pick a deadline that hasn’t passed yet'), { status: 400 })
+    }
     const kind = KINDS[kindName]
     const parent = await prisma[kind.parent].findUnique({ where: { [kind.key]: parentId } })
     if (!parent) { throw Object.assign(new Error(`That ${kind.noun} doesn’t exist`), { status: 404 }) }
@@ -268,7 +341,7 @@ export async function sendConfirmations(kindName, parentId) {
                 ],
                 button: { label: 'Confirm my spot', url: `${APP_URL}/offer?token=${token}` },
                 after: [
-                    `Please confirm within ${OFFER_HOURS} hours — if we don’t hear back, your spot may go to someone on the waitlist.`,
+                    `Please confirm by ${deadlineText(deadline)} — if we don’t hear back by then, your spot may go to someone on the waitlist.`,
                     ...(prelab ? ['The prelab is attached — please read through it before the lab.'] : [])
                 ],
                 reason: `You’re getting this because you signed up for ${parent.title}.`
@@ -277,7 +350,7 @@ export async function sendConfirmations(kindName, parentId) {
         })
         await prisma[kind.link].update({
             where: where(kind, parentId, row.memberId),
-            data: { confirmSentAt: new Date() }
+            data: { confirmSentAt: new Date(), confirmBy: deadline }
         })
         sent++
     }

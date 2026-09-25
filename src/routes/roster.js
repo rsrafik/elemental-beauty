@@ -26,9 +26,10 @@ import { emailAll, readMessage } from '../emailAll.js'
 //
 //   POST /:id/email-all  { subject, message } — the page's "email all": sent by
 //                        the server to everyone signed up (see emailAll.js)
-//   POST /:id/confirm-all  the page's "confirmation": everyone signed up who
-//                        hasn't confirmed yet is emailed a link to confirm,
-//                        with a lab's prelab attached (see src/offers.js)
+//   POST /:id/confirm-all  { deadline } — the page's "confirmation": everyone
+//                        signed up who hasn't confirmed yet is emailed a link
+//                        to confirm by then, with a lab's prelab attached
+//                        (see src/offers.js)
 //
 // The QR scan is still POST /:id/checkin on each router — this is everything
 // an officer does by hand.
@@ -74,7 +75,7 @@ export function mountRoster(router, kind) {
                 where: { [key]: parentId },
                 select: {
                     memberId: true, attendanceStatus: true, waitlistedAt: true,
-                    offerSentAt: true, confirmSentAt: true, confirmedAt: true, ...USER_SELECT
+                    offerSentAt: true, confirmSentAt: true, confirmBy: true, confirmedAt: true, ...USER_SELECT
                 }
             })
             res.json(rows.map(({ member, ...row }) => ({
@@ -83,6 +84,11 @@ export function mountRoster(router, kind) {
                 waitlistedAt: row.waitlistedAt,
                 offerSentAt: row.offerSentAt,
                 confirmSentAt: row.confirmSentAt,
+                confirmBy: row.confirmBy,
+                // past the deadline without confirming, but kept on because
+                // nobody's waiting for the spot (see src/offers.js)
+                confirmMissed: row.attendanceStatus === 'rsvped' && !row.confirmedAt &&
+                    Boolean(row.confirmBy) && row.confirmBy.getTime() <= Date.now(),
                 confirmedAt: row.confirmedAt,
                 username: member.user.username,
                 firstName: member.user.firstName,
@@ -134,7 +140,7 @@ export function mountRoster(router, kind) {
         const parentId = parseInt(req.params.id)
         if (isNaN(parentId)) { return res.status(400).json({ message: `Invalid ${label.toLowerCase()} id` }) }
         try {
-            const { sent, attached } = await sendConfirmations(kindName, parentId)
+            const { sent, attached } = await sendConfirmations(kindName, parentId, new Date(req.body?.deadline))
             res.json({
                 message: `Asked ${sent} ${sent === 1 ? 'person' : 'people'} to confirm${attached ? `, with ${attached} attached` : ''}`,
                 sent,
@@ -175,6 +181,9 @@ export function mountRoster(router, kind) {
                         waitlistedAt: new Date()
                     }
                 })
+                // someone waiting is what makes missed confirmation deadlines
+                // count — see enforceConfirmations in src/offers.js
+                await expireOffers()
                 return res.status(201).json({ message: 'Added to the waitlist' })
             }
 

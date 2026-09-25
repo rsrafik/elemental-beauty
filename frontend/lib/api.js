@@ -185,12 +185,34 @@ export const events = {
 	checkin: (id, qrToken) => api(`/events/${id}/checkin`, { method: 'POST', body: { qrToken } }),
 	// the check-in page's "email all": { subject, message } to everyone signed up
 	emailAll: (id, message) => api(`/events/${id}/email-all`, { method: 'POST', body: message }),
+	// the check-in page's "confirmation": everyone signed up who hasn't
+	// confirmed is emailed a link to, by `deadline` (an ISO time)
+	confirmAll: (id, deadline) => api(`/events/${id}/confirm-all`, { method: 'POST', body: { deadline } }),
 }
 
 // A waitlist offer's "Accept my spot" link (the /offer page) — no login, the
 // token from the email is the proof.
 export const offers = {
 	accept: (token) => api('/offers/accept', { method: 'POST', body: { token }, auth: false }),
+}
+
+// A PDF as the whole request body, its name URL-encoded in a header — the
+// lesson and prelab uploads. Fetched by hand because the body isn't JSON.
+async function uploadPdf(url, file) {
+	const response = await fetch(url, {
+		method: 'PUT',
+		headers: {
+			Authorization: `Bearer ${getToken()}`,
+			'Content-Type': 'application/pdf',
+			'X-Filename': encodeURIComponent(file.name),
+		},
+		body: file,
+	})
+	const payload = await response.json().catch(() => null)
+	if (!response.ok) {
+		throw new ApiError(response.status, payload?.message || `Upload failed (${response.status})`, payload)
+	}
+	return payload
 }
 
 export const labs = {
@@ -221,22 +243,7 @@ export const labs = {
 	},
 
 	// Officers: the PDF goes up as the request body, its name in a header.
-	uploadLesson: async (id, file) => {
-		const response = await fetch(`/api/labs/${id}/lesson`, {
-			method: 'PUT',
-			headers: {
-				Authorization: `Bearer ${getToken()}`,
-				'Content-Type': 'application/pdf',
-				'X-Filename': encodeURIComponent(file.name),
-			},
-			body: file,
-		})
-		const payload = await response.json().catch(() => null)
-		if (!response.ok) {
-			throw new ApiError(response.status, payload?.message || `Upload failed (${response.status})`, payload)
-		}
-		return payload
-	},
+	uploadLesson: (id, file) => uploadPdf(`/api/labs/${id}/lesson`, file),
 	removeLesson: (id) => api(`/labs/${id}/lesson`, { method: 'DELETE' }),
 
 	// Officers, on the check-in page — see src/routes/roster.js.
@@ -246,6 +253,24 @@ export const labs = {
 	checkin: (id, qrToken) => api(`/labs/${id}/checkin`, { method: 'POST', body: { qrToken } }),
 	// the check-in page's "email all": { subject, message } to everyone signed up
 	emailAll: (id, message) => api(`/labs/${id}/email-all`, { method: 'POST', body: message }),
+	// the check-in page's "confirmation": everyone signed up who hasn't
+	// confirmed is emailed a link to, by `deadline` (an ISO time), with the
+	// prelab attached (src/offers.js)
+	confirmAll: (id, deadline) => api(`/labs/${id}/confirm-all`, { method: 'POST', body: { deadline } }),
+	// a member confirming their own spot from the lab's page
+	confirm: (id) => api(`/labs/${id}/confirm`, { method: 'POST' }),
+
+	// Officers: the prelab handout, same shape as the lesson below.
+	uploadPrelab: (id, file) => uploadPdf(`/api/labs/${id}/prelab`, file),
+	removePrelab: (id) => api(`/labs/${id}/prelab`, { method: 'DELETE' }),
+	// the file itself, for "view" — a blob URL the caller revokes
+	prelabUrl: async (id) => {
+		const response = await fetch(`/api/labs/${id}/prelab`, {
+			headers: { Authorization: `Bearer ${getToken()}` },
+		})
+		if (!response.ok) throw new ApiError(response.status, `Could not open the prelab (${response.status})`)
+		return URL.createObjectURL(await response.blob())
+	},
 
 	// Officers, on the quiz editor. The read carries the answer key and any
 	// unpublished draft; the save is the whole quiz, as a draft or published.

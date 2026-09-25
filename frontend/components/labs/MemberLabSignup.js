@@ -12,6 +12,9 @@ import { LabIntro, ChunkyButton, ButtonCaption } from '@/components/labs/LabView
 //                   again to leave it
 //   offered         a spot came free and it's held for you (src/offers.js):
 //                   green ACCEPT MY SPOT, or turn it down
+//   asked to confirm  signed up, and the officers have asked everyone to
+//                   confirm (the check-in page's "confirmation"): green
+//                   CONFIRM MY SPOT until you do
 //
 // Whether a sign-up lands a seat or a waitlist place is the server's call — the
 // button flips straight to "registered" and then `onChange` re-reads the lab,
@@ -33,6 +36,24 @@ export default function MemberLabSignup({ lab, ended, onChange }) {
 	// null capacity = unlimited seats: never full, and no count to show
 	const unlimited = lab.capacity == null
 	const left = unlimited ? Infinity : Math.max(0, lab.capacity - lab.taken)
+
+	const [confirmed, setConfirmed] = useState(false)
+	const confirmPending = going && lab.confirmPending && !confirmed
+
+	const confirm = async () => {
+		if (busy) return
+		setBusy(true)
+		setError(null)
+		try {
+			await labsApi.confirm(lab.labId)
+			setConfirmed(true)
+			await onChange()
+		} catch (err) {
+			setError(err.message)
+		} finally {
+			setBusy(false)
+		}
+	}
 
 	// accepting is the same call as signing up — the server sees the offer
 	const accept = async () => {
@@ -73,6 +94,28 @@ export default function MemberLabSignup({ lab, ended, onChange }) {
 	let caption
 	if (ended) {
 		caption = 'this lab has already happened'
+	} else if (confirmPending) {
+		button = <ChunkyButton tone="green" onClick={confirm}>CONFIRM MY SPOT</ChunkyButton>
+		caption = (
+			<>
+				{`please confirm you're still coming${lab.confirmBy
+					? ` by ${new Date(lab.confirmBy).toLocaleString('en-US', { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' })}`
+					: ''}, or your spot may go to the waitlist`}
+				<br />
+				<button
+					type="button"
+					onClick={toggle}
+					className="
+						underline
+						underline-offset-2
+						cursor-pointer
+						hover:text-black
+					"
+				>
+					I can&apos;t make it — give up my spot
+				</button>
+			</>
+		)
 	} else if (going) {
 		button = <ChunkyButton tone="green" onClick={toggle}>YOU&apos;RE REGISTERED!</ChunkyButton>
 		caption = 'click again to unregister'

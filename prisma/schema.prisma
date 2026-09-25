@@ -359,9 +359,11 @@ model MemberLab {
   // when an officer last emailed an offer (null = not yet) — an offer left
   // unanswered for 48 hours lapses, see src/offers.js
   offerSentAt      DateTime?        @map("offer_sent_at") @db.Timestamptz()
-  // "confirmation": when they were asked to confirm their spot, and when
-  // they did — asked and not confirmed in 48 hours lapses (src/offers.js)
+  // "confirmation": when they were asked to confirm their spot, the deadline
+  // the officer set for it, and when they did — asked and not confirmed by
+  // the deadline lapses (src/offers.js)
   confirmSentAt    DateTime?        @map("confirm_sent_at") @db.Timestamptz()
+  confirmBy        DateTime?        @map("confirm_by") @db.Timestamptz()
   confirmedAt      DateTime?        @map("confirmed_at") @db.Timestamptz()
 
   member Member @relation(fields: [memberId], references: [userId], onDelete: Cascade)
@@ -378,9 +380,11 @@ model MemberEvent {
   attendanceStatus AttendanceStatus @default(rsvped) @map("attendance_status")
   waitlistedAt     DateTime?        @map("waitlisted_at") @db.Timestamptz()
   offerSentAt      DateTime?        @map("offer_sent_at") @db.Timestamptz()
-  // "confirmation": when they were asked to confirm their spot, and when
-  // they did — asked and not confirmed in 48 hours lapses (src/offers.js)
+  // "confirmation": when they were asked to confirm their spot, the deadline
+  // the officer set for it, and when they did — asked and not confirmed by
+  // the deadline lapses (src/offers.js)
   confirmSentAt    DateTime?        @map("confirm_sent_at") @db.Timestamptz()
+  confirmBy        DateTime?        @map("confirm_by") @db.Timestamptz()
   confirmedAt      DateTime?        @map("confirmed_at") @db.Timestamptz()
 
   member Member @relation(fields: [memberId], references: [userId], onDelete: Cascade)

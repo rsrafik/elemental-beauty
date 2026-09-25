@@ -4,8 +4,9 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import DashboardShell from '@/components/dashboards/DashboardShell'
 import { BackButton, metaLine, useDesignZoom } from '@/components/labs/LabViewParts'
 import QrScanner from '@/components/checkin/QrScanner'
-import { INSET, EditorButton } from '@/components/labs/EditorParts'
+import { INSET, EditorButton, IconLabel, UploadIcon } from '@/components/labs/EditorParts'
 import EmailAllPopup from '@/components/EmailAllPopup'
+import ConfirmationPopup from '@/components/ConfirmationPopup'
 import { labs as labsApi, events as eventsApi, members as membersApi } from '@/lib/api'
 
 // The officer's check-in page for one lab or one event — where clicking its
@@ -34,6 +35,16 @@ function fullName(row) {
 }
 
 const byName = (a, b) => fullName(a).localeCompare(fullName(b))
+
+// when a lab or event starts, in local time — its date at its start time (the
+// top of the day if it has none); null for a draft with no date
+function startsAt(item) {
+	const day = String(item.date ?? '').slice(0, 10)
+	if (!day) return null
+	const [y, m, d] = day.split('-').map(Number)
+	const [h, min] = (item.startTime || '00:00').split(':').map(Number)
+	return new Date(y, m - 1, d, h, min)
+}
 
 
 // ---- icons -----------------------------------------------------------------
@@ -136,7 +147,8 @@ function RowButton({ tone, label, onClick, disabled, children }) {
 	)
 }
 
-function Person({ row, number }) {
+// `note` is a small line after the handle — where they are with confirming
+function Person({ row, number, note = null }) {
 	return (
 		<div className="
 			flex
@@ -175,10 +187,31 @@ function Person({ row, number }) {
 					truncate
 				">
 					@{row.username}
+					{note}
 				</p>
 			</div>
 		</div>
 	)
+}
+
+// Where someone signed up stands with the "confirmation" round: confirmed,
+// or asked and not yet — nothing until a round has gone out.
+function ConfirmNote({ row }) {
+	if (row.status !== 'rsvped') return null
+	if (row.confirmedAt) {
+		return <span className="ml-1.5 text-[12px] font-semibold text-green-dark">· confirmed</span>
+	}
+	// missed the deadline, but nobody's waiting for the spot so they keep it
+	if (row.confirmMissed) {
+		return <span className="ml-1.5 text-[12px] font-semibold text-salmon-dark">· missed</span>
+	}
+	if (row.confirmSentAt) {
+		const by = row.confirmBy
+			? ` by ${new Date(row.confirmBy).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}`
+			: ''
+		return <span className="ml-1.5 text-[12px] text-black/45">· waiting{by}</span>
+	}
+	return null
 }
 
 // One column: its name and count over the card, the card running to the
@@ -374,6 +407,10 @@ export default function CheckInView({ kind, id }) {
 	const api = API[kind]
 	const zoom = useDesignZoom()
 	const [emailing, setEmailing] = useState(false)
+	const [confirming, setConfirming] = useState(false)
+	// the prelab upload: busy while it goes up, and what went wrong if it didn't
+	const [prelabBusy, setPrelabBusy] = useState(false)
+	const prelabInput = useRef(null)
 	const [item, setItem] = useState(null)
 	const [roster, setRoster] = useState([])
 	const [people, setPeople] = useState([])
@@ -479,6 +516,52 @@ export default function CheckInView({ kind, id }) {
 		.map((row) => row.email)
 		.filter(Boolean)
 
+	// who "confirmation" would email: signed up and not confirmed yet
+	const unconfirmed = waiting.filter((row) => row.status === 'rsvped' && !row.confirmedAt).length
+
+	const uploadPrelab = async (event) => {
+		const file = event.target.files?.[0]
+		event.target.value = ''
+		if (!file) return
+		if (file.type !== 'application/pdf' && !file.name.toLowerCase().endsWith('.pdf')) {
+			setError('The prelab has to be a PDF')
+			return
+		}
+		setPrelabBusy(true)
+		setError(null)
+		try {
+			const reply = await api.uploadPrelab(id, file)
+			setItem((prev) => ({ ...prev, prelabPdfName: reply.prelabPdfName }))
+		} catch (err) {
+			setError(err.message)
+		} finally {
+			setPrelabBusy(false)
+		}
+	}
+
+	const removePrelab = async () => {
+		setError(null)
+		try {
+			await api.removePrelab(id)
+			setItem((prev) => ({ ...prev, prelabPdfName: null }))
+		} catch (err) {
+			setError(err.message)
+		}
+	}
+
+	// the file opens in a new tab, fetched with the officer's login
+	const viewPrelab = async () => {
+		const tab = window.open('', '_blank')
+		try {
+			const url = await api.prelabUrl(id)
+			if (tab) tab.location.href = url
+			setTimeout(() => URL.revokeObjectURL(url), 60_000)
+		} catch (err) {
+			tab?.close()
+			setError(err.message)
+		}
+	}
+
 	const back = kind === 'lab'
 		? { href: '/labs', label: 'Back to labs' }
 		: { href: '/events', label: 'Back to events' }
@@ -560,6 +643,76 @@ export default function CheckInView({ kind, id }) {
 								>
 									email all
 								</EditorButton>
+								{/* asks everyone signed up to confirm their spot, with the
+								    prelab attached (src/offers.js) */}
+								<EditorButton
+									className="
+										mt-[10px]
+										mx-auto
+										lg:mx-0
+										w-[121.7px]
+										h-[32px]
+									"
+									title={`Ask ${unconfirmed} ${unconfirmed === 1 ? 'person' : 'people'} to confirm their spot`}
+									onClick={() => setConfirming(true)}
+								>
+									confirmation
+								</EditorButton>
+								{kind === 'lab' && (
+									<div className="
+										mt-[10px]
+										flex
+										flex-col
+										items-center
+										lg:items-start
+									">
+										<EditorButton
+											className="
+												h-[32px]
+												px-[14px]
+											"
+											disabled={prelabBusy}
+											onClick={() => prelabInput.current?.click()}
+										>
+											<IconLabel icon={<UploadIcon className="w-[17px] h-[17px]" />}>
+												{prelabBusy ? 'uploading…' : item.prelabPdfName ? 'replace prelab' : 'upload prelab'}
+											</IconLabel>
+										</EditorButton>
+										<input
+											ref={prelabInput}
+											type="file"
+											accept="application/pdf,.pdf"
+											onChange={uploadPrelab}
+											className="hidden"
+										/>
+										{item.prelabPdfName && (
+											<p className="
+												mt-[6px]
+												max-w-[260px]
+												font-vietnam
+												text-[12px]
+												text-black/55
+												truncate
+											">
+												<button
+													type="button"
+													onClick={viewPrelab}
+													className="underline underline-offset-2 cursor-pointer hover:text-black"
+												>
+													{item.prelabPdfName}
+												</button>
+												{' · '}
+												<button
+													type="button"
+													onClick={removePrelab}
+													className="cursor-pointer hover:text-salmon-dark"
+												>
+													remove
+												</button>
+											</p>
+										)}
+									</div>
+								)}
 							</>
 						)}
 						{error && (
@@ -620,7 +773,7 @@ export default function CheckInView({ kind, id }) {
 									</div>
 								) : (
 									<div className="pl-[18px] min-w-0">
-										<Person row={row} />
+										<Person row={row} note={<ConfirmNote row={row} />} />
 									</div>
 								)}
 								<div className="
@@ -704,6 +857,20 @@ export default function CheckInView({ kind, id }) {
 					</Column>
 				</div>
 			</div>
+			{confirming && item && (
+				<ConfirmationPopup
+					count={unconfirmed}
+					what={item.title}
+					prelab={kind === 'lab' ? item.prelabPdfName : null}
+					startsAt={startsAt(item)}
+					onSend={async (deadline) => {
+						const reply = await api.confirmAll(id, deadline)
+						await loadRoster()
+						return reply
+					}}
+					onClose={() => setConfirming(false)}
+				/>
+			)}
 			{emailing && item && (
 				<EmailAllPopup
 					count={recipients.length}
