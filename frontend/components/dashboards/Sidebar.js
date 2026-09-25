@@ -161,6 +161,7 @@ export default function Sidebar({
 	onSelect,
 	showInstagram = true,
 	instagramUrl = 'https://instagram.com/elementist_',
+	discordUrl = 'https://discord.gg/G4Nmc9fsh3',
 	profileHref = '/account',
 	onProfile,
 	onLogout,
@@ -458,7 +459,8 @@ export default function Sidebar({
 					})}
 				</nav>
 
-				{/* bottom cluster: profile + logout, then optional instagram banner.
+				{/* bottom cluster: profile + logout, then optional discord and
+				    instagram banners.
 				    Last in the parallax, so it's still arriving once the pills above
 				    it have settled. */}
 				<Row
@@ -562,12 +564,48 @@ export default function Sidebar({
 
 					{showInstagram && (
 						<a
+							href={discordUrl}
+							target="_blank"
+							rel="noopener noreferrer"
+							className="
+								rounded-[5px]
+								h-[80px]
+								flex
+								items-center
+								justify-center
+								text-center
+								text-white
+								text-[30px]
+								sm:text-[38px]
+								font-aalto
+								tracking-wide
+								uppercase
+								bg-[url('/discord-gradient.avif')]
+								bg-cover
+								bg-center
+								transition-all
+								duration-200
+								ease-out
+								hover:-translate-y-0.5
+								hover:shadow-lg
+								hover:shadow-black/10
+								hover:brightness-105
+								active:translate-y-0
+								active:shadow-none
+							"
+						>
+							Join our Discord
+						</a>
+					)}
+
+					{showInstagram && (
+						<a
 							href={instagramUrl}
 							target="_blank"
 							rel="noopener noreferrer"
 							className="
 								rounded-[5px]
-								h-[101px]
+								h-[80px]
 								flex
 								items-center
 								justify-center
