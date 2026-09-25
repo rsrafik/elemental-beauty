@@ -17,6 +17,7 @@ Our events pair formulation fundamentals with hands-on execution: **soap-making 
 - [Frontend](#frontend)
 - [Backend](#backend)
 - [Database Schema Highlights](#database-schema-highlights)
+- [Development](#development)
 - [Roadmap](#roadmap)
 - [Contact](#contact)
 
@@ -50,7 +51,11 @@ The frontend is a **Next.js** application (built on **React 19** and **Tailwind 
  
 **Events** and **labs** each have both a listing page and a dedicated **view** page for individual entries, letting members browse upcoming events or formulation labs and drill into details for a specific one.
  
-**Finances** houses the **Treasurer Dashboard** — the tool officers use to manage club money day-to-day, with full **CRUD operations** on financial records, a **reimbursement approval and rejection workflow**, and **CSV export** for record-keeping and reporting.
+**Analytics** houses the **Treasurer Dashboard** — the tool officers use to manage club money day-to-day, with full **CRUD operations** on financial records, a **reimbursement approval and rejection workflow**, **dues tracking** per school year, grant tracking against what was actually awarded, and **CSV export** of the ledger for record-keeping and reporting.
+
+**Students** is the officer roster: adding and removing members, role changes, **awarding points by hand** (Instagram follows, Discord joins), and an **activity log** of who changed what. Each lab and event's check-in page exports its **attendance as a CSV**.
+
+Members can open any number on **/account** to see the history behind it — which labs and events they attended and where every point came from.
 
 ## Backend
 
@@ -60,9 +65,30 @@ The backend is built on **Express** with **Prisma 7** as the ORM layer, sitting 
 
 The database is **fully normalized**, with junction tables handling many-to-many relationships rather than redundant data. **Ledger integrity** is enforced automatically through database triggers instead of application-layer workarounds, and **role-based permissioning** is built directly into the schema rather than left to the API layer alone.
 
+## Development
+
+```bash
+npm install && npm install --prefix frontend
+npm run dev:all          # Postgres in Docker, the API on :5003, Next on :3000
+npm run db:reset         # wipe and reseed (accounts: member/member, officer/officer, … — see prisma/seed.js)
+```
+
+Emails go through Gmail or Resend when configured in `.env`, and are printed to the console otherwise. Automatic ones: the day-before reminder for labs and events, and reimbursement updates (to the treasurer when a receipt comes in, to the officer when it's approved, denied or paid). Seed accounts use `@example.com` addresses so a dev server can never mail a real inbox.
+
+**Tests** run with Node's built-in runner. The integration tests need their own database, whose name must contain `test`:
+
+```bash
+docker exec elemental-db psql -U postgres -c "create database elemental_test"
+cp .env.test.example .env.test
+DATABASE_URL=postgresql://postgres:postgres@localhost:5433/elemental_test npx prisma migrate deploy
+npm test
+```
+
+CI (`.github/workflows/ci.yml`) runs the tests against a fresh Postgres and lints and builds the frontend on every push. The `Dockerfile` builds a single image that serves both the API and the static frontend.
+
 ## Roadmap
 
-Next up for the club: a **public-facing website**, a **member self-service portal** for event RSVPs and dues tracking, a **formulation recipe and inventory tracker**, and **automated email notifications** for reimbursement status.
+Next up for the club: a **public-facing website** and a **formulation recipe and inventory tracker**.
 
 ## Contact
 

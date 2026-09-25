@@ -104,8 +104,23 @@ Content-Type: application/json
     "role": "officer"
 }
 
-### Delete my account
-DELETE {{base}}/members/me
+### My history: every lab/event sign-up, manual point awards, and points from before the log
+GET {{base}}/members/me/history
+Authorization: Bearer {{token}}
+
+### Delete my account (asks for the password again; works without a membership too)
+DELETE {{base}}/auth/me
+Authorization: Bearer {{token}}
+Content-Type: application/json
+
+{
+    "password": "PASTE_PASSWORD"
+}
+
+### ---------- activity log (officer+) ----------
+
+### Newest first; ?before=<id> for the next page, ?targetId=<userId>, ?action=role_changed
+GET {{base}}/activity?limit=50
 Authorization: Bearer {{token}}
 
 ### ---------- labs (member+; writes officer+) ----------
@@ -181,8 +196,8 @@ Content-Type: application/json
     "qrToken": "PASTE_SCANNED_QR_TOKEN_HERE"
 }
 
-### Admit waitlist into no-show seats, oldest first (officer+)
-POST {{base}}/labs/1/admit-waitlist
+### Attendance as a CSV (officer+) — same route under /events
+GET {{base}}/labs/1/attendance
 Authorization: Bearer {{token}}
 
 ### Submit quiz answers — { questionId: [optionIds] }; 100% required to pass
@@ -233,8 +248,8 @@ Content-Type: application/json
     "qrToken": "PASTE_SCANNED_QR_TOKEN_HERE"
 }
 
-### Admit entire event waitlist (officer+)
-POST {{base}}/events/1/admit-waitlist
+### Confirm my spot from the site (after the check-in page's "confirmation")
+POST {{base}}/events/1/confirm
 Authorization: Bearer {{token}}
 
 ### ---------- reimbursements (officer+; decisions treasurer+) ----------
@@ -288,7 +303,7 @@ GET {{base}}/transactions/summary
 Authorization: Bearer {{token}}
 
 ### CSV export
-GET {{base}}/transactions/export
+GET {{base}}/transactions/export?from=2025-08-01&to=2026-07-31
 Authorization: Bearer {{token}}
 
 ### Record a manual entry (treasurer+)
@@ -300,8 +315,13 @@ Content-Type: application/json
     "type": "income",
     "source": "Fall membership dues",
     "amount": 300,
-    "category": "membership_dues"
+    "category": "dues"
 }
+
+### Delete a row (treasurer+). A paid receipt's row sends its request back to
+### 'approved'; a dues row un-pays that member.
+DELETE {{base}}/transactions/1
+Authorization: Bearer {{token}}
 
 ### ---------- grants (treasurer+) ----------
 
@@ -311,16 +331,40 @@ Authorization: Bearer {{token}}
 Content-Type: application/json
 
 {
-    "source": "Purdue Student Org Grant",
-    "amountGranted": 500,
-    "dateGranted": "2026-08-01",
-    "expirationDate": "2027-05-01"
+    "name": "Student Org Grant",
+    "org": "Purdue SOGA",
+    "amountRequested": 500,
+    "status": "awarded",
+    "amountAwarded": 350,
+    "deadline": "2026-10-01"
 }
 
 ### List
 GET {{base}}/grants
 Authorization: Bearer {{token}}
 
-### Detail — includes derived amountSpent and remaining
+### Detail — includes derived amountSpent and remaining (counted from amountAwarded)
 GET {{base}}/grants/1
+Authorization: Bearer {{token}}
+
+### ---------- dues (treasurer+) ----------
+
+### Every member and their payment for a year (the en dash is URL-encoded: 2026–27)
+GET {{base}}/dues?schoolYear=2026%E2%80%9327
+Authorization: Bearer {{token}}
+
+### Mark paid — writes an income row under 'dues'; amount 0 = waived (no ledger row)
+POST {{base}}/dues
+Authorization: Bearer {{token}}
+Content-Type: application/json
+
+{
+    "memberId": 2,
+    "schoolYear": "2026–27",
+    "amount": 25,
+    "paidOn": "2026-09-25"
+}
+
+### Take a payment back (its ledger row goes too)
+DELETE {{base}}/dues/1
 Authorization: Bearer {{token}}
