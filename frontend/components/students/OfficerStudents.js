@@ -6,6 +6,8 @@ import { hasRole, roleLabel } from '@/lib/roles'
 import { useRole, useSession } from '@/lib/session'
 import { members as membersApi } from '@/lib/api'
 import { useDismiss } from '@/lib/dismiss'
+import AwardPointsDialog from '@/components/students/AwardPointsDialog'
+import ActivityLog from '@/components/students/ActivityLog'
 
 // /students — officer and up only. The member roster as one sheet: search,
 // sort by any column that holds a value, filter by role, add a student, and
@@ -25,6 +27,10 @@ import { useDismiss } from '@/lib/dismiss'
 //   roles — only an admin can change anyone's role, which is also what the
 //     API enforces on PUT /members/:id/role. For everyone else the pill is a
 //     label rather than a button.
+//
+// The "+" beside someone's points gives points by hand for the things
+// check-in can't see (an instagram follow, joining the discord), and
+// "activity" opens the staff log of who changed what (src/activity.js).
 
 // ---- data ------------------------------------------------------------------
 
@@ -177,6 +183,15 @@ function PlusIcon({ className = '' }) {
 			aria-hidden="true"
 		>
 			<path d="M12 6v12M6 12h12" />
+		</svg>
+	)
+}
+
+function ClockIcon({ className = '' }) {
+	return (
+		<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" className={className} aria-hidden="true">
+			<circle cx="12" cy="12" r="9" />
+			<path d="M12 7v5l3 2" />
 		</svg>
 	)
 }
@@ -1186,6 +1201,9 @@ export default function OfficerStudents() {
 	const [page, setPage] = useState(1)
 	const [adding, setAdding] = useState(false)
 	const [confirmingDelete, setConfirmingDelete] = useState(false)
+	// the row whose "+" was pressed, or null
+	const [awarding, setAwarding] = useState(null)
+	const [showActivity, setShowActivity] = useState(false)
 
 	// null = closed; otherwise the row whose pill was clicked and the rectangle
 	// that pill occupied, which is what the menu positions itself against.
@@ -1293,8 +1311,8 @@ export default function OfficerStudents() {
 	// are left with plain members. Same rule the API has to enforce for real —
 	// this only keeps the UI from offering what the server would refuse.
 	const isAdmin = hasRole('admin', role)
-	// You can never remove yourself from the roster — DELETE /members/me is the
-	// route for leaving, and it belongs on /account, not here.
+	// You can never remove yourself from the roster — leaving is /account's
+	// "delete my account" (DELETE /auth/me), not something done from here.
 	const canRemove = (student) =>
 		student.id !== user?.userId && (isAdmin || student.role === 'member')
 
@@ -1571,6 +1589,38 @@ export default function OfficerStudents() {
 
 						<button
 							type="button"
+							onClick={() => setShowActivity(true)}
+							className="
+								flex
+								items-center
+								gap-1.5
+								rounded-[10px]
+								border
+								border-black/25
+								px-4
+								h-10
+								font-vietnam
+								font-semibold
+								text-sm
+								text-black
+								cursor-pointer
+								transition-all
+								duration-200
+								ease-out
+								hover:-translate-y-0.5
+								hover:border-black
+								hover:shadow-lg
+								hover:shadow-black/10
+								active:translate-y-0
+								active:shadow-none
+							"
+						>
+							<ClockIcon className="w-4 h-4" />
+							Activity
+						</button>
+
+						<button
+							type="button"
 							onClick={() => setAdding(true)}
 							className="
 								flex
@@ -1760,7 +1810,38 @@ export default function OfficerStudents() {
 											text-black
 											tabular-nums
 										">
-											{student.points}
+											<span className="
+												inline-flex
+												items-center
+												gap-2
+											">
+												{student.points}
+												<button
+													type="button"
+													onClick={() => setAwarding(student)}
+													aria-label={`Give ${student.first} ${student.last} points`}
+													title="give points"
+													className="
+														w-6
+														h-6
+														flex
+														items-center
+														justify-center
+														rounded-full
+														bg-salmon-lightest
+														text-salmon-dark
+														cursor-pointer
+														transition-all
+														duration-200
+														ease-out
+														hover:bg-salmon
+														hover:text-white
+														active:scale-95
+													"
+												>
+													<PlusIcon className="w-3 h-3" />
+												</button>
+											</span>
 										</td>
 										<td className="
 											px-2
@@ -1902,6 +1983,19 @@ export default function OfficerStudents() {
 					onSave={addStudent}
 				/>
 			)}
+
+			{awarding && (
+				<AwardPointsDialog
+					student={awarding}
+					onClose={() => setAwarding(null)}
+					onAwarded={(id, points) =>
+						setStudents((prev) =>
+							prev.map((student) => (student.id === id ? { ...student, points } : student))
+						)}
+				/>
+			)}
+
+			{showActivity && <ActivityLog onClose={() => setShowActivity(false)} />}
 
 			{confirmingDelete && (
 				<ConfirmDeleteDialog

@@ -408,6 +408,7 @@ export default function CheckInView({ kind, id }) {
 	const zoom = useDesignZoom()
 	const [emailing, setEmailing] = useState(false)
 	const [confirming, setConfirming] = useState(false)
+	const [exporting, setExporting] = useState(false)
 	// the prelab upload: busy while it goes up, and what went wrong if it didn't
 	const [prelabBusy, setPrelabBusy] = useState(false)
 	const prelabInput = useRef(null)
@@ -562,6 +563,18 @@ export default function CheckInView({ kind, id }) {
 		}
 	}
 
+	const exportAttendance = async () => {
+		setExporting(true)
+		setError(null)
+		try {
+			await api.exportAttendance(id)
+		} catch (err) {
+			setError(err.message)
+		} finally {
+			setExporting(false)
+		}
+	}
+
 	const back = kind === 'lab'
 		? { href: '/labs', label: 'Back to labs' }
 		: { href: '/events', label: 'Back to events' }
@@ -657,6 +670,22 @@ export default function CheckInView({ kind, id }) {
 									onClick={() => setConfirming(true)}
 								>
 									confirmation
+								</EditorButton>
+								{/* everyone on the list as a spreadsheet — who came, who
+								    didn't — for the reports the university asks for */}
+								<EditorButton
+									className="
+										mt-[10px]
+										mx-auto
+										lg:mx-0
+										w-[121.7px]
+										h-[32px]
+									"
+									disabled={roster.length === 0 || exporting}
+									title={roster.length === 0 ? 'Nobody on the list yet' : 'Download the attendance as a CSV'}
+									onClick={exportAttendance}
+								>
+									{exporting ? 'saving…' : 'attendance csv'}
 								</EditorButton>
 								{kind === 'lab' && (
 									<div className="
