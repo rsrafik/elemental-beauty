@@ -4,7 +4,8 @@ import prisma from '../prismaClient.js'
 import requireRole from '../middleware/requireRole.js'
 import { POINTS } from '../points.js'
 import { mountRoster } from './roster.js'
-import { acceptOffer, confirmSpot, expireOffers, offerNext } from '../offers.js'
+import { acceptOffer, confirmSpot, expireOffers, lockParent, offerNext, startsAt } from '../offers.js'
+import { log } from '../activity.js'
 
 const router = express.Router()
 const RANK_OFFICER = ['officer', 'jboard', 'treasurer', 'admin']
@@ -428,6 +429,10 @@ router.put('/:id', requireRole('officer'), async (req, res) => {
                 : { ...data, published: false }
         }
 
+        // the live lab moved to another day or time: the day-before reminder
+        // is owed again (edits parked in a draft don't count until published)
+        if ('date' in update || 'startTime' in update) { update.reminderSentAt = null }
+
         const lab = await prisma.lab.update({ where: { labId }, data: update })
         res.json(lab)
     } catch (err) {
@@ -653,6 +658,12 @@ router.post('/:labId/rsvp', async (req, res) => {
         const existing = await prisma.memberLab.findUnique({
             where: { memberId_labId: { memberId: req.userId, labId } }
         })
+        // once it's begun, sign-ups are the door's business (the QR scan and
+        // the check-in page) — but an offer in hand can still be taken
+        const start = startsAt(lab)
+        if (start && start.getTime() <= Date.now() && existing?.attendanceStatus !== 'offered') {
+            return res.status(409).json({ message: 'This lab has already started' })
+        }
         if (existing) {
             // pressing the button while holding an offer accepts it
             if (existing.attendanceStatus === 'offered') {
@@ -665,9 +676,11 @@ router.post('/:labId/rsvp', async (req, res) => {
             return res.json({ code: 'ALREADY_RSVPED', message: 'You are already RSVP\'d', rsvp: existing })
         }
 
-        // count + create inside one transaction so two simultaneous RSVPs
-        // can't both grab the last seat
+        // count + create under the lab's row lock, so two simultaneous RSVPs
+        // queue up instead of both grabbing the last seat (see lockParent —
+        // a transaction alone doesn't do it at Postgres's default isolation)
         const result = await prisma.$transaction(async (tx) => {
+            await lockParent(tx, 'lab', labId)
             const seatsTaken = await tx.memberLab.count({
                 where: { labId, ...TAKEN }
             })
@@ -704,6 +717,8 @@ router.post('/:labId/rsvp', async (req, res) => {
         res.status(201).json({ code: 'RSVPED', message: 'RSVP confirmed', rsvp: result.rsvp })
     } catch (err) {
         if (err.code === 'P2003') { return res.status(404).json({ message: 'Lab not found' }) }
+        // the same button pressed twice at once: the second insert loses
+        if (err.code === 'P2002') { return res.json({ code: 'ALREADY_RSVPED', message: 'You are already RSVP\'d' }) }
         console.error(err.message)
         res.sendStatus(500)
     }
@@ -725,6 +740,7 @@ router.delete('/:labId/rsvp', async (req, res) => {
         }
 
         const promoted = await prisma.$transaction(async (tx) => {
+            await lockParent(tx, 'lab', labId)
             await tx.memberLab.delete({
                 where: { memberId_labId: { memberId: req.userId, labId } }
             })
@@ -748,7 +764,8 @@ router.delete('/:labId/rsvp', async (req, res) => {
 
 // Officer scans a member's QR. RSVP'd → checked in. Not RSVP'd → waitlisted,
 // with a distinct code so the scanner UI can show it. Waitlisted members are
-// admitted later via /admit-waitlist, not by re-scanning.
+// moved up from the check-in page's waitlist column (roster.js 'admit'), not
+// by re-scanning.
 router.post('/:labId/checkin', requireRole('officer'), async (req, res) => {
     const labId = parseInt(req.params.labId)
     if (isNaN(labId)) { return res.status(400).json({ message: 'Invalid lab id' }) }
@@ -764,6 +781,8 @@ router.post('/:labId/checkin', requireRole('officer'), async (req, res) => {
     }
 
     try {
+        const lab = await prisma.lab.findUnique({ where: { labId }, select: { title: true } })
+        if (!lab) { return res.status(404).json({ message: 'Lab not found' }) }
         const existing = await prisma.memberLab.findUnique({
             where: { memberId_labId: { memberId: decoded.id, labId } }
         })
@@ -794,76 +813,24 @@ router.post('/:labId/checkin', requireRole('officer'), async (req, res) => {
 
         // rsvped → attended; lab points awarded atomically with the transition
         // (only this transition earns — rescans hit the guards above)
-        const [attendance] = await prisma.$transaction([
-            prisma.memberLab.update({
+        const attendance = await prisma.$transaction(async (tx) => {
+            const row = await tx.memberLab.update({
                 where: { memberId_labId: { memberId: decoded.id, labId } },
-                data: { attendanceStatus: 'attended' }
-            }),
-            prisma.member.update({
+                data: { attendanceStatus: 'attended', offerSentAt: null }
+            })
+            await tx.member.update({
                 where: { userId: decoded.id },
                 data: { points: { increment: POINTS.lab } }
             })
-        ])
+            await log({
+                actorId: req.userId, action: 'checked_in', targetId: decoded.id, points: POINTS.lab,
+                details: { kind: 'lab', id: labId, title: lab.title, by: 'qr' }
+            }, tx)
+            return row
+        })
         res.json({ code: 'CHECKED_IN', message: `Checked in (+${POINTS.lab} points)`, attendance })
     } catch (err) {
         if (err.code === 'P2003') { return res.status(404).json({ message: 'Lab or member not found' }) }
-        console.error(err.message)
-        res.sendStatus(500)
-    }
-})
-
-// The button: once the lab starts, admit waitlisted walk-ins oldest-first
-// into whatever seats the no-shows left open (capacity minus attended).
-router.post('/:labId/admit-waitlist', requireRole('officer'), async (req, res) => {
-    const labId = parseInt(req.params.labId)
-    if (isNaN(labId)) { return res.status(400).json({ message: 'Invalid lab id' }) }
-
-    try {
-        const lab = await prisma.lab.findUnique({ where: { labId } })
-        if (!lab) { return res.status(404).json({ message: 'Lab not found' }) }
-
-        // null = unlimited, which admits everyone waiting
-        let seatsLeft = null
-        if (lab.capacity != null) {
-            const attendedCount = await prisma.memberLab.count({
-                where: { labId, attendanceStatus: 'attended' }
-            })
-            seatsLeft = lab.capacity - attendedCount
-            if (seatsLeft <= 0) {
-                return res.json({ admitted: [], seatsLeft: 0, message: 'Lab is already at capacity' })
-            }
-        }
-
-        const toAdmit = await prisma.memberLab.findMany({
-            where: { labId, attendanceStatus: 'waitlisted' },
-            orderBy: { waitlistedAt: 'asc' },            // oldest to newest
-            ...(seatsLeft !== null ? { take: seatsLeft } : {})   // never over capacity
-        })
-
-        const memberIds = toAdmit.map(w => w.memberId)
-        await prisma.$transaction([
-            prisma.memberLab.updateMany({
-                where: { labId, memberId: { in: memberIds } },
-                data: { attendanceStatus: 'attended' }
-            }),
-            // admitted = attended, so they earn lab points like anyone else
-            prisma.member.updateMany({
-                where: { userId: { in: memberIds } },
-                data: { points: { increment: POINTS.lab } }
-            })
-        ])
-
-        const stillWaitlisted = await prisma.memberLab.count({
-            where: { labId, attendanceStatus: 'waitlisted' }
-        })
-
-        res.json({
-            admitted: memberIds,
-            pointsEach: POINTS.lab,
-            seatsLeft: seatsLeft === null ? null : seatsLeft - memberIds.length,
-            stillWaitlisted
-        })
-    } catch (err) {
         console.error(err.message)
         res.sendStatus(500)
     }

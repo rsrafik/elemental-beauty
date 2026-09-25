@@ -4,7 +4,8 @@ import prisma from '../prismaClient.js'
 import requireRole from '../middleware/requireRole.js'
 import { eventPoints } from '../points.js'
 import { mountRoster } from './roster.js'
-import { acceptOffer, expireOffers, offerNext } from '../offers.js'
+import { acceptOffer, confirmSpot, expireOffers, lockParent, offerNext, startsAt } from '../offers.js'
+import { log } from '../activity.js'
 
 const router = express.Router()
 
@@ -84,7 +85,32 @@ router.get('/:id', async (req, res) => {
             return res.status(404).json({ message: 'Event not found' })
         }
 
-        res.json(event)
+        // Where the person asking stands on it — what /events/view switches
+        // on, the same extras a lab's page gets: their status, seats gone,
+        // whether they've been asked to confirm, and their place in the queue.
+        const [link, taken] = await Promise.all([
+            prisma.memberEvent.findUnique({ where: { memberId_eventId: { memberId: req.userId, eventId } } }),
+            prisma.memberEvent.count({ where: { eventId, ...TAKEN } })
+        ])
+        let waitlistPosition = null
+        if (link?.attendanceStatus === 'waitlisted') {
+            const ahead = await prisma.memberEvent.count({
+                where: { eventId, attendanceStatus: 'waitlisted', waitlistedAt: { lt: link.waitlistedAt } }
+            })
+            waitlistPosition = ahead + 1
+        }
+
+        res.json({
+            ...event,
+            taken,
+            mine: link?.attendanceStatus ?? null,
+            confirmPending: link?.attendanceStatus === 'rsvped' && Boolean(link.confirmSentAt) && !link.confirmedAt,
+            confirmBy: link?.confirmBy ?? null,
+            confirmedAt: link?.confirmedAt ?? null,
+            waitlistPosition,
+            // true once it's begun — the page stops offering the rsvp button
+            started: startsAt(event).getTime() <= Date.now()
+        })
     } catch (err) {
         console.error(err.message)
         res.sendStatus(500)
@@ -183,6 +209,9 @@ router.put('/:id', requireRole('officer'), async (req, res) => {
         data.capacity = req.body.capacity
     }
 
+    // moved to another day or time: the day-before reminder is owed again
+    if (data.date !== undefined || data.startTime !== undefined) { data.reminderSentAt = null }
+
     try {
         const event = await prisma.event.update({ where: { eventId }, data })
         res.json(event)
@@ -231,11 +260,20 @@ router.post('/:eventId/rsvp', async (req, res) => {
 
     try {
         const event = await prisma.event.findUnique({ where: { eventId } })
-        if (!event) { return res.status(404).json({ message: 'Event not found' }) }
+        // an officers-only event doesn't exist for a member — the same 404
+        // GET /:id gives, so signing up by id can't get round it
+        if (!event || (event.track === 'officers' && req.role === 'member')) {
+            return res.status(404).json({ message: 'Event not found' })
+        }
 
         const existing = await prisma.memberEvent.findUnique({
             where: { memberId_eventId: { memberId: req.userId, eventId } }
         })
+        // once it's begun, sign-ups are the door's business (the QR scan and
+        // the check-in page) — but an offer in hand can still be taken
+        if (startsAt(event).getTime() <= Date.now() && existing?.attendanceStatus !== 'offered') {
+            return res.status(409).json({ message: 'This event has already started' })
+        }
         if (existing) {
             // pressing the button while holding an offer accepts it
             if (existing.attendanceStatus === 'offered') {
@@ -248,7 +286,10 @@ router.post('/:eventId/rsvp', async (req, res) => {
             return res.json({ code: 'ALREADY_RSVPED', message: 'You are already RSVP\'d', rsvp: existing })
         }
 
+        // under the event's row lock, so two sign-ups for the last seat queue
+        // up rather than both counting it free (see lockParent)
         const result = await prisma.$transaction(async (tx) => {
+            await lockParent(tx, 'event', eventId)
             if (event.capacity !== null) {
                 const seatsTaken = await tx.memberEvent.count({
                     where: { eventId, ...TAKEN }
@@ -283,6 +324,23 @@ router.post('/:eventId/rsvp', async (req, res) => {
         }
         res.status(201).json({ code: 'RSVPED', message: 'RSVP confirmed', rsvp: result.rsvp })
     } catch (err) {
+        // the same button pressed twice at once: the second insert loses
+        if (err.code === 'P2002') { return res.json({ code: 'ALREADY_RSVPED', message: 'You are already RSVP\'d' }) }
+        console.error(err.message)
+        res.sendStatus(500)
+    }
+})
+
+// A member confirming their spot from the event's page rather than the email
+// (the check-in page's "confirmation" — src/offers.js).
+router.post('/:eventId/confirm', async (req, res) => {
+    const eventId = parseInt(req.params.eventId)
+    if (isNaN(eventId)) { return res.status(400).json({ message: 'Invalid event id' }) }
+    try {
+        const result = await confirmSpot('event', eventId, req.userId)
+        if (result.status === 'gone') { return res.status(404).json({ message: 'You have no spot to confirm' }) }
+        res.json({ message: 'Spot confirmed', ...result })
+    } catch (err) {
         console.error(err.message)
         res.sendStatus(500)
     }
@@ -304,6 +362,7 @@ router.delete('/:eventId/rsvp', async (req, res) => {
         }
 
         const promoted = await prisma.$transaction(async (tx) => {
+            await lockParent(tx, 'event', eventId)
             await tx.memberEvent.delete({
                 where: { memberId_eventId: { memberId: req.userId, eventId } }
             })
@@ -375,74 +434,24 @@ router.post('/:eventId/checkin', requireRole('officer'), async (req, res) => {
         }
 
         // rsvped → attended, points awarded atomically with the transition
-        const [attendance] = await prisma.$transaction([
-            prisma.memberEvent.update({
+        const attendance = await prisma.$transaction(async (tx) => {
+            const row = await tx.memberEvent.update({
                 where: { memberId_eventId: { memberId: decoded.id, eventId } },
-                data: { attendanceStatus: 'attended' }
-            }),
-            prisma.member.update({
+                data: { attendanceStatus: 'attended', offerSentAt: null }
+            })
+            await tx.member.update({
                 where: { userId: decoded.id },
                 data: { points: { increment: eventPoints(event.type) } }
             })
-        ])
+            await log({
+                actorId: req.userId, action: 'checked_in', targetId: decoded.id, points: eventPoints(event.type),
+                details: { kind: 'event', id: eventId, title: event.title, by: 'qr' }
+            }, tx)
+            return row
+        })
         res.json({ code: 'CHECKED_IN', message: `Checked in (+${eventPoints(event.type)} points)`, attendance })
     } catch (err) {
         if (err.code === 'P2003') { return res.status(404).json({ message: 'Event or member not found' }) }
-        console.error(err.message)
-        res.sendStatus(500)
-    }
-})
-
-// The button: admit waitlisted members oldest-first. Capped events fill up
-// to capacity; uncapped events admit everyone. Each admission earns points.
-router.post('/:eventId/admit-waitlist', requireRole('officer'), async (req, res) => {
-    const eventId = parseInt(req.params.eventId)
-    if (isNaN(eventId)) { return res.status(400).json({ message: 'Invalid event id' }) }
-
-    try {
-        const event = await prisma.event.findUnique({ where: { eventId } })
-        if (!event) { return res.status(404).json({ message: 'Event not found' }) }
-
-        let seatsLeft = null   // null = unlimited
-        if (event.capacity !== null) {
-            const attendedCount = await prisma.memberEvent.count({
-                where: { eventId, attendanceStatus: 'attended' }
-            })
-            seatsLeft = event.capacity - attendedCount
-            if (seatsLeft <= 0) {
-                return res.json({ admitted: [], seatsLeft: 0, message: 'Event is already at capacity' })
-            }
-        }
-
-        const toAdmit = await prisma.memberEvent.findMany({
-            where: { eventId, attendanceStatus: 'waitlisted' },
-            orderBy: { waitlistedAt: 'asc' },
-            ...(seatsLeft !== null ? { take: seatsLeft } : {})
-        })
-
-        const memberIds = toAdmit.map(w => w.memberId)
-        await prisma.$transaction([
-            prisma.memberEvent.updateMany({
-                where: { eventId, memberId: { in: memberIds } },
-                data: { attendanceStatus: 'attended' }
-            }),
-            prisma.member.updateMany({
-                where: { userId: { in: memberIds } },
-                data: { points: { increment: eventPoints(event.type) } }
-            })
-        ])
-
-        const stillWaitlisted = await prisma.memberEvent.count({
-            where: { eventId, attendanceStatus: 'waitlisted' }
-        })
-
-        res.json({
-            admitted: memberIds,
-            pointsEach: eventPoints(event.type),
-            seatsLeft: seatsLeft === null ? null : seatsLeft - memberIds.length,
-            stillWaitlisted
-        })
-    } catch (err) {
         console.error(err.message)
         res.sendStatus(500)
     }

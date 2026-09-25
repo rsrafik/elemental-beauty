@@ -1,8 +1,10 @@
 import prisma from '../prismaClient.js'
 import requireRole from '../middleware/requireRole.js'
 import { wantsEmail } from '../emailPrefs.js'
-import { expireOffers, offerNext, sendConfirmations, sendOffer } from '../offers.js'
+import { expireOffers, lockParent, offerNext, sendConfirmations, sendOffer } from '../offers.js'
 import { emailAll, readMessage } from '../emailAll.js'
+import { log } from '../activity.js'
+import { csvCell } from '../csv.js'
 
 // The officer check-in page's roster, shared by labs and events: the same
 // three columns (not checked in / checked in / waitlist) and the same buttons
@@ -24,6 +26,8 @@ import { emailAll, readMessage } from '../emailAll.js'
 //               waitlist, the same as when a member un-RSVPs themselves
 //     add       puts someone on the waitlist by username (manual add)
 //
+//   GET  /:id/attendance  the same roster as a CSV download, for the reports
+//                         the university asks for
 //   POST /:id/email-all  { subject, message } — the page's "email all": sent by
 //                        the server to everyone signed up (see emailAll.js)
 //   POST /:id/confirm-all  { deadline } — the page's "confirmation": everyone
@@ -98,6 +102,59 @@ export function mountRoster(router, kind) {
                 // emails (their choice, or their role's default: emailPrefs.js)
                 email: wantsEmail(member.user.emailEvents, member.role) ? member.user.email : null
             })))
+        } catch (err) {
+            console.error(err.message)
+            res.sendStatus(500)
+        }
+    })
+
+    // Everyone with a row, as a spreadsheet: one line each, names first.
+    // Unlike the roster above, every address is included — this is the
+    // officers' own record of who came, not a mailing list.
+    router.get('/:id/attendance', requireRole('officer'), async (req, res) => {
+        const parentId = parseInt(req.params.id)
+        if (isNaN(parentId)) { return res.status(400).json({ message: `Invalid ${label.toLowerCase()} id` }) }
+
+        try {
+            // an event's points hang off its type; a lab has none
+            const row = await parent.findUnique({
+                where: { [key]: parentId },
+                select: { title: true, date: true, ...(key === 'eventId' ? { type: true } : {}) }
+            })
+            if (!row) { return res.status(404).json({ message: `${label} not found` }) }
+            const rows = await link.findMany({
+                where: { [key]: parentId },
+                select: {
+                    attendanceStatus: true, confirmedAt: true,
+                    ...(key === 'labId' ? { quizPassed: true } : {}),
+                    member: { select: { user: { select: { firstName: true, lastName: true, username: true, email: true } } } }
+                }
+            })
+            const STATUS = { attended: 'checked in', rsvped: 'signed up', absent: 'no-show', waitlisted: 'waitlist', offered: 'offered a spot' }
+            const ORDER = ['attended', 'rsvped', 'offered', 'absent', 'waitlisted']
+            rows.sort((a, b) =>
+                ORDER.indexOf(a.attendanceStatus) - ORDER.indexOf(b.attendanceStatus) ||
+                a.member.user.lastName.localeCompare(b.member.user.lastName) ||
+                a.member.user.firstName.localeCompare(b.member.user.firstName))
+
+            const header = ['first_name', 'last_name', 'username', 'email', 'status', 'confirmed', 'points',
+                ...(key === 'labId' ? ['quiz_passed'] : [])]
+            const lines = rows.map((r) => {
+                const u = r.member.user
+                return [
+                    u.firstName, u.lastName, u.username, u.email,
+                    STATUS[r.attendanceStatus] ?? r.attendanceStatus,
+                    r.confirmedAt ? r.confirmedAt.toISOString() : '',
+                    r.attendanceStatus === 'attended' ? points(row) : 0,
+                    ...(key === 'labId' ? [r.quizPassed == null ? '' : r.quizPassed ? 'yes' : 'no'] : [])
+                ].map(csvCell).join(',')
+            })
+
+            const day = row.date ? row.date.toISOString().slice(0, 10) : 'undated'
+            const file = `${day} ${row.title}`.replace(/[^\w\- ]+/g, '').trim().replace(/\s+/g, '-').toLowerCase() || kindName
+            res.type('text/csv')
+            res.set('Content-Disposition', `attachment; filename="${file}-attendance.csv"`)
+            res.send([header.join(','), ...lines].join('\n'))
         } catch (err) {
             console.error(err.message)
             res.sendStatus(500)
@@ -201,10 +258,14 @@ export function mountRoster(router, kind) {
                 if (!['rsvped', 'absent', 'offered'].includes(status)) {
                     return res.status(409).json({ message: 'Only a signed-up member can be checked in' })
                 }
-                await prisma.$transaction([
-                    link.update({ where: where(parentId, memberId), data: { attendanceStatus: 'attended', offerSentAt: null } }),
-                    prisma.member.update({ where: { userId: memberId }, data: { points: { increment: worth } } })
-                ])
+                await prisma.$transaction(async (tx) => {
+                    await tx[linkName].update({ where: where(parentId, memberId), data: { attendanceStatus: 'attended', offerSentAt: null } })
+                    await tx.member.update({ where: { userId: memberId }, data: { points: { increment: worth } } })
+                    await log({
+                        actorId: req.userId, action: 'checked_in', targetId: memberId, points: worth,
+                        details: { kind: kindName, id: parentId, title: row.title, by: 'hand' }
+                    }, tx)
+                })
                 return res.json({ message: `Checked in (+${worth} points)` })
             }
 
@@ -219,10 +280,15 @@ export function mountRoster(router, kind) {
                     })
                     // never below zero — they may have spent the points already
                     const member = await tx.member.findUnique({ where: { userId: memberId }, select: { points: true } })
+                    const after = Math.max(0, member.points - worth)
                     await tx.member.update({
                         where: { userId: memberId },
-                        data: { points: Math.max(0, member.points - worth) }
+                        data: { points: after }
                     })
+                    await log({
+                        actorId: req.userId, action: 'checkin_undone', targetId: memberId, points: after - member.points,
+                        details: { kind: kindName, id: parentId, title: row.title }
+                    }, tx)
                 })
                 return res.json({ message: 'Check-in undone' })
             }
@@ -244,6 +310,7 @@ export function mountRoster(router, kind) {
             if (action === 'remove') {
                 if (status === 'attended') { return res.status(409).json({ message: 'Undo the check-in first' }) }
                 const promoted = await prisma.$transaction(async (tx) => {
+                    await lockParent(tx, kindName, parentId)
                     const junction = tx[linkName]
                     await junction.delete({ where: where(parentId, memberId) })
                     // only a held seat frees one up — a waitlist place doesn't —
