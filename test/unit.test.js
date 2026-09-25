@@ -8,6 +8,7 @@ import { wantsEmail } from '../src/emailPrefs.js'
 import { readMessage } from '../src/emailAll.js'
 import { fromEmail } from '../src/accountEmail.js'
 import { schoolYearOf } from '../src/dues.js'
+import { wipeProblem } from '../scripts/localDatabase.js'
 
 // ---- the club's clock ------------------------------------------------------
 
@@ -103,4 +104,19 @@ test('a lab\'s school year turns over on August 1st', () => {
     assert.equal(schoolYearOf('2026-08-01'), '2026–27')
     assert.equal(schoolYearOf('2027-01-15'), '2026–27')
     assert.equal(schoolYearOf('2099-12-31'), '2099–00')
+})
+
+// ---- the wipe guard (db:seed, db:reset) ------------------------------------
+
+test('the seed and reset only wipe a database on this machine', () => {
+    const at = (DATABASE_URL, NODE_ENV) => wipeProblem({ DATABASE_URL, NODE_ENV })
+    assert.equal(at('postgresql://postgres:pw@localhost:5433/elemental'), null)
+    assert.equal(at('postgresql://postgres:pw@127.0.0.1/elemental'), null)
+    assert.equal(at('postgresql://postgres:pw@[::1]:5432/elemental'), null)
+    assert.equal(at('postgresql:///elemental'), null, 'a Unix socket')
+    assert.match(at('postgresql://u:pw@db.abc.supabase.co:5432/postgres'), /db\.abc\.supabase\.co/)
+    assert.match(at('postgresql://u:pw@localhost.evil.com/x'), /not this machine/)
+    assert.match(at('postgresql://postgres:pw@localhost:5433/elemental', 'production'), /production/)
+    assert.match(at(undefined), /not set/)
+    assert.match(at('not a url'), /not a valid URL/)
 })

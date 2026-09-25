@@ -13,7 +13,8 @@
 //
 // The password is the username in every case. This is a trial fixture and
 // nothing here should ever be run against real data — it starts by deleting
-// every row in the database.
+// every row in the database. It refuses to run unless DATABASE_URL is on
+// this machine (see scripts/localDatabase.js).
 //
 //   node --env-file=.env --experimental-strip-types prisma/seed.js
 //
@@ -26,6 +27,10 @@ import { readFile } from 'fs/promises'
 import { LAB_DESCRIPTIONS } from './labDescriptions.js'
 import { SOAP_BAR_CONTENT, SOAP_BAR_LESSON_FILE } from './soapBarContent.js'
 import { hashPassword } from '../src/passwords.js'
+import { refuseUnlessLocal } from '../scripts/localDatabase.js'
+
+// before anything is deleted: only ever a database on this machine
+refuseUnlessLocal('seed')
 
 // One account per role. `role: null` is the one with no member row at all.
 const ACCOUNTS = [
