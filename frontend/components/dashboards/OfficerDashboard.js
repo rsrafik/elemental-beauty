@@ -162,6 +162,8 @@ export default function OfficerDashboard() {
 					// drafts aren't happening yet — they stay on /labs until published
 					...labs.filter((lab) => lab.published !== false).map((lab) => ({
 						id: `lab-${lab.labId}`,
+						// clicking the ring opens its check-in page
+						href: `/labs/view?id=${lab.labId}`,
 						date: isoDate(lab.date),
 						time: lab.startTime ?? '',
 						title: lab.title,
@@ -170,6 +172,7 @@ export default function OfficerDashboard() {
 					})),
 					...events.map((event) => ({
 						id: `event-${event.eventId}`,
+						href: `/events/view?id=${event.eventId}`,
 						date: isoDate(event.date),
 						time: event.startTime ?? '',
 						title: event.title,
@@ -190,6 +193,20 @@ export default function OfficerDashboard() {
 
 		return () => { live = false }
 	}, [])
+
+	// What makes a ring a link to its lab or event's check-in page — nothing,
+	// for a ring with nothing on it.
+	const ring = (row) => row
+		? {
+			role: 'link',
+			tabIndex: 0,
+			'aria-label': `${row.title} check-in`,
+			onClick: () => router.push(row.href),
+			onKeyDown: (event) => {
+				if (event.key === 'Enter') router.push(row.href)
+			},
+		}
+		: {}
 
 	// An event with no cap is uncapped, not 0 — the label drops the denominator
 	// rather than inventing one.
@@ -398,8 +415,9 @@ export default function OfficerDashboard() {
 						upcoming
 					</h2>
 					{/* concentric rings anchored to the bottom-left corner */}
-					<div className="
+					<div {...ring(upcoming[2])} className={`
 						peer/light
+						${upcoming[2] ? 'cursor-pointer' : ''}
 						absolute
 						bottom-0
 						left-0
@@ -417,7 +435,7 @@ export default function OfficerDashboard() {
 						duration-700
 						ease-out
                         shadow-[5px_-5px_2px_rgba(0,0,0,0.5)]
-					">
+					`}>
 						<RingDate>{upcoming[2] ? shortDate(upcoming[2].date) : ''}</RingDate>
 							<h2 className="
 								ml-4
@@ -449,8 +467,9 @@ export default function OfficerDashboard() {
 								{upcoming[2] ? attending(upcoming[2]) : ''}
 							</h3>
                     </div>
-					<div className="
+					<div {...ring(upcoming[1])} className={`
 						peer/lighter
+						${upcoming[1] ? 'cursor-pointer' : ''}
 						absolute
 						bottom-0
 						left-0
@@ -466,7 +485,7 @@ export default function OfficerDashboard() {
 						peer-hover/light:-translate-x-[50%]
 						peer-hover/light:translate-y-[45%]
                         shadow-[5px_-5px_2px_rgba(0,0,0,0.5)]
-					">
+					`}>
 						<RingDate>{upcoming[1] ? shortDate(upcoming[1].date) : ''}</RingDate>
 						<div className="
 							absolute
@@ -499,7 +518,8 @@ export default function OfficerDashboard() {
 							</h3>
 						</div>
                     </div>
-					<div className="
+					<div {...ring(upcoming[0])} className={`
+						${upcoming[0] ? 'cursor-pointer' : ''}
 						absolute
 						bottom-0
 						left-0
@@ -517,7 +537,7 @@ export default function OfficerDashboard() {
 						peer-hover/lighter:-translate-x-[60%]
 						peer-hover/lighter:translate-y-[55%]
                         shadow-[5px_-5px_2px_rgba(0,0,0,0.5)]
-					">
+					`}>
 						<RingDate>{upcoming[0] ? shortDate(upcoming[0].date) : ''}</RingDate>
 						<div className="
 							mt-5

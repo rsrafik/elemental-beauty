@@ -1,11 +1,13 @@
 'use client'
 
 import { useEffect, useState } from 'react'
+import { useRouter } from 'next/navigation'
 import Sidebar from '@/components/dashboards/Sidebar'
 import ElementistPass from '@/components/dashboards/ElementistPass'
 import { useRole, useSession, useSignOut } from '@/lib/session'
 import { navFor, showInstagramFor } from '@/lib/nav'
-import { announcements as announcementsApi, members } from '@/lib/api'
+import { announcements as announcementsApi, members, labs as labsApi, events as eventsApi } from '@/lib/api'
+import { isoDate, today } from '@/lib/dates'
 
 function StatCard({ title, value, bg, valueColor }) {
 	return (
@@ -45,7 +47,10 @@ function StatCard({ title, value, bg, valueColor }) {
 	)
 }
 
-function Stamp({ day, date, note, style, rotate = 0 }) {
+// `items` is what's on that day — [{ key, title, href }]. One item makes the
+// whole stamp a link to it; with more, each title is its own link. None reads
+// "none", as it always has.
+function Stamp({ day, date, items = [], style, rotate = 0, onOpen }) {
 	// Position + rotation live on this one wrapper. Everything inside
 	// (stamp, pin, text) rotates with it automatically — no per-item angles.
 	//
@@ -58,13 +63,22 @@ function Stamp({ day, date, note, style, rotate = 0 }) {
 	// wrapper — otherwise the inline transform would override the scale.
 	return (
 		<div
-			className="group absolute cursor-pointer hover:z-20"
+			className={`group absolute hover:z-20 ${items.length === 1 ? 'cursor-pointer' : ''}`}
+			role={items.length === 1 ? 'link' : undefined}
+			tabIndex={items.length === 1 ? 0 : undefined}
+			aria-label={items.length === 1 ? `${items[0].title}, ${day} ${date}` : undefined}
+			onClick={items.length === 1 ? () => onOpen(items[0].href) : undefined}
+			onKeyDown={items.length === 1 ? (event) => {
+				if (event.key === 'Enter') onOpen(items[0].href)
+			} : undefined}
 			style={{
 				...pos,
 				width: `${STAMP_W}px`,
 				height: `${STAMP_H}px`,
 				left: `calc(50% - ${STAMP_W / 2}px ${sign} ${Math.abs(center)}px)`,
-				transform: `rotate(${rotate}deg)`,
+				// shrunk about its own centre, so it stays exactly where it's placed —
+				// by how much comes from --stamp-scale on the pile (see STAMP_SCALE)
+				transform: `rotate(${rotate}deg) scale(var(--stamp-scale, 1))`,
 			}}
 		>
 			<div className="
@@ -136,16 +150,39 @@ function Stamp({ day, date, note, style, rotate = 0 }) {
 							align-baseline
 						">{date}</span>
 					</p>
-					<p className="
+					<div className="
 						font-handrawn
 						text-[20px]
 						text-black
 						mt-3
 						leading-tight
 						w-full
+						flex
+						flex-col
+						gap-1
 					">
-						{note}
-					</p>
+						{items.length === 0 && <p>none</p>}
+						{items.length === 1 && <p className="line-clamp-2">{items[0].title}</p>}
+						{/* a busy day: each title opens its own — up to three, then
+						    a count, so the stamp never overflows */}
+						{items.length > 1 && items.slice(0, 3).map((item) => (
+							<button
+								key={item.key}
+								type="button"
+								onClick={() => onOpen(item.href)}
+								className="
+									truncate
+									cursor-pointer
+									hover:underline
+								"
+							>
+								{item.title}
+							</button>
+						))}
+						{items.length > 3 && (
+							<p className="text-[16px] text-black/60">+{items.length - 3} more</p>
+						)}
+					</div>
 				</div>
 			</div>
 		</div>
@@ -191,6 +228,12 @@ function Stamp({ day, date, note, style, rotate = 0 }) {
 const STAMP_W = 200
 const STAMP_H = 262
 
+// In the main layout (2xl: menu | content | upcoming side by side) the stamps
+// are drawn a little under full size, each in place — the layout below is
+// still measured at full size, so nothing moves and the pile only gains
+// breathing room. Stacked (lg and down, phones included) they stay full size.
+const STAMP_SCALE = '[--stamp-scale:1] 2xl:[--stamp-scale:0.9]'
+
 // enough for the widest spill on each axis, with a little margin
 const PAD_X = 40
 const PAD_Y = 24
@@ -198,13 +241,65 @@ const PAD_Y = 24
 const GROUP_W = 430 + PAD_X * 2      // 510
 const GROUP_H = 880 + PAD_Y * 2      // 928
 
-const upcoming = [
-	{ day: 'Mon.', date: '27', note: 'none', style: { top: `${30 + PAD_Y}px`, center: -95 }, rotate: -11 },
-	{ day: 'Tues.', date: '28', note: 'bubbles & beakers p.1', style: { top: `${160 + PAD_Y}px`, center: 100 }, rotate: 7 },
-	{ day: 'Wed.', date: '29', note: 'none', style: { top: `${320 + PAD_Y}px`, center: -100 }, rotate: -23 },
-	{ day: 'Thurs.', date: '30', note: 'bubbles & beakers p.2', style: { top: `${480 + PAD_Y}px`, center: 112 }, rotate: 4 },
-	{ day: 'Fri.', date: '31', note: 'none', style: { top: `${625 + PAD_Y}px`, center: -70 }, rotate: -4 },
+// Where each weekday's stamp sits in the pile — Monday first.
+const STAMP_LAYOUT = [
+	{ day: 'Mon.', style: { top: `${30 + PAD_Y}px`, center: -95 }, rotate: -11 },
+	{ day: 'Tues.', style: { top: `${160 + PAD_Y}px`, center: 100 }, rotate: 7 },
+	{ day: 'Wed.', style: { top: `${320 + PAD_Y}px`, center: -100 }, rotate: -23 },
+	{ day: 'Thurs.', style: { top: `${480 + PAD_Y}px`, center: 112 }, rotate: 4 },
+	{ day: 'Fri.', style: { top: `${625 + PAD_Y}px`, center: -70 }, rotate: -4 },
 ]
+
+const pad = (n) => String(n).padStart(2, '0')
+
+// Monday–Friday of this week, as 'YYYY-MM-DD' in the viewer's own timezone.
+// On a Saturday or Sunday this week's weekdays are all gone, so it's next
+// week's instead.
+function weekdays() {
+	const now = new Date()
+	const offset = now.getDay() === 0 ? 1 : now.getDay() === 6 ? 2 : 1 - now.getDay()
+	return Array.from({ length: 5 }, (_, i) => {
+		const d = new Date(now.getFullYear(), now.getMonth(), now.getDate() + offset + i)
+		return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`
+	})
+}
+
+// The five stamps, filled in: each weekday's date, and the labs and events on
+// it that are still to come — anything from a day that's already gone this
+// week has happened, so that day reads "none". Today's all still count: a lab
+// this evening is the most upcoming thing there is.
+//
+// A lab opens the same page its card on /labs does (sign up, check-in, quiz or
+// the lab itself — /labs/view works out which). Events don't have a page of
+// their own for members yet, so an event opens /events.
+function buildWeek(labs, events) {
+	const now = today()
+	const rows = [
+		...labs.map((lab) => ({
+			key: `lab-${lab.labId}`,
+			date: isoDate(lab.date),
+			time: lab.startTime ?? '',
+			title: lab.title,
+			href: `/labs/view?id=${lab.labId}`,
+		})),
+		...events.map((event) => ({
+			key: `event-${event.eventId}`,
+			date: isoDate(event.date),
+			time: event.startTime ?? '',
+			title: event.title,
+			href: '/events',
+		})),
+	]
+	return weekdays().map((date, i) => ({
+		...STAMP_LAYOUT[i],
+		date: String(Number(date.slice(8))),
+		items: date < now
+			? []
+			: rows
+				.filter((row) => row.date === date)
+				.sort((a, b) => a.time.localeCompare(b.time)),
+	}))
+}
 
 // ---- page ------------------------------------------------------------------
 
@@ -223,8 +318,17 @@ export default function MemberDashboard() {
 	// off the junction tables, so this is one call rather than four.
 	const [profile, setProfile] = useState(null)
 
+	// this week's stamps — the dates straight away, what's on them once the
+	// labs and events have loaded
+	const router = useRouter()
+	const [week, setWeek] = useState(() => buildWeek([], []))
+
 	useEffect(() => {
 		let live = true
+
+		Promise.all([labsApi.list(), eventsApi.list()])
+			.then(([labs, events]) => live && setWeek(buildWeek(labs, events)))
+			.catch(() => {})
 
 		announcementsApi
 			.list(1)
@@ -515,20 +619,21 @@ export default function MemberDashboard() {
 						}}
 					>
 						<div
-							className="
+							className={`
 								absolute
 								top-0
 								left-0
 								origin-top-left
-							"
+								${STAMP_SCALE}
+							`}
 							style={{
 								width: `${GROUP_W}px`,
 								height: `${GROUP_H}px`,
 								scale: 'var(--s)',
 							}}
 						>
-							{upcoming.map((s) => (
-								<Stamp key={s.day} {...s} />
+							{week.map((s) => (
+								<Stamp key={s.day} {...s} onOpen={(href) => router.push(href)} />
 							))}
 						</div>
 					</div>
