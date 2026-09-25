@@ -1,6 +1,7 @@
 'use client'
 
 import { useEffect, useState } from 'react'
+import Link from 'next/link'
 import DashboardShell from '@/components/dashboards/DashboardShell'
 import { eventCategories, events as eventsApi, labs as labsApi } from '@/lib/api'
 import { buildMonths, typesIn } from '@/lib/calendar'
@@ -238,18 +239,40 @@ function Day({ number, inMonth, entry, wave = 0 }) {
 					">
 						{entry.type}
 					</p>
-					<p className="
-						font-vietnam
-						text-sm
-						leading-tight
-						text-black
-						mt-0.5
-					">
-						{entry.title}
-					</p>
+					<EntryTitle entry={entry} />
 				</div>
 			)}
 		</div>
+	)
+}
+
+// The name of what's on a day, linking to its own page (the lab's or the
+// event's) where the description, the time and the rsvp button are.
+function EntryTitle({ entry }) {
+	const className = `
+		block
+		font-vietnam
+		text-sm
+		leading-tight
+		text-black
+		mt-0.5
+	`
+	if (!entry.href) return <p className={className}>{entry.title}</p>
+	return (
+		<Link
+			href={entry.href}
+			className={`
+				${className}
+				underline
+				decoration-black/20
+				underline-offset-2
+				transition-colors
+				duration-200
+				hover:decoration-black
+			`}
+		>
+			{entry.title}
+		</Link>
 	)
 }
 
@@ -321,15 +344,7 @@ function Agenda({ days }) {
 							">
 								{entry.type}
 							</p>
-							<p className="
-								font-vietnam
-								text-sm
-								leading-tight
-								text-black
-								mt-0.5
-							">
-								{entry.title}
-							</p>
+							<EntryTitle entry={entry} />
 						</div>
 					</li>
 				))}

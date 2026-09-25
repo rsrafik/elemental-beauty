@@ -1,6 +1,7 @@
 'use client'
 
 import { useEffect, useMemo, useState } from 'react'
+import Link from 'next/link'
 import DashboardShell from '@/components/dashboards/DashboardShell'
 import { events as eventsApi } from '@/lib/api'
 import { isoDate, longDate, prettyTime, today } from '@/lib/dates'
@@ -14,9 +15,10 @@ import { isoDate, longDate, prettyTime, today } from '@/lib/dates'
 // tapping "upcoming" slides the current panel off to the right, tapping
 // "current" brings it back.
 //
-// Both panels render the same EventCard. The current cards are plain — photo,
-// name and date, nothing to click. The upcoming ones carry the seat count and
-// the rsvp button.
+// Both panels render the same EventCard, and every card opens the event's own
+// page (/events/view) with its description. The current cards are plain —
+// photo, name and date. The upcoming ones carry the seat count and the rsvp
+// button.
 
 // Width of the vertical tab strip on each panel's left edge, and how long the
 // slide takes. Retune the whole interaction from these two.
@@ -249,7 +251,11 @@ function panels(rows) {
 // `availability` is optional: pass it and it rides on the title's line, pinned
 // to the right edge of the card. The current section has no seat count and no
 // action, so its cards are just the photo, the name and the date.
-function EventCard({ title, lines, image, action, availability }) {
+//
+// The whole card opens the event's own page (`href`): a link stretched over it,
+// with the action row lifted above the link so the rsvp button still presses
+// on its own.
+function EventCard({ title, lines, image, action, availability, href }) {
 	return (
 		<div
 			className="
@@ -269,6 +275,18 @@ function EventCard({ title, lines, image, action, availability }) {
 				active:shadow-[0_4px_10px_rgba(0,0,0,0.15)]
 			"
 		>
+			{href && (
+				<Link
+					href={href}
+					aria-label={`${title} — details`}
+					className="
+						absolute
+						inset-0
+						z-0
+						rounded-[10px]
+					"
+				/>
+			)}
 			<div className="
 				aspect-[4/3]
 				w-full
@@ -346,6 +364,8 @@ function EventCard({ title, lines, image, action, availability }) {
 				    grow downward instead of fighting the date for the corner */}
 				{action && (
 					<div className="
+						relative
+						z-10
 						mt-3
 						flex
 						justify-center
@@ -389,6 +409,7 @@ function EventGrid({ items, renderAction }) {
 						   against today; the card is where it becomes prose */
 						lines={[longDate(event.date), prettyTime(event.time), event.location].filter(Boolean)}
 						image={event.image}
+						href={`/events/view?id=${event.id}`}
 						action={renderAction?.(event)}
 						availability={
 							event.capacity == null

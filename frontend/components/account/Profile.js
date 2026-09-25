@@ -1,11 +1,15 @@
 'use client'
 
 import { useEffect, useRef, useState } from 'react'
+import Link from 'next/link'
 import DashboardShell from '@/components/dashboards/DashboardShell'
+import { Popup, PopupButton } from '@/components/labs/LabViewParts'
 import { hasRole, roleLabel } from '@/lib/roles'
-import { useRole, useSession } from '@/lib/session'
+import { useRole, useSession, useSignOut } from '@/lib/session'
 import { members as membersApi, auth } from '@/lib/api'
+import { longDate, prettyTime } from '@/lib/dates'
 import { useDismiss } from '@/lib/dismiss'
+import { AVATAR_MAX, shrinkImage } from '@/lib/images'
 
 // /account — the one page that's about the person looking at it rather than
 // about the club. Same sidebar as everywhere else; it's just another stop on
@@ -18,7 +22,8 @@ import { useDismiss } from '@/lib/dismiss'
 //              one shape rather than a card in a row of cards
 //   counter    the five numbers on one white rule — points first, then what
 //              earned them. A strip rather than tiles: they're one sentence
-//              about the same person, not five separate readings.
+//              about the same person, not five separate readings. Each number
+//              opens a popup of what it counts (see HistoryDialog).
 //   below      what you can change on the left (a paper form: underlines, not
 //              boxes) and where you stand on the right (a rail — the board as
 //              a line you're a point on, rather than a list you're a row in)
@@ -257,9 +262,9 @@ function PhotoPicker({ photo, name, onPick, onClear, className = '' }) {
 	const pick = (event) => {
 		const file = event.target.files?.[0]
 		if (!file) return
-		const reader = new FileReader()
-		reader.onload = () => onPick(reader.result)
-		reader.readAsDataURL(file)
+		// shrunk to a small square-ish JPEG first: the photo is sent back with
+		// every roster and leaderboard read, so it has to stay tiny (lib/images.js)
+		shrinkImage(file, AVATAR_MAX, { keepUnder: 60_000 }).then(onPick).catch(() => {})
 		// so picking the same file twice still fires a change
 		event.target.value = ''
 	}
@@ -618,17 +623,30 @@ function usernameOf(email) {
 
 // One number and what it counts. The rules between cells are drawn by the
 // strip, not by the cell, so the ends of the row stay open.
-function CounterCell({ value, label, ink, className = '' }) {
+//
+// With `onOpen` it's a button — the number opens the history behind it.
+function CounterCell({ value, label, ink, onOpen, className = '' }) {
+	const Tag = onOpen ? 'button' : 'div'
 	return (
-		<div className={`
-			flex
-			flex-col
-			items-center
-			justify-center
-			px-2
-			py-3
-			${className}
-		`}>
+		<Tag
+			{...(onOpen ? { type: 'button', onClick: onOpen, 'aria-label': `${value} ${label} — see the history` } : {})}
+			className={`
+				flex
+				flex-col
+				items-center
+				justify-center
+				px-2
+				py-3
+				${onOpen ? `
+					cursor-pointer
+					rounded-[18px]
+					transition-colors
+					duration-200
+					hover:bg-black/[0.03]
+				` : ''}
+				${className}
+			`}
+		>
 			<p className={`
 				font-beachday
 				text-[32px]
@@ -651,11 +669,11 @@ function CounterCell({ value, label, ink, className = '' }) {
 			">
 				{label}
 			</p>
-		</div>
+		</Tag>
 	)
 }
 
-function Counter({ points, stats }) {
+function Counter({ points, stats, onOpen }) {
 	return (
 		// Five cells never divide evenly into a narrow grid, so points takes the
 		// whole first row on a phone and the other four pair off underneath it —
@@ -682,6 +700,7 @@ function Counter({ points, stats }) {
 				value={points}
 				label="points"
 				ink={COUNTER_INK.points}
+				onOpen={() => onOpen('points')}
 				className="
 					col-span-2
 					sm:col-span-1
@@ -690,11 +709,229 @@ function Counter({ points, stats }) {
 					sm:border-b-0
 				"
 			/>
-			<CounterCell value={stats.pastLabs} label="labs done" ink={COUNTER_INK.pastLabs} />
-			<CounterCell value={stats.rsvpLabs} label="labs rsvp'd" ink={COUNTER_INK.rsvpLabs} />
-			<CounterCell value={stats.pastEvents} label="events done" ink={COUNTER_INK.pastEvents} />
-			<CounterCell value={stats.rsvpEvents} label="events rsvp'd" ink={COUNTER_INK.rsvpEvents} />
+			<CounterCell value={stats.pastLabs} label="labs done" ink={COUNTER_INK.pastLabs} onOpen={() => onOpen('pastLabs')} />
+			<CounterCell value={stats.rsvpLabs} label="labs rsvp'd" ink={COUNTER_INK.rsvpLabs} onOpen={() => onOpen('rsvpLabs')} />
+			<CounterCell value={stats.pastEvents} label="events done" ink={COUNTER_INK.pastEvents} onOpen={() => onOpen('pastEvents')} />
+			<CounterCell value={stats.rsvpEvents} label="events rsvp'd" ink={COUNTER_INK.rsvpEvents} onOpen={() => onOpen('rsvpEvents')} />
 		</section>
+	)
+}
+
+// ---- the history behind the counter ----------------------------------------
+
+// What each number's popup is called and which rows it lists. GET
+// /members/me/history hands back every sign-up with its status; the popups
+// are filters over it.
+const HOLDING = ['rsvped', 'waitlisted', 'offered']
+const HISTORY = {
+	points: { title: 'points' },
+	pastLabs: { title: 'labs done', list: 'labs', keep: (row) => row.status === 'attended', empty: 'No labs checked into yet.' },
+	rsvpLabs: { title: "labs rsvp'd", list: 'labs', keep: (row) => HOLDING.includes(row.status), empty: 'You’re not signed up for any labs right now.', ahead: true },
+	pastEvents: { title: 'events done', list: 'events', keep: (row) => row.status === 'attended', empty: 'No events checked into yet.' },
+	rsvpEvents: { title: "events rsvp'd", list: 'events', keep: (row) => HOLDING.includes(row.status), empty: 'You’re not signed up for any events right now.', ahead: true },
+}
+
+const STATUS_CHIP = {
+	rsvped: { text: 'going', className: 'bg-green/40 text-green-dark' },
+	waitlisted: { text: 'waitlist', className: 'bg-yellow-light text-yellow-dark' },
+	offered: { text: 'spot offered', className: 'bg-blue-light/60 text-blue-med' },
+}
+
+const AWARD_REASON = {
+	instagram_repost: 'instagram repost',
+	instagram_follow: 'followed on instagram',
+	discord_join: 'joined the discord',
+}
+
+// 'october 10, 2026 · 5:00 PM'
+function whenLine(row) {
+	return [row.date ? longDate(row.date).toLowerCase() : 'no date yet', prettyTime(row.startTime)].filter(Boolean).join(' · ')
+}
+
+function HistoryRow({ href, title, sub, right }) {
+	const body = (
+		<>
+			<div className="min-w-0">
+				<p className="
+					font-vietnam
+					font-semibold
+					text-[15px]
+					leading-tight
+					text-black
+					truncate
+				">
+					{title}
+				</p>
+				<p className="
+					mt-0.5
+					font-vietnam
+					text-[12px]
+					text-black/50
+				">
+					{sub}
+				</p>
+			</div>
+			<div className="shrink-0">{right}</div>
+		</>
+	)
+	const className = `
+		flex
+		items-center
+		justify-between
+		gap-3
+		py-3
+	`
+	return (
+		<li className="
+			border-b
+			border-black/10
+			last:border-b-0
+		">
+			{href
+				? <Link href={href} className={`${className} transition-opacity duration-200 hover:opacity-70`}>{body}</Link>
+				: <div className={className}>{body}</div>}
+		</li>
+	)
+}
+
+function PointsTag({ points }) {
+	return (
+		<span className={`
+			font-beachday
+			text-[22px]
+			leading-none
+			${points < 0 ? 'text-black/40' : 'text-salmon-med'}
+		`}>
+			{points > 0 ? `+${points}` : points}
+		</span>
+	)
+}
+
+// The popup behind one number. `which` is a key of HISTORY; `history` is the
+// endpoint's answer (null while it's on its way).
+function HistoryDialog({ which, history, error, onClose }) {
+	const config = HISTORY[which]
+	const hint = 'font-vietnam text-sm text-black/55 mt-3'
+
+	let content
+	if (error) {
+		content = <p className={hint}>{error}</p>
+	} else if (!history) {
+		content = <p className={hint}>loading…</p>
+	} else if (which === 'points') {
+		// every row that earned something, newest first, and whatever the log
+		// can't account for as one line at the bottom so it all adds up
+		const earned = [
+			...history.labs.filter((row) => row.points).map((row) => ({
+				key: `lab-${row.labId}`, href: `/labs/view?id=${row.labId}`, title: row.title,
+				sub: `lab · ${whenLine(row)}`, points: row.points, at: row.date,
+			})),
+			...history.events.filter((row) => row.points).map((row) => ({
+				key: `event-${row.eventId}`, href: `/events/view?id=${row.eventId}`, title: row.title,
+				sub: `${row.type === 'official' ? 'official' : 'social'} event · ${whenLine(row)}`, points: row.points, at: row.date,
+			})),
+			...history.awards.map((row) => ({
+				key: `award-${row.id}`, title: AWARD_REASON[row.reason] ?? 'bonus points',
+				sub: `from ${row.by} · ${longDate(row.at).toLowerCase()}`, points: row.points, at: row.at,
+			})),
+		].sort((a, b) => String(b.at ?? '').localeCompare(String(a.at ?? '')))
+
+		content = (
+			<>
+				<p className={hint}>
+					Where your {history.points} {history.points === 1 ? 'point' : 'points'} came from: 8 for a lab, 5 for
+					an official event, 3 for a social one, plus anything an officer gave you.
+				</p>
+				{earned.length === 0 && history.earlier === 0
+					? <p className={hint}>No points yet — check into a lab or event to start.</p>
+					: (
+						<ul className="mt-3">
+							{earned.map(({ key, ...row }) => (
+								<HistoryRow key={key} href={row.href} title={row.title} sub={row.sub} right={<PointsTag points={row.points} />} />
+							))}
+							{history.earlier !== 0 && (
+								<HistoryRow
+									title="earlier points"
+									sub="from before the club kept a history"
+									right={<PointsTag points={history.earlier} />}
+								/>
+							)}
+						</ul>
+					)}
+			</>
+		)
+	} else {
+		const kind = config.list === 'labs' ? 'lab' : 'event'
+		const rows = history[config.list].filter(config.keep)
+		// what's coming up reads soonest first; what's done, newest first
+		if (config.ahead) rows.reverse()
+		content = rows.length === 0
+			? <p className={hint}>{config.empty}</p>
+			: (
+				<ul className="mt-3">
+					{rows.map((row) => {
+						const id = row.labId ?? row.eventId
+						const chip = STATUS_CHIP[row.status]
+						let right
+						if (chip) {
+							right = (
+								<span className={`
+									rounded-full
+									px-2.5
+									py-1
+									font-vietnam
+									font-semibold
+									text-[11px]
+									uppercase
+									tracking-[0.1em]
+									${chip.className}
+								`}>
+									{chip.text}
+								</span>
+							)
+						} else if (kind === 'lab') {
+							right = (
+								<span className={`
+									font-vietnam
+									font-semibold
+									text-[12px]
+									${row.quizPassed ? 'text-green-dark' : 'text-black/40'}
+								`}>
+									{row.quizPassed ? 'quiz passed ✓' : 'quiz to take'}
+								</span>
+							)
+						} else {
+							right = <PointsTag points={row.points} />
+						}
+						return (
+							<HistoryRow
+								key={id}
+								href={`/${config.list}/view?id=${id}`}
+								title={row.title}
+								sub={[whenLine(row), row.location].filter(Boolean).join(' · ')}
+								right={right}
+							/>
+						)
+					})}
+				</ul>
+			)
+	}
+
+	return (
+		<Popup title={config.title} onClose={onClose}>
+			{(dismiss) => (
+				<>
+					{content}
+					<div className="
+						mt-6
+						flex
+						justify-end
+					">
+						<PopupButton onClick={() => dismiss(onClose)}>close</PopupButton>
+					</div>
+				</>
+			)}
+		</Popup>
 	)
 }
 
@@ -1195,6 +1432,182 @@ function PasswordCard({ onReset, className = '' }) {
 	)
 }
 
+// ---- deleting the account --------------------------------------------------
+
+// The last band on the page, and deliberately the quietest one: it's there
+// when somebody goes looking for it.
+function DeleteAccountCard({ onDelete, className = '' }) {
+	return (
+		<section className={`
+			rounded-[26px]
+			border
+			border-salmon-dark/25
+			p-6
+			sm:px-8
+			flex
+			flex-wrap
+			items-center
+			justify-between
+			gap-5
+			${className}
+		`}>
+			<div className="min-w-0">
+				<h2 className="
+					font-beachday
+					text-[24px]
+					sm:text-[28px]
+					leading-none
+					text-salmon-dark
+				">
+					delete account
+				</h2>
+				<p className="
+					mt-1.5
+					font-vietnam
+					text-sm
+					text-black/55
+				">
+					Your points, sign-ups and history go with it. This can&apos;t be undone.
+				</p>
+			</div>
+			<button
+				type="button"
+				onClick={onDelete}
+				className="
+					ml-auto
+					rounded-full
+					border
+					border-salmon-dark
+					px-6
+					py-2.5
+					font-vietnam
+					font-semibold
+					text-sm
+					text-salmon-dark
+					cursor-pointer
+					transition-all
+					duration-200
+					ease-out
+					hover:bg-salmon-dark
+					hover:text-cream
+					active:scale-[0.98]
+				"
+			>
+				delete my account
+			</button>
+		</section>
+	)
+}
+
+// Asks for the password again before anything goes — a laptop left signed in
+// shouldn't be enough to wipe someone out. The server checks it (DELETE
+// /auth/me) and refuses the club's last admin.
+function DeleteAccountDialog({ onClose, onDeleted }) {
+	const [password, setPassword] = useState('')
+	const [busy, setBusy] = useState(false)
+	const [error, setError] = useState(null)
+	const ready = password !== '' && !busy
+
+	const submit = async (event) => {
+		event.preventDefault()
+		if (!ready) return
+		setBusy(true)
+		setError(null)
+		try {
+			await auth.deleteAccount(password)
+			onDeleted()
+		} catch (err) {
+			setError(err.message)
+			setBusy(false)
+		}
+	}
+
+	return (
+		<Popup title="delete account?" onClose={onClose}>
+			{(dismiss) => (
+				<form onSubmit={submit}>
+					<p className="
+						mt-3
+						font-vietnam
+						text-sm
+						text-black/60
+					">
+						Your account, points, lab and event sign-ups all go, for good. Type your password to confirm.
+					</p>
+					<input
+						type="password"
+						autoComplete="current-password"
+						autoFocus
+						value={password}
+						onChange={(event) => { setPassword(event.target.value); setError(null) }}
+						placeholder="password"
+						aria-label="Password"
+						className="
+							mt-5
+							w-full
+							h-[42px]
+							rounded-[10px]
+							border
+							border-black/25
+							bg-white
+							px-4
+							font-vietnam
+							text-sm
+							text-black
+							outline-none
+							transition-colors
+							duration-200
+							focus:border-black
+						"
+					/>
+					{error && (
+						<p
+							role="alert"
+							className="
+								mt-3
+								font-vietnam
+								font-semibold
+								text-sm
+								text-salmon-dark
+							"
+						>
+							{error}
+						</p>
+					)}
+					<div className="
+						mt-8
+						flex
+						justify-end
+						gap-3
+					">
+						<PopupButton onClick={() => dismiss(onClose)}>cancel</PopupButton>
+						<button
+							type="submit"
+							disabled={!ready}
+							className={`
+								rounded-full
+								px-6
+								py-2
+								font-vietnam
+								font-semibold
+								text-sm
+								transition-all
+								duration-200
+								ease-out
+								${ready
+									? 'bg-salmon-dark text-cream cursor-pointer hover:-translate-y-0.5 hover:shadow-lg hover:shadow-black/10'
+									: 'bg-black/10 text-black/40 cursor-not-allowed'}
+							`}
+						>
+							{busy ? 'deleting…' : 'delete forever'}
+						</button>
+					</div>
+				</form>
+			)}
+		</Popup>
+	)
+}
+
 // ---- the rail --------------------------------------------------------------
 
 // One place on the board. Everybody else is a dot on the line with their name
@@ -1682,7 +2095,24 @@ export default function Profile() {
 	const [error, setError] = useState(null)
 	const [saving, setSaving] = useState(false)
 	const [resetting, setResetting] = useState(false)
+	const [deleting, setDeleting] = useState(false)
 	const [board, setBoard] = useState([])
+	const signOut = useSignOut()
+
+	// The popup behind a counter number: which one is open, and the history
+	// they all read — fetched the first time any of them opens, then kept.
+	const [historyOpen, setHistoryOpen] = useState(null)
+	const [history, setHistory] = useState(null)
+	const [historyError, setHistoryError] = useState(null)
+	const openHistory = (which) => {
+		setHistoryOpen(which)
+		if (history) return
+		setHistoryError(null)
+		membersApi
+			.history()
+			.then(setHistory)
+			.catch((err) => setHistoryError(err.message))
+	}
 
 	// The counter's four counts, which only /members/me computes. Officers and
 	// 'user' accounts don't draw the counter, so neither asks for them — and a
@@ -1855,7 +2285,7 @@ export default function Profile() {
 				/>
 
 				{onTheBoard && (
-					<Counter points={profile.points ?? mine?.points ?? 0} stats={profile.stats} />
+					<Counter points={profile.points ?? mine?.points ?? 0} stats={profile.stats} onOpen={openHistory} />
 				)}
 
 				{/* the form and whatever's beside it pair off from xl — below that
@@ -1914,7 +2344,28 @@ export default function Profile() {
 					user={user}
 					onSaved={refresh}
 				/>
+
+				<DeleteAccountCard
+					className={narrow}
+					onDelete={() => setDeleting(true)}
+				/>
 			</div>
+
+			{historyOpen && (
+				<HistoryDialog
+					which={historyOpen}
+					history={history}
+					error={historyError}
+					onClose={() => setHistoryOpen(null)}
+				/>
+			)}
+
+			{deleting && (
+				<DeleteAccountDialog
+					onClose={() => setDeleting(false)}
+					onDeleted={signOut}
+				/>
+			)}
 
 			{resetting && (
 				<ResetPasswordDialog
