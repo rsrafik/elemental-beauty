@@ -1,6 +1,7 @@
 import express from 'express'
 import prisma from '../prismaClient.js'
 import requireRole from '../middleware/requireRole.js'
+import { notifyRequester, notifyTreasurer, quietly } from '../reimbursementEmails.js'
 
 const router = express.Router()
 
@@ -51,6 +52,7 @@ router.post('/', async (req, res) => {
             }
         })
         res.status(201).json(reimbursement)
+        quietly(notifyTreasurer(reimbursement))
     } catch (err) {
         console.error(err.message)
         res.sendStatus(500)
@@ -127,6 +129,7 @@ router.put('/:id', async (req, res) => {
             }
         })
         res.json(updated)
+        quietly(notifyTreasurer(updated, { resent: true }))
     } catch (err) {
         console.error(err.message)
         res.sendStatus(500)
@@ -240,6 +243,7 @@ router.put('/:id/status', requireRole('treasurer'), async (req, res) => {
             }
         })
         res.json(updated)
+        quietly(notifyRequester(updated))
     } catch (err) {
         console.error(err.message)
         res.sendStatus(500)

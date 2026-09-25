@@ -57,9 +57,9 @@ router.put('/:schoolYear', requireRole('treasurer'), async (req, res) => {
         return res.status(400).json({ message: 'schoolYear must look like 2025–26' })
     }
 
-    const { incomeGoal, expenseBudget } = req.body
-    if (incomeGoal === undefined && expenseBudget === undefined) {
-        return res.status(400).json({ message: 'incomeGoal or expenseBudget is required' })
+    const { incomeGoal, expenseBudget, duesAmount } = req.body
+    if (incomeGoal === undefined && expenseBudget === undefined && duesAmount === undefined) {
+        return res.status(400).json({ message: 'incomeGoal, expenseBudget or duesAmount is required' })
     }
 
     const update = {}
@@ -74,6 +74,13 @@ router.put('/:schoolYear', requireRole('treasurer'), async (req, res) => {
         update.expenseBudget = amount
     }
 
+    // what a member owes that year — the dues card's default amount
+    if (duesAmount !== undefined) {
+        const { amount, error } = parseAmount(duesAmount, 'duesAmount')
+        if (error) { return res.status(400).json({ message: error }) }
+        update.duesAmount = amount
+    }
+
     try {
         const target = await prisma.yearTarget.upsert({
             where: { schoolYear },
@@ -81,7 +88,8 @@ router.put('/:schoolYear', requireRole('treasurer'), async (req, res) => {
             create: {
                 schoolYear,
                 incomeGoal: update.incomeGoal ?? 0,
-                expenseBudget: update.expenseBudget ?? 0
+                expenseBudget: update.expenseBudget ?? 0,
+                duesAmount: update.duesAmount ?? 0
             }
         })
         res.json(target)

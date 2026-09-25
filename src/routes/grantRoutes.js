@@ -9,6 +9,16 @@ const router = express.Router()
 
 const GRANT_STATUSES = ['drafting', 'under_review', 'awarded', 'denied']
 
+// amountAwarded: a positive number, or null/'' to clear it.
+// Returns { value } (undefined = not sent) or { error }.
+function readAwarded(body) {
+    if (body.amountAwarded === undefined) { return {} }
+    if (body.amountAwarded === null || body.amountAwarded === '') { return { value: null } }
+    const amount = parseFloat(body.amountAwarded)
+    if (isNaN(amount) || amount <= 0) { return { error: 'amountAwarded must be a positive number' } }
+    return { value: amount }
+}
+
 // A grant is tracked from before it's sent, so what's required to file one is
 // what an application has at that point: who it's from, what's being asked for,
 // and when it's due. The money is separate — awarding one doesn't bank it, so
@@ -16,6 +26,8 @@ const GRANT_STATUSES = ['drafting', 'under_review', 'awarded', 'denied']
 // an income transaction the treasurer records when it lands.
 router.post('/', requireRole('treasurer'), async (req, res) => {
     const { name, org, amountRequested, status, deadline, dateGranted, expirationDate } = req.body
+    const awarded = readAwarded(req.body)
+    if (awarded.error) { return res.status(400).json({ message: awarded.error }) }
 
     if (!name || !org || amountRequested === undefined || !deadline) {
         return res.status(400).json({ message: 'name, org, amountRequested, and deadline are required' })
@@ -55,6 +67,7 @@ router.post('/', requireRole('treasurer'), async (req, res) => {
                 name,
                 org,
                 amountRequested: amount,
+                amountAwarded: awarded.value ?? null,
                 status,
                 deadline: due,
                 dateGranted: granted,
@@ -97,10 +110,12 @@ router.get('/:id', async (req, res) => {
         })
         const amountSpent = Number(spent._sum.amount ?? 0)
 
+        // counted from what was granted, not what was asked for — and there's
+        // nothing to have left over until something has been granted
         res.json({
             ...grant,
             amountSpent,
-            remaining: Number(grant.amountRequested) - amountSpent
+            remaining: grant.amountAwarded == null ? null : Number(grant.amountAwarded) - amountSpent
         })
     } catch (err) {
         console.error(err.message)
@@ -122,6 +137,9 @@ router.put('/:id', requireRole('treasurer'), async (req, res) => {
         }
         data.amountRequested = amount
     }
+    const awarded = readAwarded(req.body)
+    if (awarded.error) { return res.status(400).json({ message: awarded.error }) }
+    if (awarded.value !== undefined) { data.amountAwarded = awarded.value }
     if (req.body.status !== undefined) {
         if (!GRANT_STATUSES.includes(req.body.status)) {
             return res.status(400).json({ message: `status must be one of: ${GRANT_STATUSES.join(', ')}` })

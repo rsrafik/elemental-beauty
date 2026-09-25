@@ -17,6 +17,9 @@ import requireRole, { denyRole } from './middleware/requireRole.js'
 import { sweepAbsences } from './sweepAbsences.js'
 import { expireOffers } from './offers.js'
 import offerRoutes from './routes/offerRoutes.js'
+import duesRoutes from './routes/duesRoutes.js'
+import activityRoutes from './routes/activityRoutes.js'
+import { sendReminders } from './reminders.js'
 
 // Refuse to boot misconfigured — a missing secret must crash here, loudly,
 // not surface later as broken tokens or leaked reset codes.
@@ -71,7 +74,21 @@ app.use(express.json({ limit: '15mb' }))
 // Serve the built Next.js frontend (copied into public/ by `npm run build:frontend`).
 // extensions: ['html'] lets /labs resolve to public/labs.html — Next's static
 // export emits one HTML file per page.
-app.use(express.static(path.join(__dirname, '../public'), { extensions: ['html'] }))
+//
+// redirect: false, and the fallback under it, are for the nested pages. Next
+// exports /labs/view as public/labs/view.html *beside* a public/labs/view/
+// folder of its own page data, and serve-static, finding the folder first,
+// redirected /labs/view to /labs/view/ — which has no index.html, so every
+// link that opened one directly (the emailed "view the lab" and "view the
+// event" buttons, a refresh) landed on a 404.
+const PUBLIC = path.join(__dirname, '../public')
+app.use(express.static(PUBLIC, { extensions: ['html'], redirect: false }))
+app.get(/^\/(?!api\/).+/, (req, res, next) => {
+    const page = path.join(PUBLIC, `${req.path.replace(/\/+$/, '')}.html`)
+    // never outside public/, whatever the path says
+    if (!page.startsWith(PUBLIC + path.sep)) { return next() }
+    res.sendFile(page, (err) => { if (err) { next() } })
+})
 
 // API routes — all under /api so they can never collide with frontend pages
 // (frontend /labs is a page; /api/labs is the API).
@@ -98,6 +115,11 @@ app.use('/api/transactions', authMiddleware, requireRole('officer'), denyRole('j
 // tracker is on the analytics page they all see — and only the treasurer
 // writes to them. The write gate is inside the router.
 app.use('/api/grants', authMiddleware, requireRole('officer'), denyRole('jboard'), grantRoutes)
+// dues are the treasurer's to keep — reading as well as writing
+app.use('/api/dues', authMiddleware, requireRole('treasurer'), duesRoutes)
+// the staff activity log: who changed whose role, points, membership, dues.
+// Every officer reads it (j-board without the dues lines — see the router).
+app.use('/api/activity', authMiddleware, requireRole('officer'), activityRoutes)
 
 // Mark RSVP'd no-shows absent once a lab/event's day has passed —
 // on boot, then hourly.
@@ -112,6 +134,14 @@ setInterval(
 expireOffers().catch(err => console.error('Offer sweep failed:', err.message))
 setInterval(
     () => expireOffers().catch(err => console.error('Offer sweep failed:', err.message)),
+    60 * 60 * 1000
+)
+
+// The day-before reminder for labs and events (see reminders.js) — on boot,
+// then hourly, so each one goes out somewhere in the hour it comes due.
+sendReminders().catch(err => console.error('Reminder sweep failed:', err.message))
+setInterval(
+    () => sendReminders().catch(err => console.error('Reminder sweep failed:', err.message)),
     60 * 60 * 1000
 )
 

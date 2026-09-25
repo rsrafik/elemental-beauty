@@ -1,6 +1,8 @@
 import express from 'express'
 import prisma from '../prismaClient.js'
 import requireRole from '../middleware/requireRole.js'
+import { csvCell } from '../csv.js'
+import { log } from '../activity.js'
 
 const router = express.Router()
 // mounted behind requireRole('officer') — officers get the read/analytics
@@ -106,10 +108,7 @@ router.get('/export', async (req, res) => {
         })
 
         // quote a field if it contains commas, quotes, or newlines
-        const esc = (v) => {
-            const s = String(v ?? '')
-            return /[",\n]/.test(s) ? `"${s.replaceAll('"', '""')}"` : s
-        }
+        const esc = csvCell
 
         const header = 'transaction_id,date,type,category,source,amount,grant_id,reimbursement_id'
         const rows = transactions.map(t => [
@@ -124,7 +123,8 @@ router.get('/export', async (req, res) => {
         ].join(','))
 
         res.type('text/csv')
-        res.set('Content-Disposition', 'attachment; filename="ledger.csv"')
+        const range = [req.query.from, req.query.to].filter(Boolean).join('-to-')
+        res.set('Content-Disposition', `attachment; filename="ledger${range ? `-${range}` : ''}.csv"`)
         res.send([header, ...rows].join('\n'))
     } catch (err) {
         console.error(err.message)
@@ -224,5 +224,55 @@ router.put('/:id', requireRole('treasurer'), async (req, res) => {
 
 // deliberately NO router.delete — financial rows are never hard-deleted.
 // A correction is a new offsetting entry, not an erasure.
+
+// Treasurer: take a row out of the ledger.
+//
+// Two kinds of row are the other end of something, and deleting one undoes
+// that too, in the same transaction, so the books never disagree with
+// themselves:
+//
+//   a paid receipt   the request goes back to 'approved' — the club still
+//                    owes it, it just hasn't been handed over. Marking it
+//                    reimbursed again writes a fresh row (the trigger fires on
+//                    the move into 'reimbursed').
+//   a dues payment   the payment goes with it (the foreign key cascades), so
+//                    that member reads as unpaid for the year again
+router.delete('/:id', requireRole('treasurer'), async (req, res) => {
+    const transactionId = parseInt(req.params.id)
+    if (isNaN(transactionId)) { return res.status(400).json({ message: 'Invalid transaction id' }) }
+
+    try {
+        const existing = await prisma.transaction.findUnique({
+            where: { transactionId },
+            include: { dues: true }
+        })
+        if (!existing) { return res.status(404).json({ message: 'Transaction not found' }) }
+
+        await prisma.$transaction(async (tx) => {
+            await tx.transaction.delete({ where: { transactionId } })
+            if (existing.reimbursementId != null) {
+                await tx.reimbursement.update({
+                    where: { reimbursementId: existing.reimbursementId },
+                    data: { status: 'approved' }
+                })
+            }
+            if (existing.dues) {
+                await log({
+                    actorId: req.userId, action: 'dues_cleared', targetId: existing.dues.memberId,
+                    details: { schoolYear: existing.dues.schoolYear, amount: Number(existing.dues.amount) }
+                }, tx)
+            }
+        })
+        res.json({
+            message: 'Transaction deleted',
+            // the page re-reads the receipts when this is set
+            reopenedRequest: existing.reimbursementId ?? null
+        })
+    } catch (err) {
+        if (err.code === 'P2025') { return res.status(404).json({ message: 'Transaction not found' }) }
+        console.error(err.message)
+        res.sendStatus(500)
+    }
+})
 
 export default router
