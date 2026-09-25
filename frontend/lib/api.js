@@ -139,6 +139,8 @@ export const auth = {
 export const members = {
 	list: () => api('/members'),
 	me: () => api('/members/me'),
+	// { email, provider } — which mail service "email all" should open
+	mail: () => api('/members/me/mail'),
 	update: (fields) => api('/members/me', { method: 'PUT', body: fields }),
 	add: (student) => api('/members', { method: 'POST', body: student }),
 	remove: (id) => api(`/members/${id}`, { method: 'DELETE' }),

@@ -6,6 +6,7 @@ import Sidebar from '@/components/dashboards/Sidebar'
 import { useRole, useSignOut } from '@/lib/session'
 import { navFor, showInstagramFor } from '@/lib/nav'
 import { announcements as announcementsApi, events as eventsApi, labs as labsApi, members } from '@/lib/api'
+import { openCompose, useMailProvider } from '@/lib/compose'
 import { isoDate, shortDate, today } from '@/lib/dates'
 
 // Shown to officer / treasurer / admin.
@@ -100,6 +101,13 @@ export default function OfficerDashboard() {
 	// so it can't disagree with the roster on /students.
 	const [board, setBoard] = useState([])
 
+	// Everyone whose role is plain member, for "Email All" — officers,
+	// treasurers and admins aren't on it. Held from the same /members read as
+	// the board, so the click can open Gmail straight away: a window opened
+	// after waiting on a request gets stopped by the popup blocker.
+	const [memberEmails, setMemberEmails] = useState([])
+	const mail = useMailProvider()
+
 	// The next three things on the calendar, labs and events together — the club
 	// doesn't think of them as separate queues, and neither does this panel.
 	// Soonest first: [0] is drawn on the front ring, [2] on the one at the back.
@@ -117,6 +125,11 @@ export default function OfficerDashboard() {
 			.list()
 			.then((rows) => {
 				if (!live) return
+				setMemberEmails(
+					rows
+						.filter((row) => row.role === 'member' && row.user?.email)
+						.map((row) => row.user.email)
+				)
 				setBoard(
 					[...rows]
 						.sort((a, b) =>
@@ -274,13 +287,15 @@ export default function OfficerDashboard() {
 					    form to keep in step. `?new` asks that page to open its form
 					    on arrival, so it's still one click from here.
 
-					    "Email All" has no endpoint behind it yet: the club mails
-					    through Resend for password resets, but there's no route that
-					    fans a message out to the roster. Left inert on purpose rather
-					    than wired to something that would half-work. */}
+					    "Email All" opens a new message with every member in BCC, so
+					    nobody sees anyone else's address, in whichever mail service
+					    the officer's own address is on — Outlook for @purdue.edu,
+					    Gmail for @gmail.com (see lib/compose.js). */}
 					<button
 						type="button"
-						title="Not built yet — there's no send-to-everyone endpoint"
+						onClick={() => openCompose({ provider: mail.provider, from: mail.email, bcc: memberEmails })}
+						disabled={memberEmails.length === 0}
+						title={`Email all ${memberEmails.length} members`}
 						className="
                         mt-6
 						w-full
@@ -289,9 +304,19 @@ export default function OfficerDashboard() {
 						py-3
 						font-handrawn
 						text-[26px]
-						text-black/40
+						text-black
 						shadow-[inset_-5px_-5px_2px_rgba(0,0,0,0.5)]
-						cursor-not-allowed
+						cursor-pointer
+						transition
+						duration-200
+						ease-out
+						hover:-translate-y-0.5
+						hover:shadow-[inset_0px_0px_0px_rgba(0,0,0,0.5)]
+						active:brightness-105
+						disabled:text-black/40
+						disabled:cursor-not-allowed
+						disabled:hover:translate-y-0
+						disabled:hover:shadow-[inset_-5px_-5px_2px_rgba(0,0,0,0.5)]
 					">
 						Email All
 					</button>

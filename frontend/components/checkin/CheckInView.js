@@ -5,6 +5,7 @@ import DashboardShell from '@/components/dashboards/DashboardShell'
 import { BackButton, metaLine, useDesignZoom } from '@/components/labs/LabViewParts'
 import QrScanner from '@/components/checkin/QrScanner'
 import { INSET, EditorButton } from '@/components/labs/EditorParts'
+import { openCompose, useMailProvider } from '@/lib/compose'
 import { labs as labsApi, events as eventsApi, members as membersApi } from '@/lib/api'
 
 // The officer's check-in page for one lab or one event — where clicking its
@@ -33,13 +34,6 @@ function fullName(row) {
 
 const byName = (a, b) => fullName(a).localeCompare(fullName(b))
 
-// Gmail's compose window, in a new tab, with everyone who signed up (both
-// "not checked in" and "checked in" — not the waitlist) in BCC so nobody sees anyone
-// else's address, and the lab or event's name as the subject.
-function gmailTo(emails, subject) {
-	const params = new URLSearchParams({ view: 'cm', fs: '1', bcc: emails.join(','), su: subject })
-	return `https://mail.google.com/mail/?${params}`
-}
 
 // ---- icons -----------------------------------------------------------------
 
@@ -358,6 +352,7 @@ function ManualAdd({ onAdd, people }) {
 export default function CheckInView({ kind, id }) {
 	const api = API[kind]
 	const zoom = useDesignZoom()
+	const mail = useMailProvider()
 	const [item, setItem] = useState(null)
 	const [roster, setRoster] = useState([])
 	const [people, setPeople] = useState([])
@@ -451,6 +446,9 @@ export default function CheckInView({ kind, id }) {
 			.sort((a, b) => new Date(a.waitlistedAt) - new Date(b.waitlistedAt)),
 	}), [roster])
 
+	// "email all": everyone who signed up (both "not checked in" and "checked
+	// in" — not the waitlist), in BCC, in the officer's own mail service (see
+	// lib/compose.js), with the lab or event's name as the subject
 	const recipients = [...waiting, ...here]
 		.map((row) => row.email)
 		.filter(Boolean)
@@ -532,7 +530,7 @@ export default function CheckInView({ kind, id }) {
 									"
 									disabled={recipients.length === 0}
 									title={recipients.length === 0 ? 'Nobody has signed up yet' : `Email ${recipients.length} ${recipients.length === 1 ? 'person' : 'people'}`}
-									onClick={() => window.open(gmailTo(recipients, item.title), '_blank', 'noopener')}
+									onClick={() => openCompose({ provider: mail.provider, from: mail.email, bcc: recipients, subject: item.title })}
 								>
 									email all
 								</EditorButton>

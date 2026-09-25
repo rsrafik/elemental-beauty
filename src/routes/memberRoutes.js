@@ -7,6 +7,7 @@ import requireRole from '../middleware/requireRole.js'
 import { POINTS, MANUAL_ACTIONS } from '../points.js'
 import { fromEmail, takenMessage } from '../accountEmail.js'
 import { sendVerificationEmail } from '../verification.js'
+import { mailProvider } from '../mailProvider.js'
 
 const router = express.Router()
 
@@ -89,6 +90,20 @@ router.get('/me', async (req, res) => {
         ])
 
         res.json({ ...me, stats: { pastLabs, rsvpLabs, pastEvents, rsvpEvents } })
+    } catch (err) {
+        console.error(err.message)
+        res.sendStatus(500)
+    }
+})
+
+// Which mail service the signed-in person's address is on (see
+// mailProvider.js) — "email all" opens that one. Asked once when a page with
+// the button loads, so the click itself can open the tab without waiting.
+router.get('/me/mail', async (req, res) => {
+    try {
+        const user = await prisma.user.findUnique({ where: { userId: req.userId }, select: { email: true } })
+        if (!user) { return res.status(404).json({ message: 'Account not found' }) }
+        res.json({ email: user.email, provider: await mailProvider(user.email) })
     } catch (err) {
         console.error(err.message)
         res.sendStatus(500)
