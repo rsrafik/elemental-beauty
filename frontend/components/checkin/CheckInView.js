@@ -27,6 +27,15 @@ import { labs as labsApi, events as eventsApi, members as membersApi } from '@/l
 
 const API = { lab: labsApi, event: eventsApi }
 
+// The header's four buttons: the grid cell's full width, and 18px either side
+// of the label so the longest ones ("attendance csv", "upload prelab") have
+// air around them rather than touching the edges.
+const BUTTON = `
+	w-full
+	h-[32px]
+	px-[18px]
+`
+
 // how often the lists are re-read, to catch sign-ups and other officers
 const POLL_MS = 5_000
 
@@ -642,64 +651,49 @@ export default function CheckInView({ kind, id }) {
 								">
 									{item.title}
 								</h1>
-								<EditorButton
-									className="
-										mt-[14px]
-										mx-auto
-										lg:mx-0
-										w-[121.7px]
-										h-[32px]
-									"
-									disabled={recipients.length === 0}
-									title={recipients.length === 0 ? 'Nobody has signed up yet' : `Email ${recipients.length} ${recipients.length === 1 ? 'person' : 'people'}`}
-									onClick={() => setEmailing(true)}
-								>
-									email all
-								</EditorButton>
-								{/* asks everyone signed up to confirm their spot, with the
-								    prelab attached (src/offers.js) */}
-								<EditorButton
-									className="
-										mt-[10px]
-										mx-auto
-										lg:mx-0
-										w-[121.7px]
-										h-[32px]
-									"
-									title={`Ask ${unconfirmed} ${unconfirmed === 1 ? 'person' : 'people'} to confirm their spot`}
-									onClick={() => setConfirming(true)}
-								>
-									confirmation
-								</EditorButton>
-								{/* everyone on the list as a spreadsheet — who came, who
-								    didn't — for the reports the university asks for */}
-								<EditorButton
-									className="
-										mt-[10px]
-										mx-auto
-										lg:mx-0
-										w-[121.7px]
-										h-[32px]
-									"
-									disabled={roster.length === 0 || exporting}
-									title={roster.length === 0 ? 'Nobody on the list yet' : 'Download the attendance as a CSV'}
-									onClick={exportAttendance}
-								>
-									{exporting ? 'saving…' : 'attendance csv'}
-								</EditorButton>
-								{kind === 'lab' && (
-									<div className="
-										mt-[10px]
-										flex
-										flex-col
-										items-center
-										lg:items-start
-									">
+								{/* the page's four buttons, two by two. The columns are
+								    equal, each as wide as the widest label plus its
+								    padding, so none of them is squeezed to its text. An
+								    event has no prelab, so its fourth cell stays empty. */}
+								<div className="
+									mt-[14px]
+									mx-auto
+									lg:mx-0
+									w-fit
+									grid
+									grid-cols-2
+									gap-[10px]
+								">
+									<EditorButton
+										className={BUTTON}
+										disabled={recipients.length === 0}
+										title={recipients.length === 0 ? 'Nobody has signed up yet' : `Email ${recipients.length} ${recipients.length === 1 ? 'person' : 'people'}`}
+										onClick={() => setEmailing(true)}
+									>
+										email all
+									</EditorButton>
+									{/* asks everyone signed up to confirm their spot, with the
+									    prelab attached (src/offers.js) */}
+									<EditorButton
+										className={BUTTON}
+										title={`Ask ${unconfirmed} ${unconfirmed === 1 ? 'person' : 'people'} to confirm their spot`}
+										onClick={() => setConfirming(true)}
+									>
+										confirmation
+									</EditorButton>
+									{/* everyone on the list as a spreadsheet — who came, who
+									    didn't — for the reports the university asks for */}
+									<EditorButton
+										className={BUTTON}
+										disabled={roster.length === 0 || exporting}
+										title={roster.length === 0 ? 'Nobody on the list yet' : 'Download the attendance as a CSV'}
+										onClick={exportAttendance}
+									>
+										{exporting ? 'saving…' : 'attendance csv'}
+									</EditorButton>
+									{kind === 'lab' && (
 										<EditorButton
-											className="
-												h-[32px]
-												px-[14px]
-											"
+											className={BUTTON}
 											disabled={prelabBusy}
 											onClick={() => prelabInput.current?.click()}
 										>
@@ -707,6 +701,10 @@ export default function CheckInView({ kind, id }) {
 												{prelabBusy ? 'uploading…' : item.prelabPdfName ? 'replace prelab' : 'upload prelab'}
 											</IconLabel>
 										</EditorButton>
+									)}
+								</div>
+								{kind === 'lab' && (
+									<>
 										<input
 											ref={prelabInput}
 											type="file"
@@ -716,8 +714,10 @@ export default function CheckInView({ kind, id }) {
 										/>
 										{item.prelabPdfName && (
 											<p className="
-												mt-[6px]
-												max-w-[260px]
+												mt-[8px]
+												mx-auto
+												lg:mx-0
+												max-w-[300px]
 												font-vietnam
 												text-[12px]
 												text-black/55
@@ -740,7 +740,7 @@ export default function CheckInView({ kind, id }) {
 												</button>
 											</p>
 										)}
-									</div>
+									</>
 								)}
 							</>
 						)}
