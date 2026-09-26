@@ -4,7 +4,7 @@ import { useEffect, useRef, useState } from 'react'
 import Link from 'next/link'
 import DashboardShell from '@/components/dashboards/DashboardShell'
 import { Popup, PopupButton } from '@/components/labs/LabViewParts'
-import { hasRole, roleLabel } from '@/lib/roles'
+import { hasRole, onLeaderboard, roleLabel } from '@/lib/roles'
 import { useRole, useSession, useSignOut } from '@/lib/session'
 import { members as membersApi, auth } from '@/lib/api'
 import { longDate, prettyTime } from '@/lib/dates'
@@ -49,9 +49,10 @@ import { AVATAR_MAX, shrinkImage } from '@/lib/images'
 const NO_STATS = { pastLabs: 0, rsvpLabs: 0, pastEvents: 0, rsvpEvents: 0 }
 
 // GET /members returns the roster with the user row nested under it. The board
-// only wants the four fields it ranks and prints.
+// only wants the four fields it ranks and prints, and only for the people it
+// ranks — officers, treasurers and admins aren't on it (lib/roles.js).
 function toBoard(rows) {
-	return rows.map((row) => ({
+	return rows.filter((row) => onLeaderboard(row.role)).map((row) => ({
 		id: row.userId,
 		first: row.user?.firstName ?? '',
 		last: row.user?.lastName ?? '',

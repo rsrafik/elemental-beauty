@@ -25,6 +25,14 @@ export function hasRole(min, role) {
 	return (RANK[role] ?? -1) >= (RANK[min] ?? Infinity)
 }
 
+// Who the leaderboard ranks. Officers, treasurers and admins run the board
+// rather than compete on it, so their points never put them on it — the
+// dashboard's podium and the rail on /account both leave them off.
+const OFF_THE_BOARD = ['officer', 'treasurer', 'admin']
+export function onLeaderboard(role) {
+	return !OFF_THE_BOARD.includes(role)
+}
+
 // /analytics — the club's books — is every officer's except j-board's: j-board
 // outranks an officer everywhere else, but the money isn't theirs to see. The
 // server refuses them the same data (see server.js).

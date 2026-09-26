@@ -8,6 +8,7 @@ import { navFor, showInstagramFor } from '@/lib/nav'
 import { announcements as announcementsApi, events as eventsApi, labs as labsApi, members } from '@/lib/api'
 import EmailAllPopup from '@/components/EmailAllPopup'
 import { isoDate, shortDate, today } from '@/lib/dates'
+import { onLeaderboard } from '@/lib/roles'
 
 // Shown to officer / treasurer / admin.
 // Sidebar + a 2x2 grid (quick actions / upcoming / announcement / leaderboard)
@@ -132,7 +133,8 @@ export default function OfficerDashboard() {
 						.map((row) => row.user.email)
 				)
 				setBoard(
-					[...rows]
+					rows
+						.filter((row) => onLeaderboard(row.role))
 						.sort((a, b) =>
 							b.points - a.points ||
 							(a.user?.firstName ?? '').localeCompare(b.user?.firstName ?? '')
