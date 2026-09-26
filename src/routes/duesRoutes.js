@@ -1,14 +1,15 @@
 import express from 'express'
 import prisma from '../prismaClient.js'
 import { log } from '../activity.js'
-import { recordDues } from '../dues.js'
+import { DUES_EXEMPT, recordDues } from '../dues.js'
 
 // Dues, for the treasurer (mounted behind requireRole('treasurer') in
 // server.js). One payment per member per school year; marking one paid writes
 // an income row under 'dues', so the money shows up in the ledger and the
 // income donut like any other. See DuesPayment in schema.prisma.
 //
-//   GET    /?schoolYear=2025–26   every member and their payment for that year
+//   GET    /?schoolYear=2025–26   every member who pays dues (not DUES_EXEMPT)
+//                                  and their payment for that year
 //   POST   /                      { memberId, schoolYear, amount, paidOn? }
 //   DELETE /:duesId               take a payment back (and its ledger row)
 
@@ -27,6 +28,7 @@ router.get('/', async (req, res) => {
         const [target, members] = await Promise.all([
             prisma.yearTarget.findUnique({ where: { schoolYear }, select: { duesAmount: true } }),
             prisma.member.findMany({
+                where: { role: { notIn: DUES_EXEMPT } },
                 select: {
                     userId: true,
                     role: true,

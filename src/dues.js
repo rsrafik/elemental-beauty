@@ -6,6 +6,11 @@ import { clubToday } from './clubTime.js'
 // the spot (labRoutes.js, POST /:labId/checkin). See DuesPayment in
 // schema.prisma.
 
+// J-board and above (j-board, treasurer, admin) don't pay dues: they're left
+// off the treasurer's dues card and never asked at the door. Officers still
+// pay like members.
+export const DUES_EXEMPT = ['jboard', 'treasurer', 'admin']
+
 // '2026-07-28' -> '2025–26'. August starts a new one — the same rule as
 // schoolYear() in frontend/lib/finances.js.
 export function schoolYearOf(day) {
@@ -51,15 +56,17 @@ export async function recordDues(tx, { memberId, user, schoolYear, amount, day, 
 //
 // What they owe for the year a lab on `day` ('YYYY-MM-DD', or null for today)
 // falls in: { schoolYear, amount, user }, or null when they've paid (or
-// waived) — or when nobody owes anything, because the year's dues amount
-// isn't set yet (0).
+// waived), when their role is exempt (DUES_EXEMPT) — or when nobody owes
+// anything, because the year's dues amount isn't set yet (0).
 export async function duesOwed(db, memberId, day) {
     const schoolYear = schoolYearOf(day ?? clubToday())
-    const [target, paid, user] = await Promise.all([
+    const [target, paid, user, member] = await Promise.all([
         db.yearTarget.findUnique({ where: { schoolYear }, select: { duesAmount: true } }),
         db.duesPayment.findUnique({ where: { memberId_schoolYear: { memberId, schoolYear } }, select: { duesId: true } }),
-        db.user.findUnique({ where: { userId: memberId }, select: { firstName: true, lastName: true, username: true } })
+        db.user.findUnique({ where: { userId: memberId }, select: { firstName: true, lastName: true, username: true } }),
+        db.member.findUnique({ where: { userId: memberId }, select: { role: true } })
     ])
+    if (DUES_EXEMPT.includes(member?.role)) return null
     const amount = Number(target?.duesAmount ?? 0)
     return !paid && amount > 0 ? { schoolYear, amount, user } : null
 }

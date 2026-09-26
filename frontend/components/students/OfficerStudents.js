@@ -2,7 +2,7 @@
 
 import { useEffect, useRef, useState } from 'react'
 import DashboardShell from '@/components/dashboards/DashboardShell'
-import { hasRole, roleLabel } from '@/lib/roles'
+import { hasRole, onLeaderboard, roleLabel } from '@/lib/roles'
 import { useRole, useSession } from '@/lib/session'
 import { members as membersApi } from '@/lib/api'
 import { useDismiss } from '@/lib/dismiss'
@@ -1177,10 +1177,18 @@ function RoleFilter({ roles, onChange }) {
 
 // ---- page ------------------------------------------------------------------
 
+// Points as the table shows them: -1 for the roles it leaves blank
+// (lib/roles.js), so they sit past every member's 0.
+function boardPoints(student) {
+	return onLeaderboard(student.role) ? student.points : -1
+}
+
 // `joined` falls through to the string branch on purpose: 'YYYY-MM-DD' sorts
 // chronologically as text, so it needs no special case.
 function compare(a, b, key) {
-	if (key === 'id' || key === 'points') return a[key] - b[key]
+	if (key === 'id') return a.id - b.id
+	// a blank points cell sorts below everyone with points
+	if (key === 'points') return boardPoints(a) - boardPoints(b)
 	if (key === 'role') return ROLE_ORDER[a.role] - ROLE_ORDER[b.role]
 	return a[key].localeCompare(b[key])
 }
@@ -1810,6 +1818,9 @@ export default function OfficerStudents() {
 											text-black
 											tabular-nums
 										">
+											{/* officers, treasurers and admins don't earn points
+											    (lib/roles.js), so their cell stays empty */}
+											{onLeaderboard(student.role) && (
 											<span className="
 												inline-flex
 												items-center
@@ -1842,6 +1853,7 @@ export default function OfficerStudents() {
 													<PlusIcon className="w-3 h-3" />
 												</button>
 											</span>
+											)}
 										</td>
 										<td className="
 											px-2
