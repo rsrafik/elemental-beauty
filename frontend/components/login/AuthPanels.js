@@ -15,8 +15,9 @@ import { auth } from '@/lib/api'
 const ERROR = `
 	font-vietnam
 	absolute
-	inset-x-[50px]
+	inset-x-[28px]
 	bottom-[18px]
+	sm:inset-x-[50px]
 	text-center
 	text-[12px]
 	leading-tight
@@ -66,20 +67,28 @@ const HINT = `
 //
 // Both cards grew 76px to make room for the name row on sign-up. Log in didn't
 // need it — the two are always the same height, because they trade places.
+//
+// Below `lg` the pair stacks instead — log in on top, sign up tucked under it —
+// and every one of those fixed numbers is switched off. The cards take the
+// height of what's in them and the swap is carried by width alone: the front
+// card spans the panel, the back one is 398/430 of it, so the same proportion
+// as the side-by-side pair holds on a phone.
 
 const BIG = `
 	z-10
-	mt-[32px]
-	h-[636px]
-	w-[430px]
+	w-full
+	lg:mt-[32px]
+	lg:h-[636px]
+	lg:w-[430px]
 `
 
 const SMALL = `
 	z-0
-	mt-[36px]
-	h-[607px]
-	w-[398px]
+	w-[92.5%]
 	cursor-pointer
+	lg:mt-[36px]
+	lg:h-[607px]
+	lg:w-[398px]
 `
 
 // The "off" shadow is the same shadow with its offset and alpha at zero rather
@@ -101,9 +110,14 @@ const SWAP = `
 // It is what the cards add up to at rest: across, 430 + 398 less the 20px
 // overlap, plus the 40px padding either side; down, the big card's 32 + 636
 // plus the 35px below it. Resize a card and this is the line to redo.
+//
+// Only from `lg` up. Stacked, the panel is as tall as its cards and as wide as
+// the screen allows — up to 480 on a phone, 720 in a tablet-sized window, where
+// a phone-width column would leave the cards looking stranded — and none of the
+// three boxes needs to agree on anything.
 const PANEL = `
-	h-[703px]
-	w-[888px]
+	lg:h-[703px]
+	lg:w-[888px]
 `
 
 // Both headings unfold on load, character by character, hinged along the top
@@ -150,23 +164,35 @@ export default function AuthPanels() {
 			flex
 			min-h-svh
 			w-full
+			flex-col
 			items-center
-			justify-center
+			justify-between
 			overflow-hidden
 			bg-[#FDF4E0]
+			lg:flex-row
+			lg:justify-center
 		">
 			<Bamboo />
+			<BambooBand edge="top" />
 
 			{/* Centred by the flex parent, not by a transform against a size of its
 			    own. The block carries no width, height or offsets — it is as big as
 			    what's inside it and no bigger — so resizing the cards moves nothing
-			    off centre and there is no measurement anywhere to keep in sync. */}
+			    off centre and there is no measurement anywhere to keep in sync.
+
+			    Stacked, it fills the width instead, with a gutter, so the panel can
+			    grow to whatever the screen gives it up to its own cap. */}
 			<div className="
 				relative
 				z-10
 				flex
+				w-full
 				flex-col
 				items-center
+				px-4
+				py-6
+				lg:w-auto
+				lg:p-0
 			">
 				{/* the tracking is the point — Aalto is a condensed face, and the
 				    comp opens it up far enough that the word reads as a caption
@@ -174,7 +200,8 @@ export default function AuthPanels() {
 				<p className="
 					font-aalto
 					pl-[2px]
-					text-[20px]
+					text-[16px]
+					sm:text-[20px]
 					leading-none
 					tracking-[0.155em]
 					text-black
@@ -185,11 +212,18 @@ export default function AuthPanels() {
 
 				{/* The logotype keeps every one of its type classes — FoldText is
 				    handed no size, weight or colour, so it inherits all three and
-				    animates the heading rather than restyling it. */}
+				    animates the heading rather than restyling it.
+
+				    The size tracks the viewport below 44px. FoldText splits by
+				    character with `pre-wrap`, so a line too long for the screen
+				    breaks mid-word; the set runs about 12.3 font-sizes wide, and
+				    8vw less a little is what keeps it inside the 16px gutters. */}
 				<h1 className="
 					font-reasons
-					mt-[14px]
-					text-[44px]
+					mt-[10px]
+					text-center
+					text-[min(44px,calc(8vw-3px))]
+					sm:mt-[14px]
 					leading-none
 					tracking-[0.01em]
 					text-[#1F4A14]
@@ -212,36 +246,61 @@ export default function AuthPanels() {
 				    resized. Give the section the animation directly and it is a flex
 				    row being relaid on every frame, and the two cards slide and
 				    resize the whole way in. */}
+				{/* Stacked, all three are ordinary blocks in the flow — the panel's
+				    height is whatever its cards come to, so there is no fixed size
+				    for the clipper to open out to. The opening there is a rise
+				    instead (see `.panel-open` in globals.css).
+
+				    Side by side, the frame is zoomed down as the window narrows so
+				    the panel stops short of burying the bamboo (see `.panel-fit`).
+				    Zoom rather than new sizes because every number above has to
+				    keep agreeing with the others — scaled together, they do. */}
 				<div className={`
+					panel-fit
 					relative
-					mt-[37px]
+					mt-[28px]
+					w-full
+					max-w-[480px]
+					sm:max-w-[720px]
+					lg:mt-[37px]
+					lg:max-w-none
 					${PANEL}
 				`}>
 					<div className={`
 						panel-open
-						absolute
-						top-1/2
-						left-1/2
-						-translate-x-1/2
-						-translate-y-1/2
+						relative
 						overflow-hidden
 						rounded-[32px]
+						lg:absolute
+						lg:top-1/2
+						lg:left-1/2
+						lg:-translate-x-1/2
+						lg:-translate-y-1/2
 						${PANEL}
 					`}>
 						<section className={`
-							absolute
-							top-1/2
-							left-1/2
+							relative
 							flex
-							-translate-x-1/2
-							-translate-y-1/2
+							flex-col
 							items-center
-							justify-center
 							rounded-[32px]
 							bg-[#FDF4E0]
-							px-10
-							pb-[35px]
+							px-3
+							py-5
 							shadow-[inset_0_0_17px_rgba(0,0,0,0.73)]
+							min-[400px]:px-5
+							sm:px-8
+							sm:py-7
+							lg:absolute
+							lg:top-1/2
+							lg:left-1/2
+							lg:-translate-x-1/2
+							lg:-translate-y-1/2
+							lg:flex-row
+							lg:justify-center
+							lg:px-10
+							lg:pt-0
+							lg:pb-[35px]
 							${PANEL}
 						`}>
 							<LogIn
@@ -262,7 +321,9 @@ export default function AuthPanels() {
 				</div>
 			</div>
 
-			{forgot && <ForgotPasswordDialog onClose={() => setForgot(false)} />}
+			<BambooBand edge="bottom" />
+
+			{forgot &&<ForgotPasswordDialog onClose={() => setForgot(false)} />}
 		</main>
 	)
 }
@@ -272,9 +333,13 @@ export default function AuthPanels() {
 // leaves the seam on the centre stalk no matter how the window is shaped. The
 // left edge shows everything to the left of that stalk, the right edge
 // everything to the right, and the page reads as one grove interrupted.
+//
+// Only from `lg` up. Narrower than that the cards stack and fill the width, and
+// side strips would either sit under them or squeeze them — the grove moves to
+// the top and bottom edges instead (BambooBand).
 function Bamboo() {
 	return (
-		<div aria-hidden="true">
+		<div aria-hidden="true" className="hidden lg:block">
 			<div className="
 				bamboo-open
 				pointer-events-none
@@ -326,6 +391,51 @@ function Bamboo() {
 	)
 }
 
+// The stacked layout's grove: a band across the top of the page and another
+// across the bottom, in the flow so the panel sits between them rather than
+// under them.
+//
+// Both show the top of the artwork — the leaves and the lilac sky — pinned to
+// the page edge. The bottom band is the same crop flipped, so the canopy frames
+// the panel from both ends instead of the bottom edge ending on bare stalks
+// fading out to cream. Each band fades into the page on its inner edge, so the
+// crop never reads as a hard line.
+function BambooBand({ edge }) {
+	const top = edge === 'top'
+
+	return (
+		<div
+			aria-hidden="true"
+			className={`
+				bamboo-drop
+				pointer-events-none
+				relative
+				h-[clamp(88px,15svh,160px)]
+				w-full
+				shrink-0
+				overflow-hidden
+				lg:hidden
+				${top
+					? '[mask-image:linear-gradient(to_bottom,black_55%,transparent)]'
+					: '[mask-image:linear-gradient(to_top,black_55%,transparent)]'}
+			`}
+		>
+			<img
+				src="/bamboo.png"
+				alt=""
+				className={`
+					absolute
+					inset-x-0
+					h-auto
+					w-full
+					max-w-none
+					${top ? 'top-0' : 'bottom-0 -scale-y-100'}
+				`}
+			/>
+		</div>
+	)
+}
+
 // In front of the sign-up card, so its shadow falls across it. The square
 // bottom-right corner is what makes the overlap read as one card laid over
 // another rather than two cards that happen to touch.
@@ -366,13 +476,19 @@ function LogIn({ front, onCome, onForgot, onSubmit, onDone }) {
 				relative
 				shrink-0
 				rounded-[30px]
-				rounded-br-none
-				rounded-tr-none
 				bg-[#FFCC6E]
-				py-[50px]
-				px-[50px]
+				px-[28px]
+				pt-[36px]
+				pb-[64px]
+				sm:px-[50px]
+				sm:pt-[44px]
+				max-lg:rounded-b-none
+				lg:rounded-r-none
+				lg:p-[50px]
 				${front ? BIG : SMALL}
-				${front ? 'shadow-[7px_0_6px_rgba(0,0,0,0.50)]' : NO_SHADOW}
+				${front
+					? 'shadow-[0_7px_6px_rgba(0,0,0,0.50)] lg:shadow-[7px_0_6px_rgba(0,0,0,0.50)]'
+					: NO_SHADOW}
 				${SWAP}
 			`}
 		>
@@ -380,7 +496,8 @@ function LogIn({ front, onCome, onForgot, onSubmit, onDone }) {
 				font-canobis
 				pl-[2px]
 				text-center
-				text-[35px]
+				text-[30px]
+				lg:text-[35px]
 				leading-none
 				tracking-[0.05em]
 				text-black
@@ -389,7 +506,7 @@ function LogIn({ front, onCome, onForgot, onSubmit, onDone }) {
 				LOG IN
 			</h2>
 
-			<p className={`${LABEL} mt-[33px]`}>USERNAME</p>
+			<p className={`${LABEL} mt-[26px] lg:mt-[33px]`}>USERNAME</p>
 			<input
 				type="text"
 				name="username"
@@ -438,13 +555,16 @@ function LogIn({ front, onCome, onForgot, onSubmit, onDone }) {
 				</Button>
 			</div>
 
-			{error && <p className={ERROR}>{error}</p>}
+			{/* stacked, the bottom 20px of this card is under sign-up */}
+			{error && <p className={`${ERROR} max-lg:bottom-[30px]`}>{error}</p>}
 		</form>
 	)
 }
 
 // Pulled left so its own edge runs under the log-in card — the gap you see
-// between them is that card's shadow, not background.
+// between them is that card's shadow, not background. Stacked, it's pulled up
+// under the log-in card's bottom edge instead, and the extra padding on top is
+// what that overlap covers.
 function SignUp({ front, onCome, onSubmit, onDone }) {
 	const [form, setForm] = useState({
 		first: '',
@@ -509,23 +629,31 @@ function SignUp({ front, onCome, onSubmit, onDone }) {
 			onFocus={onCome}
 			className={`
 				relative
-				-ml-[20px]
+				-mt-[20px]
 				shrink-0
 				rounded-[30px]
-				rounded-bl-none
-				rounded-tl-none
 				bg-[#FFE9BF]
-				py-[50px]
-				px-[50px]
+				px-[28px]
+				pt-[56px]
+				pb-[52px]
+				sm:px-[50px]
+				sm:pt-[64px]
+				max-lg:rounded-t-none
+				lg:-ml-[20px]
+				lg:rounded-l-none
+				lg:p-[50px]
 				${front ? BIG : SMALL}
-				${front ? 'shadow-[-7px_0_6px_rgba(0,0,0,0.50)]' : NO_SHADOW}
+				${front
+					? 'shadow-[0_-7px_6px_rgba(0,0,0,0.50)] lg:shadow-[-7px_0_6px_rgba(0,0,0,0.50)]'
+					: NO_SHADOW}
 				${SWAP}
 			`}
 		>
 			<h2 className="
 				font-canobis
 				text-center
-				text-[35px]
+				text-[30px]
+				lg:text-[35px]
 				leading-none
 				text-black
 				[-webkit-text-stroke:1px_black]
@@ -537,9 +665,10 @@ function SignUp({ front, onCome, onSubmit, onDone }) {
 			    is short, so a column apiece reads better than two full-width rows
 			    — and it costs the card one row of height instead of two. */}
 			<div className="
-				mt-[35px]
+				mt-[28px]
 				flex
 				gap-[14px]
+				lg:mt-[35px]
 			">
 				<div className="min-w-0 flex-1">
 					<p className={LABEL}>FIRST NAME</p>
