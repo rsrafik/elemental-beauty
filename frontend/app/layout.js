@@ -4,6 +4,7 @@ import { Molle } from "next/font/google";
 import { Boogaloo } from "next/font/google";
 import localFont from "next/font/local";
 import { SessionProvider } from "@/lib/session";
+import ZoomReset from "@/components/ZoomReset";
 import "./globals.css";
 
 const bevietnampro = Be_Vietnam_Pro({
@@ -121,6 +122,8 @@ export default function RootLayout({ children }) {
           them fetching the same thing on every navigation. */}
       <body className="min-h-full flex flex-col" suppressHydrationWarning>
         <SessionProvider>{children}</SessionProvider>
+        {/* zooms back out after an iPhone zooms in on a tapped field */}
+        <ZoomReset />
       </body>
     </html>
   );
