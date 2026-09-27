@@ -368,6 +368,12 @@ export default function MemberCalendar() {
 	const [months, setMonths] = useState({})
 	const [types, setTypes] = useState(TYPES)
 
+	// The tags picked under "on the calendar". None picked is no filter; each
+	// one clicked adds its tag to what's shown, and "clear filter" empties it.
+	const [picked, setPicked] = useState([])
+	const togglePick = (type) =>
+		setPicked((prev) => (prev.includes(type) ? prev.filter((t) => t !== type) : [...prev, type]))
+
 	useEffect(() => {
 		let live = true
 		Promise.all([labsApi.list(), eventsApi.list(), eventCategories.list()])
@@ -396,8 +402,15 @@ export default function MemberCalendar() {
 	//
 	// Officer-only days read as empty here, same as a day with nothing on it.
 	// The API has already dropped them for a member; this is the second line.
+	//
+	// With tags picked, a day shows the first thing on it that has one of them
+	// — so a filtered-for workshop still shows on a day a GBM happens to start
+	// earlier — and a day with none of them reads as empty.
 	const visible = (day) => {
-		const first = (day ?? []).find((entry) => VISIBLE_TRACKS.includes(entry.track))
+		const first = (day ?? []).find((entry) =>
+			VISIBLE_TRACKS.includes(entry.track) &&
+			(picked.length === 0 || picked.includes(entry.type))
+		)
 		return first ?? null
 	}
 
@@ -529,6 +542,8 @@ export default function MemberCalendar() {
 							</span>
 						</div>
 
+						{/* each tag is a filter: pressed, the calendar shows only
+						    days with that tag (or any of the pressed ones) */}
 						<div className="
 							mt-4
 							flex
@@ -536,28 +551,65 @@ export default function MemberCalendar() {
 							justify-center
 							gap-2
 						">
-							{types.map((type) => (
-								<span
-									key={type}
-									className="
-										rounded-full
-										border
-										border-black/70
-										px-4
-										py-1.5
-										font-vietnam
-										text-sm
-										text-black
-									"
-								>
-									{type}
-								</span>
-							))}
+							{types.map((type) => {
+								const on = picked.includes(type)
+								return (
+									<button
+										key={type}
+										type="button"
+										onClick={() => togglePick(type)}
+										aria-pressed={on}
+										className={`
+											rounded-full
+											border
+											px-4
+											py-1.5
+											font-vietnam
+											text-sm
+											cursor-pointer
+											transition-colors
+											duration-150
+											${on
+												? 'border-black bg-black text-cream'
+												: 'border-black/70 text-black hover:bg-black/5'}
+										`}
+									>
+										{type}
+									</button>
+								)
+							})}
+						</div>
+
+						{/* plain text, not another pill. It holds its line even
+						    while there's nothing to clear, so the legend under it
+						    doesn't jump when the first tag is picked. */}
+						<div className="
+							mt-2
+							text-center
+						">
+							<button
+								type="button"
+								onClick={() => setPicked([])}
+								tabIndex={picked.length ? 0 : -1}
+								aria-hidden={!picked.length}
+								className={`
+									font-vietnam
+									text-sm
+									text-black/45
+									cursor-pointer
+									transition-colors
+									duration-150
+									hover:text-black/70
+									${picked.length ? '' : 'invisible'}
+								`}
+							>
+								clear filter
+							</button>
 						</div>
 
 						{/* colour key: the badge colour says who the day is for */}
 						<div className="
-							mt-10
+							mt-6
 							flex
 							flex-wrap
 							gap-2
