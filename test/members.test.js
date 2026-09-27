@@ -146,3 +146,42 @@ test('an officer cannot promote an account — role changes are an admin\'s', { 
         assert.equal(reply.status, 403)
     })
 })
+
+test('an officer can set points to a typed total, logged as the difference', { skip }, async () => {
+    const officer = await person('officer')
+    const member = await person('member')
+    await prisma.member.update({ where: { userId: member }, data: { points: 10 } })
+
+    await as(officer, 'officer', async (base) => {
+        const set = (points) => fetch(`${base}/${member}/points`, {
+            method: 'PUT',
+            headers: { 'content-type': 'application/json' },
+            body: JSON.stringify({ points })
+        })
+        const reply = await set(4)
+        assert.equal(reply.status, 200)
+        assert.equal((await reply.json()).points, 4)
+        assert.equal((await set(-1)).status, 400)
+        assert.equal((await set(2.5)).status, 400)
+    })
+
+    const logged = await prisma.activityLog.findFirst({ where: { targetId: member, action: 'points_awarded' } })
+    assert.equal(logged.points, -6)
+    assert.deepEqual(logged.details, { reason: 'manual', from: 10, to: 4 })
+})
+
+test('j-board cannot give or set anyone\'s points', { skip }, async () => {
+    const jboard = await person('jboard')
+    const member = await person('member')
+    await as(jboard, 'jboard', async (base) => {
+        const send = (method, body) => fetch(`${base}/${member}/points`, {
+            method,
+            headers: { 'content-type': 'application/json' },
+            body: JSON.stringify(body)
+        })
+        assert.equal((await send('POST', { action: 'discord_join' })).status, 403)
+        assert.equal((await send('PUT', { points: 50 })).status, 403)
+    })
+    const row = await prisma.member.findUnique({ where: { userId: member } })
+    assert.equal(row.points, 0)
+})

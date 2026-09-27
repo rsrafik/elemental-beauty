@@ -35,8 +35,10 @@ import ActivityLog from '@/components/students/ActivityLog'
 //     label rather than a button.
 //
 // The "+" beside someone's points gives points by hand for the things
-// check-in can't see (an instagram follow, joining the discord), and
-// "activity" opens the staff log of who changed what (src/activity.js).
+// check-in can't see (an instagram follow, joining the discord) or sets a
+// total outright. J-board doesn't get it — they can't alter points, which the
+// API refuses them too. "activity" opens the staff log of who changed what
+// (src/activity.js).
 
 // ---- data ------------------------------------------------------------------
 
@@ -1343,6 +1345,8 @@ export default function OfficerStudents() {
 	// are left with plain members. Same rule the API has to enforce for real —
 	// this only keeps the UI from offering what the server would refuse.
 	const isAdmin = hasRole('admin', role)
+	// j-board sees everyone's points but can't change them (no "+")
+	const canGivePoints = role !== 'jboard'
 	// You can never remove yourself from the roster — leaving is /account's
 	// "delete my account" (DELETE /auth/me), not something done from here.
 	const canRemove = (student) =>
@@ -1860,6 +1864,7 @@ export default function OfficerStudents() {
 												gap-2
 											">
 												{student.points}
+												{canGivePoints && (
 												<button
 													type="button"
 													onClick={() => setAwarding(student)}
@@ -1885,6 +1890,7 @@ export default function OfficerStudents() {
 												>
 													<PlusIcon className="w-3 h-3" />
 												</button>
+												)}
 											</span>
 											)}
 										</td>

@@ -28,6 +28,10 @@ function sentence(entry) {
 		case 'role_changed':
 			return <>{actor} changed {target}&apos;s role from {roleLabel(d.from)} to {roleLabel(d.to)}</>
 		case 'points_awarded':
+			// a total typed by hand is logged as the difference, with before/after
+			if (d.reason === 'manual') {
+				return <>{actor} set {target}&apos;s points from {d.from} to {d.to} ({pts > 0 ? `+${pts}` : pts})</>
+			}
 			return <>{actor} gave {target} +{pts} for {AWARD[d.reason] ?? d.reason}</>
 		case 'checked_in':
 			return <>{actor} {d.by === 'qr' ? 'scanned' : 'checked'} {target} into {d.title} (+{pts})</>

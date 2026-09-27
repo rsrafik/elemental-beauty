@@ -742,6 +742,7 @@ const AWARD_REASON = {
 	instagram_repost: 'instagram repost',
 	instagram_follow: 'followed on instagram',
 	discord_join: 'joined the discord',
+	manual: 'points adjusted',
 }
 
 // 'october 10, 2026 · 5:00 PM'

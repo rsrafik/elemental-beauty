@@ -2,7 +2,7 @@ import express from 'express'
 import jwt from 'jsonwebtoken'
 import QRCode from 'qrcode'
 import prisma from '../prismaClient.js'
-import requireRole from '../middleware/requireRole.js'
+import requireRole, { denyRole } from '../middleware/requireRole.js'
 import { POINTS, MANUAL_ACTIONS, eventPoints } from '../points.js'
 import { fromEmail, takenMessage } from '../accountEmail.js'
 import { sendVerificationEmail } from '../verification.js'
@@ -347,7 +347,8 @@ router.put('/me', async (req, res) => {
 // value server-side — clients never send a point amount, so the values in
 // points.js are the only amounts that can ever be granted. Attendance points
 // are NOT awardable here; they happen automatically at check-in/admission.
-router.post('/:id/points', requireRole('officer'), async (req, res) => {
+// J-board can't touch anyone's points — this or PUT below.
+router.post('/:id/points', requireRole('officer'), denyRole('jboard'), async (req, res) => {
     const targetId = parseInt(req.params.id)
     if (isNaN(targetId)) { return res.status(400).json({ message: 'Invalid member id' }) }
 
@@ -376,6 +377,45 @@ router.post('/:id/points', requireRole('officer'), async (req, res) => {
         res.json({ message: `+${POINTS[action]} points for ${action}`, points: updated.points })
     } catch (err) {
         if (err.code === 'P2025') { return res.status(404).json({ message: 'Member not found' }) }
+        console.error(err.message)
+        res.sendStatus(500)
+    }
+})
+
+// Officer+ (not j-board): set someone's points to a number typed by hand, for
+// whatever the three awards above don't cover — or to correct a mistake. It's
+// logged as an award of the difference (reason 'manual', with the before and
+// after), which is what keeps a member's points history adding up: the
+// history reads awards back as the change they made.
+router.put('/:id/points', requireRole('officer'), denyRole('jboard'), async (req, res) => {
+    const targetId = parseInt(req.params.id)
+    if (isNaN(targetId)) { return res.status(400).json({ message: 'Invalid member id' }) }
+
+    const { points } = req.body
+    if (!Number.isInteger(points) || points < 0) {
+        return res.status(400).json({ message: 'points must be a whole number, 0 or more' })
+    }
+
+    try {
+        const updated = await prisma.$transaction(async (tx) => {
+            const before = await tx.member.findUnique({ where: { userId: targetId }, select: { points: true } })
+            if (!before) { return null }
+            const member = await tx.member.update({ where: { userId: targetId }, data: { points } })
+            // nothing changed, nothing to log
+            if (points !== before.points) {
+                await log({
+                    actorId: req.userId,
+                    action: 'points_awarded',
+                    targetId,
+                    points: points - before.points,
+                    details: { reason: 'manual', from: before.points, to: points }
+                }, tx)
+            }
+            return member
+        })
+        if (!updated) { return res.status(404).json({ message: 'Member not found' }) }
+        res.json({ message: `Points set to ${updated.points}`, points: updated.points })
+    } catch (err) {
         console.error(err.message)
         res.sendStatus(500)
     }
