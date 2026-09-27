@@ -50,12 +50,15 @@ enum EventType {
 // calendar drops `officers` and `board` entirely, so it's the field that
 // decides whether a row is ever sent to a member at all — not just how it's
 // drawn. `board` is "EB board": j-board and every staff role above a member.
+// `jboard` is j-board's own: officers don't see it, and j-board in turn
+// doesn't see `officers` (see eventRoutes.js).
 enum EventTrack {
   members
   officers
   open
   online
   board
+  jboard
 
   @@map("event_track")
 }

@@ -74,16 +74,18 @@ async function as(userId, role, run) {
 
 const mine = (rows) => rows.filter((row) => made.events.includes(row.eventId)).map((row) => row.track).sort()
 
-test('a plain member sees neither officers nor EB board events, by list, by id or by RSVP', { skip }, async () => {
+test('a plain member sees no officers, EB board or j-board events, by list, by id or by RSVP', { skip }, async () => {
     const member = await person('member')
     await event('members')
     const officers = await event('officers')
     const board = await event('board')
+    const jboard = await event('jboard')
 
     await as(member, 'member', async (base) => {
         assert.deepEqual(mine(await (await fetch(base)).json()), ['members'])
         assert.equal((await fetch(`${base}/${board}`)).status, 404)
         assert.equal((await fetch(`${base}/${officers}`)).status, 404)
+        assert.equal((await fetch(`${base}/${jboard}`)).status, 404)
         assert.equal((await fetch(`${base}/${board}/rsvp`, { method: 'POST' })).status, 404)
     })
 })
@@ -113,5 +115,65 @@ test('an event can be created for the EB board', { skip }, async () => {
         const created = await reply.json()
         made.events.push(created.eventId)
         assert.equal(created.track, 'board')
+    })
+})
+
+test('j-board sees j-board events but not officers ones; officers the other way round', { skip }, async () => {
+    const jb = await person('jboard')
+    const officer = await person('officer')
+    const officers = await event('officers')
+    const jboard = await event('jboard')
+
+    await as(jb, 'jboard', async (base) => {
+        const tracks = mine(await (await fetch(base)).json())
+        assert.ok(tracks.includes('jboard'))
+        assert.ok(!tracks.includes('officers'))
+        assert.equal((await fetch(`${base}/${jboard}`)).status, 200)
+        assert.equal((await fetch(`${base}/${officers}`)).status, 404)
+        assert.equal((await fetch(`${base}/${officers}`, { method: 'DELETE' })).status, 404)
+    })
+    await as(officer, 'officer', async (base) => {
+        const tracks = mine(await (await fetch(base)).json())
+        assert.ok(tracks.includes('officers'))
+        assert.ok(!tracks.includes('jboard'))
+        assert.equal((await fetch(`${base}/${jboard}`)).status, 404)
+        const edit = await fetch(`${base}/${jboard}`, {
+            method: 'PUT',
+            headers: { 'content-type': 'application/json' },
+            body: JSON.stringify({ title: 'renamed' })
+        })
+        assert.equal(edit.status, 404)
+    })
+})
+
+test('treasurer and admin see both officers and j-board events', { skip }, async () => {
+    await event('officers')
+    await event('jboard')
+    for (const role of ['treasurer', 'admin']) {
+        const who = await person(role)
+        await as(who, role, async (base) => {
+            const tracks = mine(await (await fetch(base)).json())
+            assert.ok(tracks.includes('officers') && tracks.includes('jboard'), role)
+        })
+    }
+})
+
+test("an officer can't file a j-board event, nor j-board an officers one", { skip }, async () => {
+    const officer = await person('officer')
+    const jb = await person('jboard')
+    const post = (base, track) => fetch(base, {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ title: `${tag} ${track}`, type: 'official', date: '2030-02-01', track })
+    })
+
+    await as(officer, 'officer', async (base) => {
+        assert.equal((await post(base, 'jboard')).status, 403)
+    })
+    await as(jb, 'jboard', async (base) => {
+        assert.equal((await post(base, 'officers')).status, 403)
+        const reply = await post(base, 'jboard')
+        assert.equal(reply.status, 201)
+        made.events.push((await reply.json()).eventId)
     })
 })

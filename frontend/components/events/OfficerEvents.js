@@ -6,6 +6,9 @@ import { useDismiss } from '@/lib/dismiss'
 import DashboardShell from '@/components/dashboards/DashboardShell'
 import { eventCategories, events as eventsApi } from '@/lib/api'
 import { isoDate, prettyTime } from '@/lib/dates'
+import { calendarOnly } from '@/lib/calendar'
+import { hiddenTracks } from '@/lib/roles'
+import { useRole } from '@/lib/session'
 import { splitByDate, CompletedDivider, COMPLETED_CARD } from '@/components/CardSections'
 import { COVER_MAX, shrinkImage } from '@/lib/images'
 
@@ -23,17 +26,21 @@ import { COVER_MAX, shrinkImage } from '@/lib/images'
 // from it on purpose: they carry sign-ups and check-in, so they're created from
 // /labs instead, and /api/event-categories refuses 'lab' as a tag name.
 
-// Who the event is for. Officers-only and EB-board events stay off the member
-// calendar and events page; EB board is j-board and everyone above a member.
+// Who the event is for. Officers-only, EB-board and j-board events stay off the
+// member calendar, and off both events pages — they show on the officer
+// calendar only. EB board is j-board and everyone above a member; officers and
+// j-board don't see each other's (see hiddenTracks).
 const TRACKS = {
 	members: 'members',
 	officers: 'officers',
 	open: 'open to all',
 	online: 'online',
 	board: 'EB board',
+	jboard: 'j-board',
 }
 
 const TRACK_KEYS = Object.keys(TRACKS)
+const tracksFor = (role) => TRACK_KEYS.filter((key) => !hiddenTracks(role).includes(key))
 
 // GET /api/events, flattened for the cards. `date` is kept the way the date
 // input wants it ('YYYY-MM-DD') so editing prefills instead of re-parsing what
@@ -409,6 +416,7 @@ function ConfirmDeleteDialog({ label, onCancel, onConfirm }) {
 // `onDelete` only comes in when there's an event to delete, which is what puts
 // the delete button on the footer.
 function EventDialog({ event, categories, onClose, onSave, onDelete }) {
+	const role = useRole()
 	// dismiss plays the exit animation and then closes for real — lib/dismiss.js
 	const { closing, dismiss } = useDismiss()
 	const close = () => dismiss(onClose)
@@ -630,7 +638,7 @@ function EventDialog({ event, categories, onClose, onSave, onDelete }) {
 								onChange={set('track')}
 								className={`${FIELD} cursor-pointer`}
 							>
-								{TRACK_KEYS.map((key) => (
+								{tracksFor(role).map((key) => (
 									<option key={key} value={key}>
 										{TRACKS[key]}
 									</option>
@@ -956,8 +964,14 @@ export default function OfficerEvents({ openNew = false }) {
 		closeEditor()
 	}
 
+	// Board and meeting events are calendar-only (see calendarOnly), so they're
+	// dropped here rather than on load: one saved as a meeting, or moved to the
+	// board, leaves the sheet the moment the form closes.
+	const categoryName = (id) => categories.find((c) => c.categoryId === id)?.name
+	const listed = events.filter((row) => !calendarOnly(row.track, categoryName(row.categoryId)))
+
 	// coming up (or today) first, then what's already happened, greyed out
-	const { upcoming, completed } = splitByDate(events)
+	const { upcoming, completed } = splitByDate(listed)
 
 	return (
 		<DashboardShell>

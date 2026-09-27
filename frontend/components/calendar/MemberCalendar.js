@@ -6,6 +6,7 @@ import DashboardShell from '@/components/dashboards/DashboardShell'
 import { eventCategories, events as eventsApi, labs as labsApi } from '@/lib/api'
 import { buildMonths, typesIn } from '@/lib/calendar'
 import { thisMonth } from '@/lib/dates'
+import { hiddenTracks } from '@/lib/roles'
 
 // /calendar for a user or member: month view of labs + events, read only.
 //
@@ -50,13 +51,13 @@ const TRACKS = {
 	open: { label: 'open to all', pill: 'bg-green text-black' },
 	online: { label: 'online', pill: 'bg-blue text-white' },
 	board: { label: 'EB board', pill: 'bg-[#6B4FBF] text-white' },
+	jboard: { label: 'j-board', pill: 'bg-[#D6488F] text-white' },
 }
 
-// Officer-only and EB-board days aren't a member's business: they're kept out
-// of the grid and off the legend here. This is only the view side of that rule
-// — the API filters them out before they ever reach the page.
-const STAFF_TRACKS = ['officers', 'board']
-const VISIBLE_TRACKS = Object.keys(TRACKS).filter((track) => !STAFF_TRACKS.includes(track))
+// Officer-only, EB-board and j-board days aren't a member's business: they're
+// kept out of the grid and off the legend here. This is only the view side of
+// that rule — the API filters them out before they ever reach the page.
+const VISIBLE_TRACKS = Object.keys(TRACKS).filter((track) => !hiddenTracks('member').includes(track))
 
 // Where the days come from now: labs and events, folded into one month map by
 // lib/calendar. Officer-only events never arrive here at all — the API filters
@@ -607,11 +608,14 @@ export default function MemberCalendar() {
 							</button>
 						</div>
 
-						{/* colour key: the badge colour says who the day is for */}
+						{/* colour key: the badge colour says who the day is for —
+						    centred when stacked, like the officer calendar's */}
 						<div className="
 							mt-6
 							flex
 							flex-wrap
+							justify-center
+							xl:justify-start
 							gap-2
 						">
 							{VISIBLE_TRACKS.map((key) => (

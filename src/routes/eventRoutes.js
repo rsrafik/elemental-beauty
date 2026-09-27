@@ -10,13 +10,20 @@ import { log } from '../activity.js'
 const router = express.Router()
 
 const EVENT_TYPES = ['official', 'social']
-const EVENT_TRACKS = ['members', 'officers', 'open', 'online', 'board']
+const EVENT_TRACKS = ['members', 'officers', 'open', 'online', 'board', 'jboard']
 
-// Tracks a plain member never sees: to them these events don't exist. Both are
-// for the board — everyone from officer up, j-board included. 'board' ("EB
-// board") is the one the events form offers for the whole board.
-const STAFF_TRACKS = ['officers', 'board']
-const hiddenFrom = (event, role) => role === 'member' && STAFF_TRACKS.includes(event.track)
+// Tracks a role never sees: to them these events don't exist. A member sees
+// none of the board's — 'board' ("EB board") is everyone from officer up,
+// 'officers' is the officers', 'jboard' is j-board's. Officers and j-board
+// don't see each other's; treasurer and admin see everything. Mirrored for the
+// pages in frontend/lib/roles.js (hiddenTracks).
+const HIDDEN_TRACKS = {
+    member: ['officers', 'board', 'jboard'],
+    officer: ['jboard'],
+    jboard: ['officers'],
+}
+const hiddenTracks = (role) => HIDDEN_TRACKS[role] ?? []
+const hiddenFrom = (event, role) => hiddenTracks(role).includes(event.track)
 
 // 'HH:MM' — what <input type="time"> hands back, and what the calendar prints.
 const TIME = /^([01][0-9]|2[0-3]):[0-5][0-9]$/
@@ -45,7 +52,7 @@ router.get('/', async (req, res) => {
         }
         where.type = type
     }
-    if (req.role === 'member') { where.track = { notIn: STAFF_TRACKS } }
+    if (hiddenTracks(req.role).length) { where.track = { notIn: hiddenTracks(req.role) } }
 
     try {
         const events = await prisma.event.findMany({
@@ -137,6 +144,11 @@ router.post('/', requireRole('officer'), async (req, res) => {
     if (track !== undefined && !EVENT_TRACKS.includes(track)) {
         return res.status(400).json({ message: `track must be one of: ${EVENT_TRACKS.join(', ')}` })
     }
+    // an officer can't file something j-board-only, nor j-board something
+    // officers-only — it'd vanish off their own calendar the moment it saved
+    if (hiddenTracks(req.role).includes(track)) {
+        return res.status(403).json({ message: 'You can\'t add an event to that track' })
+    }
     const eventDate = new Date(date)
     if (isNaN(eventDate.getTime())) {
         return res.status(400).json({ message: 'date must be a valid date (YYYY-MM-DD)' })
@@ -192,6 +204,9 @@ router.put('/:id', requireRole('officer'), async (req, res) => {
         if (!EVENT_TRACKS.includes(req.body.track)) {
             return res.status(400).json({ message: `track must be one of: ${EVENT_TRACKS.join(', ')}` })
         }
+        if (hiddenTracks(req.role).includes(req.body.track)) {
+            return res.status(403).json({ message: 'You can\'t move an event to that track' })
+        }
         data.track = req.body.track
     }
     if (req.body.categoryId !== undefined) { data.categoryId = req.body.categoryId }
@@ -219,6 +234,12 @@ router.put('/:id', requireRole('officer'), async (req, res) => {
     if (data.date !== undefined || data.startTime !== undefined) { data.reminderSentAt = null }
 
     try {
+        // one on a track this role can't see doesn't exist for them — the
+        // same 404 GET /:id gives, so editing by id can't get round it
+        const existing = await prisma.event.findUnique({ where: { eventId }, select: { track: true } })
+        if (!existing || hiddenFrom(existing, req.role)) {
+            return res.status(404).json({ message: 'Event not found' })
+        }
         const event = await prisma.event.update({ where: { eventId }, data })
         res.json(event)
     } catch (err) {
@@ -234,6 +255,10 @@ router.delete('/:id', requireRole('officer'), async (req, res) => {
     if (isNaN(eventId)) { return res.status(400).json({ message: 'Invalid event id' }) }
 
     try {
+        const existing = await prisma.event.findUnique({ where: { eventId }, select: { track: true } })
+        if (!existing || hiddenFrom(existing, req.role)) {
+            return res.status(404).json({ message: 'Event not found' })
+        }
         // cascades to member_event rows per the schema
         await prisma.event.delete({ where: { eventId } })
         res.json({ message: 'Event deleted' })

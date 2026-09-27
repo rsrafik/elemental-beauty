@@ -5,6 +5,7 @@ import Link from 'next/link'
 import DashboardShell from '@/components/dashboards/DashboardShell'
 import { events as eventsApi } from '@/lib/api'
 import { isoDate, longDate, prettyTime, today } from '@/lib/dates'
+import { calendarOnly } from '@/lib/calendar'
 
 // /events for a user or member: browse what's running now and rsvp to what's
 // coming up.
@@ -519,7 +520,10 @@ export default function MemberEvents() {
 		let live = true
 		eventsApi
 			.list()
-			.then((list) => live && setRows(list.map(toCard)))
+			// meetings stay on the calendar only — see calendarOnly
+			.then((list) => live && setRows(
+				list.filter((event) => !calendarOnly(event.track, event.category?.name)).map(toCard)
+			))
 			.catch((err) => live && setError(err.message))
 		return () => { live = false }
 	}, [])

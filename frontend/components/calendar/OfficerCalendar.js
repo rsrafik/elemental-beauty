@@ -6,6 +6,8 @@ import DashboardShell from '@/components/dashboards/DashboardShell'
 import { eventCategories, events as eventsApi, labs as labsApi } from '@/lib/api'
 import { buildMonths, typesIn } from '@/lib/calendar'
 import { thisMonth } from '@/lib/dates'
+import { hiddenTracks } from '@/lib/roles'
+import { useRole } from '@/lib/session'
 
 // /calendar for officer / treasurer / admin: the member month view, plus the
 // button that puts something new on it.
@@ -57,12 +59,21 @@ const TRACKS = {
 	open: { label: 'open to all', pill: 'bg-green text-black' },
 	online: { label: 'online', pill: 'bg-blue text-white' },
 	board: { label: 'EB board', pill: 'bg-[#6B4FBF] text-white' },
+	jboard: { label: 'j-board', pill: 'bg-[#D6488F] text-white' },
 }
 
-// Officers-only and EB-board days never reach the member calendar, which
-// filters them out. This page shows every track, since the board (j-board and
-// up) are the ones scheduling them and the ones they're for.
+// Officers-only, EB-board and j-board days never reach the member calendar,
+// which filters them out. This page shows the board every track it can see —
+// all of them but one for officers (no j-board) and j-board (no officers); the
+// API has already left the other's days out.
 const TRACK_KEYS = Object.keys(TRACKS)
+const tracksFor = (role) => TRACK_KEYS.filter((key) => !hiddenTracks(role).includes(key))
+
+// The key's two rows: the first gets the odd one out when there are five.
+const halves = (keys) => {
+	const cut = Math.ceil(keys.length / 2)
+	return [keys.slice(0, cut), keys.slice(cut)]
+}
 
 // Where the days come from now: labs and events, folded into one month map by
 // lib/calendar. This page shows all four tracks, since officers are the ones
@@ -472,17 +483,27 @@ function ConfirmRemoveDialog({ label, onCancel, onConfirm }) {
 	)
 }
 
+// Sized to fit the key in two rows of three even in the 280px column at xl;
+// `xl:grow` then stretches each row to the column's width so the two finish
+// level.
 function Pill({ children, className = '' }) {
 	return (
 		<span className={`
 			rounded-full
-			px-4
+			px-3
+			xl:px-2.5
+			2xl:px-3
 			py-1.5
 			font-vietnam
 			font-semibold
 			text-xs
+			xl:text-[10px]
+			2xl:text-xs
 			uppercase
-			tracking-[0.12em]
+			tracking-[0.1em]
+			whitespace-nowrap
+			text-center
+			xl:grow
 			${className}
 		`}>
 			{children}
@@ -723,6 +744,7 @@ function Label({ children }) {
 // draws it — it rides along so the events dashboard, which does show photos,
 // has one once this is posting to the API.
 function EventDialog({ categories, onClose, onSave }) {
+	const role = useRole()
 	// dismiss plays the exit animation and then closes for real — lib/dismiss.js
 	const { closing, dismiss } = useDismiss()
 	const close = () => dismiss(onClose)
@@ -935,7 +957,7 @@ function EventDialog({ categories, onClose, onSave }) {
 								onChange={set('track')}
 								className={`${FIELD} cursor-pointer`}
 							>
-								{TRACK_KEYS.map((key) => (
+								{tracksFor(role).map((key) => (
 									<option key={key} value={key}>
 										{TRACKS[key].label}
 									</option>
@@ -1117,6 +1139,7 @@ function EventDialog({ categories, onClose, onSave }) {
 // ---- page ------------------------------------------------------------------
 
 export default function OfficerCalendar() {
+	const role = useRole()
 	// Which month is on screen. Stepping goes through Date so December rolls
 	// into January of the next year on its own.
 	const [view, setView] = useState(thisMonth)
@@ -1456,17 +1479,29 @@ export default function OfficerCalendar() {
 							)}
 						</div>
 
-						{/* colour key: the badge colour says who the day is for */}
+						{/* colour key: the badge colour says who the day is for. Two
+						    rows, split down the middle, whatever the role sees —
+						    centred like the tags above when stacked; at xl the pills
+						    grow to fill the column, so there's nothing to centre */}
 						<div className="
 							mt-10
 							flex
-							flex-wrap
-							gap-2
+							flex-col
+							gap-1.5
 						">
-							{TRACK_KEYS.map((trackKey) => (
-								<Pill key={trackKey} className={TRACKS[trackKey].pill}>
-									{TRACKS[trackKey].label}
-								</Pill>
+							{halves(tracksFor(role)).map((row) => (
+								<div key={row.join()} className="
+									flex
+									flex-wrap
+									justify-center
+									gap-1.5
+								">
+									{row.map((trackKey) => (
+										<Pill key={trackKey} className={TRACKS[trackKey].pill}>
+											{TRACKS[trackKey].label}
+										</Pill>
+									))}
+								</div>
 							))}
 						</div>
 					</div>

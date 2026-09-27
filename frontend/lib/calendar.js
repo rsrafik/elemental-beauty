@@ -92,3 +92,15 @@ export function typesIn(months, categories = []) {
 	}
 	return [...found]
 }
+
+// Events that live on the calendar and nowhere else: anything for the board
+// (officers-only, EB board or j-board) and anything tagged a meeting. They're
+// scheduling, not something to browse and sign up for, so both /events pages
+// leave them off. A member never gets the board ones anyway — the API drops
+// them — but a meeting-tagged one does reach them and still has to go.
+const CALENDAR_ONLY_TRACKS = ['officers', 'board', 'jboard']
+const MEETING = 'meeting'
+
+export function calendarOnly(track, categoryName) {
+	return CALENDAR_ONLY_TRACKS.includes(track) || categoryName?.toLowerCase() === MEETING
+}
