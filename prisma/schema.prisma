@@ -97,6 +97,9 @@ enum FinanceCategory {
   events
   guests
   marketing
+  // a non-member's price for one lab or members-only event, paid at the door
+  // — income, but not a slice of the four above (see src/dues.js)
+  fees
 
   @@map("finance_category")
 }
@@ -153,14 +156,12 @@ model User {
   // students an officer added (they were vouched for in person).
   waiverName     String?   @map("waiver_name")
   waiverSignedAt DateTime? @map("waiver_signed_at") @db.Timestamptz()
-  // What officers' "email all" buttons may send them — set from /account.
-  // Account mail (the verification link, password resets) goes regardless.
-  //   emailClub    the officer dashboard's club-wide "Email All"
-  //   emailEvents  a lab or event's "email all", to the people signed up
-  // null = never chosen, which follows the role: members are in, staff are
-  // out until they opt in (see src/emailPrefs.js). true/false = their choice.
+  // Whether the officer dashboard's club-wide "Email All" reaches them — set
+  // from /account. null = never chosen, which follows the role: members are
+  // in, staff are out until they opt in (see src/emailPrefs.js). true/false =
+  // their choice. Account mail, and everything about a lab or event they've
+  // signed up for, goes regardless.
   emailClub      Boolean?  @map("email_club")
-  emailEvents    Boolean?  @map("email_events")
   createdAt      DateTime @default(now()) @map("created_at") @db.Timestamptz()
 
   member        Member?
@@ -350,6 +351,9 @@ model Event {
   // for and whatever its tag — it still shows on the calendar. Meetings and
   // the board's tracks are kept off regardless (frontend/lib/calendar.js).
   hideFromEvents Boolean @default(false) @map("hide_from_events")
+  // Titled links the event's page lists under its photo — a guest speaker's
+  // LinkedIn, a sign-up sheet: [{ title, url }, ...]. Null or [] = none.
+  links          Json?
   // Who added it. Decides one thing: a j-board event added by an officer,
   // treasurer or admin is read-only to j-board (see eventRoutes.js). Null for
   // events from before this was kept, and for a creator since deleted.
@@ -421,11 +425,13 @@ model MemberEvent {
 
 // A grant application, tracked from before it's sent. `amountRequested` is what
 // was asked for and `status` is what says whether the club ever saw it — only
-// an awarded one is money, and even then the cheque is a separate income row,
-// because the decision and the deposit don't arrive on the same day.
+// an awarded one is money. Awarding one writes its income row (category
+// 'grants', linked by grantId), by trigger — see the
+// fees_links_payouts_grant_income migration.
 //
 // That's what makes `dateGranted` nullable: a drafting application hasn't been
-// granted anything yet, and the tracker still has to be able to hold it.
+// granted anything yet, and the tracker still has to be able to hold it. It's
+// filled in with the day it's awarded, if nobody set one.
 model Grant {
   grantId         Int         @id @default(autoincrement()) @map("grant_id")
   name            String
@@ -456,6 +462,10 @@ model YearTarget {
   // What a member owes in dues that year — the dues card's default when the
   // treasurer marks someone paid. 0 = not set yet.
   duesAmount    Decimal @default(0) @map("dues_amount") @db.Decimal(10, 2)
+  // What someone who hasn't paid that year's dues is charged at the door for
+  // a lab or a members-only event — shown on the cards they see, and taken as
+  // income under 'fees' (see src/dues.js). 0 = not set.
+  nonmemberPrice Decimal @default(0) @map("nonmember_price") @db.Decimal(10, 2)
 
   @@map("year_targets")
 }
@@ -486,6 +496,11 @@ model Reimbursement {
   previousDenial    String?             @map("previous_denial")
   receipt           String?
   date              DateTime            @default(dbgenerated("CURRENT_DATE")) @db.Date
+  // Where to send the money back: the platform ('zelle', 'venmo', 'cash' —
+  // see PAYOUT_METHODS in reimbursementRoutes.js) and the phone number, email
+  // or username on it. Null on requests filed before the form asked.
+  payoutMethod      String?             @map("payout_method")
+  payoutHandle      String?             @map("payout_handle")
 
   member      Member?      @relation(fields: [memberId], references: [userId], onDelete: SetNull)
   transaction Transaction?

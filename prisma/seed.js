@@ -296,6 +296,9 @@ async function main() {
         ]
     })
 
+    // The two awarded ones put themselves in the income ledger (a trigger — see
+    // the fees_links_payouts_grant_income migration), so they're not in the
+    // transactions below.
     await prisma.grant.createMany({
         data: [
             { name: 'Student Org Fund', org: 'Student Government', amountRequested: 1500, status: 'awarded', deadline: new Date('2025-09-01'), dateGranted: new Date('2025-09-22') },
@@ -309,11 +312,9 @@ async function main() {
     await prisma.transaction.createMany({
         data: [
             { type: 'income', source: 'Fall dues — first wave', amount: 690, category: 'dues', date: new Date('2025-08-25') },
-            { type: 'income', source: 'Student Org Fund award', amount: 1500, category: 'grants', date: new Date('2025-09-22') },
             { type: 'income', source: 'Glow Bar sponsorship', amount: 600, category: 'sponsors', date: new Date('2025-10-08') },
             { type: 'income', source: 'Bake sale', amount: 385.5, category: 'fundraisers', date: new Date('2025-10-27') },
             { type: 'income', source: 'Spring dues — first wave', amount: 810, category: 'dues', date: new Date('2026-01-20') },
-            { type: 'income', source: 'STEM Outreach Mini-Grant', amount: 1200, category: 'grants', date: new Date('2026-01-28') },
             { type: 'expense', source: 'Welcome social — food', amount: 318, category: 'events', date: new Date('2025-08-28') },
             { type: 'expense', source: 'Flyer printing', amount: 128.4, category: 'marketing', date: new Date('2025-09-04') },
             { type: 'expense', source: 'Bath bomb lab supplies', amount: 412.6, category: 'lab', date: new Date('2025-09-18') },
