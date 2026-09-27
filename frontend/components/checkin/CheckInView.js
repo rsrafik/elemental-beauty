@@ -1,6 +1,6 @@
 'use client'
 
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import DashboardShell from '@/components/dashboards/DashboardShell'
 import { BackButton, metaLine, useDesignZoom } from '@/components/labs/LabViewParts'
 import QrScanner from '@/components/checkin/QrScanner'
@@ -413,6 +413,66 @@ function ManualAdd({ onAdd, people }) {
 
 // ---- page ------------------------------------------------------------------
 
+// The title, as big as it's designed to be when it fits and smaller when it
+// doesn't: a long one ("Meet Wenrui Chen: Cosmetic Chemist at Innacos Labs")
+// would otherwise run to four lines at 54px and shove the buttons and the
+// lists halfway down the page. It starts at the size its classes give it and
+// steps down until it sits on TITLE_LINES lines, never below TITLE_MIN.
+//
+// Lines are counted from the text's own line boxes rather than worked out from
+// the height, because the column is inside a `zoom` (useDesignZoom) and heights
+// read back scaled while the font size doesn't.
+//
+// Refit when the column changes width and once the display face has loaded —
+// measured in the fallback font, a title can fit that won't in Beachday.
+const TITLE_LINES = 2
+const TITLE_MIN = 26
+
+function linesOf(element) {
+	const range = document.createRange()
+	range.selectNodeContents(element)
+	return new Set([...range.getClientRects()].map((rect) => Math.round(rect.top))).size
+}
+
+function FitTitle({ text, className }) {
+	const ref = useRef(null)
+
+	useLayoutEffect(() => {
+		const element = ref.current
+		if (!element) return
+
+		const fit = () => {
+			element.style.fontSize = ''
+			let size = parseFloat(getComputedStyle(element).fontSize)
+			while (linesOf(element) > TITLE_LINES && size > TITLE_MIN) {
+				size = Math.max(TITLE_MIN, size - 2)
+				element.style.fontSize = `${size}px`
+			}
+		}
+		fit()
+
+		// the width is the only thing that changes the answer — the title's own
+		// height moves every time it's refitted, so that's not watched
+		let width = element.parentElement.clientWidth
+		const observer = new ResizeObserver(() => {
+			const next = element.parentElement.clientWidth
+			if (next === width) return
+			width = next
+			fit()
+		})
+		observer.observe(element.parentElement)
+		let live = true
+		document.fonts?.ready.then(() => live && fit())
+
+		return () => {
+			live = false
+			observer.disconnect()
+		}
+	}, [text])
+
+	return <h1 ref={ref} className={className}>{text}</h1>
+}
+
 export default function CheckInView({ kind, id }) {
 	const api = API[kind]
 	const zoom = useDesignZoom()
@@ -673,18 +733,19 @@ export default function CheckInView({ kind, id }) {
 								">
 									{metaLine(item)}
 								</p>
-								<h1 className="
-									mt-[3.3px]
-									font-beachday
-									text-[40px]
-									sm:text-[54px]
-									leading-[1.2]
-									sm:leading-[65.2px]
-									text-salmon
-									break-words
-								">
-									{item.title}
-								</h1>
+								<FitTitle
+									text={item.title}
+									className="
+										mt-[3.3px]
+										font-beachday
+										text-[40px]
+										sm:text-[54px]
+										leading-[1.2]
+										sm:leading-[1.207]
+										text-salmon
+										break-words
+									"
+								/>
 								{/* the page's four buttons, two by two. The columns are
 								    equal, each as wide as the widest label plus its
 								    padding, so none of them is squeezed to its text. An
