@@ -1,7 +1,7 @@
 'use client'
 
 import { useEffect, useRef, useState } from 'react'
-import 'pdfjs-dist/web/pdf_viewer.css'
+import 'pdfjs-dist/legacy/web/pdf_viewer.css'
 import { labs as labsApi } from '@/lib/api'
 
 // The lesson tab: the lab's PDF (uploaded by an officer) in pdf.js's own
@@ -464,16 +464,21 @@ export default function LabLesson({ labId, fileName, zoom = 1, style }) {
 
 		async function start() {
 			try {
-				const pdfjs = await import('pdfjs-dist')
+				// The legacy build throughout — library, worker and viewer. The
+				// default one calls methods too new for the Safari engine every
+				// iPhone browser runs on (Map#getOrInsertComputed and friends)
+				// and fails there with "... is not a function"; legacy is the
+				// same code with those polyfilled. See WaiverPopup.js.
+				const pdfjs = await import('pdfjs-dist/legacy/build/pdf.mjs')
 				pdfjs.GlobalWorkerOptions.workerSrc = new URL(
-					'pdfjs-dist/build/pdf.worker.min.mjs',
+					'pdfjs-dist/legacy/build/pdf.worker.min.mjs',
 					import.meta.url
 				).toString()
 				// pdf_viewer reads the library off the global rather than
 				// importing it, so it has to be there before the import
 				globalThis.pdfjsLib = pdfjs
 				const { EventBus, PDFLinkService, PDFViewer, LinkTarget } =
-					await import('pdfjs-dist/web/pdf_viewer.mjs')
+					await import('pdfjs-dist/legacy/web/pdf_viewer.mjs')
 
 				const data = await labsApi.lesson(labId)
 				if (!live) return
