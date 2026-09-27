@@ -1,7 +1,7 @@
 'use client'
 
 import { useEffect, useRef, useState } from 'react'
-import { STATUS_PILL, grantValue, money, prettyDate, statusLabel, sum } from '@/lib/finances'
+import { STATUS_PILL, grantValue, money, prettyDate, statusLabel, sum, yearLabel } from '@/lib/finances'
 import { useDismiss } from '@/lib/dismiss'
 
 // The pieces both analytics pages are built out of — the card, the pills, the
@@ -323,7 +323,7 @@ export function YearTag({ year }) {
 			text-black
 			whitespace-nowrap
 		">
-			{year}
+			{yearLabel(year)}
 		</span>
 	)
 }
@@ -357,12 +357,21 @@ export function CategoryTag({ category, color }) {
 // A real <select> so it keeps the keyboard and the phone's native picker; the
 // chevron is drawn alongside because `appearance-none` takes the browser's own
 // away.
-export function Select({ value, onChange, options, label }) {
+// `onExtra` puts one more entry at the bottom of the list, `extraLabel`, that
+// runs it instead of being picked — the treasurer's "add a year" under the
+// school years.
+const EXTRA = '__extra'
+
+// `labelFor` is what an option is shown as, when that isn't the value itself.
+export function Select({ value, onChange, options, label, extraLabel, onExtra, labelFor = (option) => option }) {
 	return (
 		<div className="relative">
 			<select
 				value={value}
-				onChange={(event) => onChange(event.target.value)}
+				onChange={(event) => {
+					if (event.target.value === EXTRA) onExtra()
+					else onChange(event.target.value)
+				}}
 				aria-label={label}
 				className="
 					appearance-none
@@ -387,9 +396,15 @@ export function Select({ value, onChange, options, label }) {
 			>
 				{options.map((option) => (
 					<option key={option} value={option}>
-						{option}
+						{labelFor(option)}
 					</option>
 				))}
+				{onExtra && (
+					<>
+						<option disabled>──────────</option>
+						<option value={EXTRA}>{extraLabel}</option>
+					</>
+				)}
 			</select>
 			<ChevronIcon className="
 				pointer-events-none
@@ -1291,7 +1306,11 @@ export function BalanceChart({ series }) {
 // The card the chart sits in, held to a fixed height so the tall list beside it
 // scrolls inside its own card rather than dragging the row down and leaving the
 // chart sitting in a white field.
-export function BalanceCard({ series, year, note }) {
+// `opening` is what the year started with — last year's closing balance,
+// carried over (openingBalance in lib/finances.js) — as { amount, from }, the
+// year it came from; `from` null is the club's first year on the books, with
+// nothing before it. Left out for "all years", which has no single start.
+export function BalanceCard({ series, year, note, opening = null }) {
 	return (
 		<Card className="
 			flex
@@ -1308,6 +1327,26 @@ export function BalanceCard({ series, year, note }) {
 				<div>
 					<CardTitle>balance summary</CardTitle>
 					<CardNote>{note}</CardNote>
+					{opening && (
+						<p className="
+							mt-1.5
+							font-vietnam
+							text-sm
+							text-black/70
+						">
+							started the year at{' '}
+							<span className="
+								font-semibold
+								text-black
+								tabular-nums
+							">
+								{money(opening.amount)}
+							</span>
+							<span className="text-black/45">
+								{opening.from ? ` · carried over from ${opening.from}` : ' · the first year on the books'}
+							</span>
+						</p>
+					)}
 				</div>
 				<YearTag year={year} />
 			</div>
@@ -1655,6 +1694,18 @@ export function SummaryCard({ title, categories, totals, total, goal, goalNote, 
 
 // `onEdit` is the treasurer's version again: with it every row is a button that
 // opens the grant for changing, without it the list is a read-out.
+// What a grant is down for, the same wherever it's listed — the tracker and
+// the books' grants tab: what was granted, with what was asked for struck
+// through beside it when the two differ; what was asked for until then.
+export function GrantAmount({ grant }) {
+	return grant.status === 'awarded' && grant.awarded != null && grant.awarded !== grant.amount
+		? <>
+			{money(grant.awarded, false)}
+			<span className="ml-1 font-normal text-black/40 line-through">{money(grant.amount, false)}</span>
+		</>
+		: money(grant.amount, false)
+}
+
 export function GrantTracker({ grants, onEdit, onAdd }) {
 	// Newest deadline first: what's still in flight is what anyone opens this
 	// card to look at, and last year's awards sit underneath it.
@@ -1830,12 +1881,7 @@ export function GrantTracker({ grants, onEdit, onAdd }) {
 								text-black
 								tabular-nums
 							">
-								{grant.status === 'awarded' && grant.awarded != null && grant.awarded !== grant.amount
-									? <>
-										{money(grant.awarded, false)}
-										<span className="ml-1 font-normal text-black/40 line-through">{money(grant.amount, false)}</span>
-									</>
-									: money(grant.amount, false)}
+								<GrantAmount grant={grant} />
 							</span>
 						</div>
 

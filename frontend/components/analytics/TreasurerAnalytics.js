@@ -3,6 +3,8 @@
 import { useEffect, useState } from 'react'
 import DashboardShell from '@/components/dashboards/DashboardShell'
 import DuesCard from '@/components/analytics/DuesCard'
+import { ReceiptDialog as SubmitReceiptDialog, ReceiptsCard } from '@/components/analytics/OfficerAnalytics'
+import { useCurrentUser } from '@/lib/session'
 import { useDismiss } from '@/lib/dismiss'
 import {
 	Card,
@@ -17,6 +19,7 @@ import {
 	Dialog,
 	DialogActions,
 	FIELD,
+	GrantAmount,
 	GrantTracker,
 	Label,
 	MonthStats,
@@ -32,19 +35,26 @@ import {
 } from '@/components/analytics/parts'
 import { finances as financesApi, yearTargets } from '@/lib/api'
 import {
-	EXPENSE_BUDGET,
+	ALL_YEARS,
 	EXPENSE_CATEGORIES,
 	GRANT_STATUSES,
 	INCOME_CATEGORIES,
-	INCOME_GOAL,
 	REQUEST_STATUSES,
 	categoryColor,
 	categoryLabel,
 	balanceSeries,
+	forYear,
+	hasHistoryBefore,
+	openingBalance,
+	previousYear,
+	grantValue,
+	grantYear,
+	grantsInYear,
 	inYear,
 	money,
 	monthStats,
 	nextId,
+	payoutText,
 	prettyDate,
 	schoolYear,
 	statusLabel,
@@ -57,6 +67,8 @@ import {
 	today,
 	total,
 	totalsByCategory,
+	yearFrom,
+	yearLabel,
 	yearsIn,
 	yearEnd,
 	yearStart,
@@ -75,11 +87,21 @@ import {
 //   the targets — the income goal and the spending budget, edited in place on
 //     the summary cards they're measured against.
 //   the queue — every officer's compensation requests, not just their own.
+//     The treasurer (or admin) hands in their own receipts here too, on the
+//     same card and form the officers' page has, and they land in this queue.
 //     Approving says the club owes it; reimbursing says it's been paid, and
 //     writes the expense row that says where the money went.
 //   dues — who's paid for the year, marked here (DuesCard); paying writes an
-//     income row under 'dues'.
+//     income row under 'dues'. The non-member price for a lab or members-only
+//     event is set there too.
+//   the years — the picker's last entry adds one, and a year with nothing in
+//     it can be taken back off (YearsDialog).
 //   export — the year's ledger as a CSV, from the button by the year picker.
+//
+// Everything follows the year picker — the summaries, the balance line, the
+// grant tracker and all three tabs of the books — and its "all years" shows
+// the club's whole history. The dues card is the one thing that needs a
+// single year, so "all years" leaves it off.
 //
 // The seeds are placeholders until this is talking to the API. Nothing here
 // posts anywhere yet — it all lives in this page's state.
@@ -127,7 +149,23 @@ const LEDGERS = {
 				key: 'source',
 				label: 'source',
 				sortValue: (row) => row.source.toLowerCase(),
-				cell: (row) => row.source,
+				cell: (row) => (
+					<>
+						{row.source}
+						{/* an awarded grant's row is the grant itself — its pencil
+						    opens the grant, and it changes from there */}
+						{row.grantId && (
+							<span className="
+								block
+								font-vietnam
+								text-xs
+								text-black/40
+							">
+								from the grant tracker
+							</span>
+						)}
+					</>
+				),
 				tone: 'strong',
 			},
 			{
@@ -270,8 +308,9 @@ const LEDGERS = {
 				label: 'amount',
 				align: 'right',
 				nowrap: true,
-				sortValue: (row) => row.amount,
-				cell: (row) => money(row.amount),
+				// the tracker's figure: what was granted, once it's awarded
+				sortValue: (row) => (row.status === 'awarded' ? grantValue(row) : row.amount),
+				cell: (row) => <GrantAmount grant={row} />,
 				tone: 'strong',
 			},
 		],
@@ -372,8 +411,8 @@ function LedgerCard({ tab, onTab, rows, year, onAdd, onEdit, onDelete }) {
 	// The note counts what's on screen rather than what's on file, so a funnel
 	// with something ticked reads as an answer: four lab entries, this much.
 	const note = tab === 'grants'
-		? `${visible.length} applications · ${money(sum(visible.map((row) => row.amount)), false)} asked for, all years`
-		: `${visible.length} entries · ${money(total(visible))} in ${year}`
+		? `${visible.length} applications · ${money(sum(visible.filter((row) => row.status === 'awarded').map(grantValue)))} awarded of ${money(sum(visible.map((row) => row.amount)), false)} applied for`
+		: `${visible.length} entries · ${money(total(visible))} in ${yearLabel(year)}`
 
 	return (
 		<Card>
@@ -550,12 +589,16 @@ function LedgerCard({ tab, onTab, rows, year, onAdd, onEdit, onDelete }) {
 										justify-end
 										gap-2
 									">
-										<RowButton label="Edit" onClick={() => onEdit(row)}>
+										<RowButton label={row.grantId ? 'Edit the grant' : 'Edit'} onClick={() => onEdit(row)}>
 											<PencilIcon className="w-4 h-4" />
 										</RowButton>
-										<RowButton label="Delete" tone="danger" onClick={() => onDelete(row)}>
-											<TrashIcon className="w-4 h-4" />
-										</RowButton>
+										{/* a grant's row goes when the grant is un-awarded or
+										    deleted, from the tracker — not from here */}
+										{!row.grantId && (
+											<RowButton label="Delete" tone="danger" onClick={() => onDelete(row)}>
+												<TrashIcon className="w-4 h-4" />
+											</RowButton>
+										)}
 									</div>
 								</td>
 							</tr>
@@ -782,7 +825,7 @@ function GrantDialog({ grant, onClose, onSave }) {
 	return (
 		<Dialog
 			title={grant ? 'edit grant' : 'add a grant'}
-			note="Awarding one doesn't bank it — record the deposit as income when the money lands."
+			note="Marking it awarded puts it in income by itself, for the amount granted."
 			onClose={close}
 			onSubmit={submit}
 			closing={closing}
@@ -995,6 +1038,21 @@ function ReceiptDialog({ request, onClose }) {
 						<StatusPill status={request.status} />
 					</div>
 				</div>
+
+				{request.payoutMethod && (
+					<div>
+						<Label>pay them back by</Label>
+						<p className="
+							font-vietnam
+							font-semibold
+							text-sm
+							text-black
+							select-all
+						">
+							{payoutText(request)}
+						</p>
+					</div>
+				)}
 
 				<div>
 					<Label>what it was for</Label>
@@ -1394,15 +1452,27 @@ function RequestQueue({ requests, filter, onFilter, onApprove, onDeny, onReimbur
 									</div>
 								</td>
 
+								{/* who, and where their money goes back to */}
 								<td className="
 									px-2
 									py-3
 									font-vietnam
 									text-sm
 									text-black/70
-									truncate
 								">
-									{request.who}
+									<p className="truncate">{request.who}</p>
+									{request.payoutMethod && (
+										<p
+											title={payoutText(request)}
+											className="
+												truncate
+												text-xs
+												text-black/45
+											"
+										>
+											{payoutText(request)}
+										</p>
+									)}
 								</td>
 
 								<td className="
@@ -1522,6 +1592,143 @@ function RequestQueue({ requests, filter, onFilter, onApprove, onDeny, onReimbur
 	)
 }
 
+// ---- years -----------------------------------------------------------------
+
+// What the year picker's last entry opens: add a school year before anything
+// has been filed in it (it's where its dues and targets get set), or take one
+// off that was added by mistake. Only a year with nothing in its ledger can
+// go, and never the one we're in — a year with rows in it comes back on its
+// own anyway, since the picker reads its years off the ledger too.
+function YearsDialog({ years, current, contentsOf, onAdd, onRemove, onClose }) {
+	const { closing, dismiss } = useDismiss()
+	const close = () => dismiss(onClose)
+
+	// the start of the year after the newest one there is
+	const [start, setStart] = useState(() => String(Number(years[0].slice(0, 4)) + 1))
+	const entry = /^\d{4}$/.test(start) ? yearFrom(start) : null
+	const ready = entry !== null && !years.includes(entry)
+
+	const submit = (event) => {
+		event.preventDefault()
+		if (!ready) return
+		onAdd(entry)
+		setStart(String(Number(start) + 1))
+	}
+
+	return (
+		<Dialog
+			title="school years"
+			note="Add a year to set its dues and targets before any money lands in it."
+			onClose={close}
+			onSubmit={submit}
+			closing={closing}
+			width="max-w-[440px]"
+		>
+			<div className="
+				mt-6
+				flex
+				items-end
+				gap-3
+			">
+				<label className="
+					block
+					flex-1
+				">
+					<Label>starts in</Label>
+					<input
+						type="number"
+						min="2000"
+						max="2099"
+						step="1"
+						value={start}
+						onChange={(event) => setStart(event.target.value)}
+						aria-label="The year it starts in (August)"
+						className={`${FIELD} tabular-nums`}
+					/>
+				</label>
+				<button
+					type="submit"
+					disabled={!ready}
+					className={`
+						shrink-0
+						h-[42px]
+						rounded-full
+						px-5
+						font-vietnam
+						font-semibold
+						text-sm
+						transition-all
+						duration-200
+						ease-out
+						${ready
+							? 'bg-salmon text-white cursor-pointer hover:-translate-y-0.5 hover:shadow-lg hover:shadow-black/20'
+							: 'bg-black/10 text-black/40 cursor-not-allowed'}
+					`}
+				>
+					{entry ? `add ${entry}` : 'add'}
+				</button>
+			</div>
+
+			<ul className="
+				mt-6
+				divide-y
+				divide-black/10
+			">
+				{years.map((year) => (
+					<li
+						key={year}
+						className="
+							flex
+							items-center
+							justify-between
+							gap-3
+							py-2.5
+						"
+					>
+						<span className="
+							shrink-0
+							whitespace-nowrap
+							font-vietnam
+							font-semibold
+							text-sm
+							text-black
+							tabular-nums
+						">
+							{year}
+							{year === current && (
+								<span className="
+									ml-2
+									font-normal
+									text-xs
+									text-black/45
+								">
+									this year
+								</span>
+							)}
+						</span>
+						{contentsOf(year).length === 0 ? (
+							<RowButton label={`Remove ${year}`} tone="danger" onClick={() => onRemove(year)}>
+								<TrashIcon className="w-4 h-4" />
+							</RowButton>
+						) : (
+							// what's in it — the reason there's no bin
+							<span className="
+								min-w-0
+								font-vietnam
+								text-xs
+								text-black/35
+								text-right
+							">
+								{year === current ? '' : contentsOf(year).join(' · ')}
+							</span>
+						)}
+					</li>
+				))}
+			</ul>
+		</Dialog>
+	)
+}
+
 // ---- page ------------------------------------------------------------------
 
 export default function TreasurerAnalytics() {
@@ -1530,8 +1737,13 @@ export default function TreasurerAnalytics() {
 	const [grants, setGrants] = useState([])
 	const [requests, setRequests] = useState([])
 
-	const [goals, setGoals] = useState(INCOME_GOAL)
-	const [budgets, setBudgets] = useState(EXPENSE_BUDGET)
+	const [goals, setGoals] = useState({})
+	const [budgets, setBudgets] = useState({})
+	// the years the treasurer has added — see yearsIn
+	const [addedYears, setAddedYears] = useState([])
+	// what the server found in each of those years (see toTargets)
+	const [yearContents, setYearContents] = useState({})
+	const [editingYears, setEditingYears] = useState(false)
 
 	// null until the books have loaded and can say which year to open on.
 	const [year, setYear] = useState(null)
@@ -1546,6 +1758,11 @@ export default function TreasurerAnalytics() {
 	const [queueFilter, setQueueFilter] = useState('all')
 	// the request being read rather than acted on
 	const [viewing, setViewing] = useState(null)
+	// their own receipt form: null = closed, { request } = new (null) or one
+	// being sent back; and one of their own being taken back
+	const [composing, setComposing] = useState(null)
+	const [revoking, setRevoking] = useState(null)
+	const currentUser = useCurrentUser()
 	const [error, setError] = useState(null)
 	const [exporting, setExporting] = useState(false)
 	// bumped when something outside the dues card changes a payment (deleting
@@ -1570,30 +1787,77 @@ export default function TreasurerAnalytics() {
 			setGrants(toGrants(grantRows))
 			setRequests(toRequests(requestRows))
 
-			const { goals, budgets } = toTargets(targets)
-			setGoals((previous) => ({ ...previous, ...goals }))
-			setBudgets((previous) => ({ ...previous, ...budgets }))
-
-			// open on the most recent year the books actually have rows in
-			setYear((previous) => previous ?? yearsIn(ledgerIn, ledgerOut)[0])
+			const { goals, budgets, contents, years } = toTargets(targets)
+			setGoals(goals)
+			setBudgets(budgets)
+			setAddedYears(years)
+			setYearContents(contents)
 		})
 
 	useEffect(() => {
 		load().catch((err) => setError(err.message))
 	}, [])
 
-	const years = yearsIn(income, expenses)
-	const shownYear = year ?? years[0]
+	// opens on the year we're in; the picker has the rest
+	// every year with something in it — a grant due or awarded in one brings
+	// it along like a ledger row does
+	const years = yearsIn([...income, ...expenses], [...addedYears, ...grants.map(grantYear)])
+	const shownYear = year ?? schoolYear(today())
+	const allYears = shownYear === ALL_YEARS
+
+	// A year can come off the picker only when there's nothing in it at all,
+	// and never the one we're in. What's in it is the server's answer (it
+	// knows about dues and receipts too, and refuses the delete itself); the
+	// ledger and grants on screen are checked as well, in case one has been
+	// added since that answer came back. [] = empty.
+	const current = schoolYear(today())
+	const contentsOf = (entry) => {
+		if (yearContents[entry]?.length) return yearContents[entry]
+		const reasons = []
+		if (entry === current) reasons.push('it’s this year')
+		const entries = [...income, ...expenses].filter((row) => schoolYear(row.date) === entry).length
+		if (entries) reasons.push(`${entries} ledger ${entries === 1 ? 'entry' : 'entries'}`)
+		const inYearGrants = grantsInYear(grants, entry).length
+		if (inYearGrants) reasons.push(`${inYearGrants} ${inYearGrants === 1 ? 'grant' : 'grants'}`)
+		// a year that's only in the picker because of what's filed in it has
+		// no targets row to delete
+		if (!reasons.length && !addedYears.includes(entry)) reasons.push('nothing to remove')
+		return reasons
+	}
+
+	// Adding a year is giving it a targets row (zeros until they're set on
+	// the summary cards); taking one off is deleting that row.
+	const addYear = async (entry) => {
+		setError(null)
+		try {
+			await yearTargets.set(entry, { incomeGoal: 0 })
+			await load()
+			setYear(entry)
+		} catch (err) {
+			setError(err.message)
+		}
+	}
+
+	const removeYear = async (entry) => {
+		setError(null)
+		try {
+			await yearTargets.remove(entry)
+			await load()
+			if (shownYear === entry) setYear(current)
+		} catch (err) {
+			setError(err.message)
+		}
+	}
 
 	const yearIncome = inYear(income, shownYear)
 	const yearExpenses = inYear(expenses, shownYear)
+	// an awarded grant by the year its income landed in, the rest by the year
+	// they're due — so the tracker's awarded total is the summary's grants
+	const yearGrants = grantsInYear(grants, shownYear)
 	const stats = monthStats(income, expenses)
 
-	// The ledger shows one year at a time; grants don't belong to a year the way
-	// a deposit does — an application open now is usually for next year — so
-	// that tab shows every one of them. Ordering is the card's own business.
 	const rows = tab === 'grants'
-		? grants
+		? yearGrants
 		: tab === 'income' ? yearIncome : yearExpenses
 
 	// One dialog serves three tables, so this is where the form's fields become
@@ -1622,6 +1886,9 @@ export default function TreasurerAnalytics() {
 						? previous.map((entry) => (entry.id === row.id ? mapped : entry))
 						: [...previous, mapped]
 				)
+				// awarding one (or un-awarding it) writes or takes back its
+				// income row inside Postgres, so the ledger is re-read
+				await load()
 				return
 			}
 
@@ -1650,7 +1917,7 @@ export default function TreasurerAnalytics() {
 
 			// a row dated outside the year on screen would save and then vanish,
 			// so the page follows it to the year it landed in
-			if (values.date && schoolYear(values.date) !== shownYear) {
+			if (values.date && !allYears && schoolYear(values.date) !== shownYear) {
 				setYear(schoolYear(values.date))
 			}
 		} catch (err) {
@@ -1734,6 +2001,46 @@ export default function TreasurerAnalytics() {
 	const reimburse = (request) => setStatus(request, 'reimbursed')
 
 	const queue = [...requests].sort((a, b) => b.date.localeCompare(a.date))
+	// their own, not paid out yet — what the receipts card shows
+	const mineOpen = queue.filter((request) => request.memberId === currentUser.id && request.status !== 'reimbursed')
+
+	// Their own receipt: a POST, or a PUT sending a denied one back — the same
+	// bodies the officers' page sends. The queue is re-read after, since the
+	// new request is in it.
+	const sendReceipt = async (values) => {
+		const revising = composing.request
+		const body = {
+			title: values.what,
+			explanation: values.reason,
+			category: values.category,
+			date: values.date,
+			amountRequested: values.amount,
+			receipt: values.image?.preview ?? null,
+			payoutMethod: values.payoutMethod,
+			payoutHandle: values.payoutHandle,
+		}
+		setComposing(null)
+		setError(null)
+		try {
+			if (revising) await financesApi.reviseRequest(revising.id, body)
+			else await financesApi.submitRequest(body)
+			await load()
+		} catch (err) {
+			setError(err.message)
+		}
+	}
+
+	const revokeReceipt = async () => {
+		const target = revoking
+		setRevoking(null)
+		setError(null)
+		try {
+			await financesApi.revokeRequest(target.id)
+			await load()
+		} catch (err) {
+			setError(err.message)
+		}
+	}
 
 	// the year on screen, August to July, as a spreadsheet
 	const exportLedger = async () => {
@@ -1741,7 +2048,7 @@ export default function TreasurerAnalytics() {
 		setExporting(true)
 		setError(null)
 		try {
-			await financesApi.exportLedger({ from: yearStart(shownYear), to: yearEnd(shownYear) })
+			await financesApi.exportLedger(allYears ? {} : { from: yearStart(shownYear), to: yearEnd(shownYear) })
 		} catch (err) {
 			setError(err.message)
 		} finally {
@@ -1783,7 +2090,7 @@ export default function TreasurerAnalytics() {
 						type="button"
 						onClick={exportLedger}
 						disabled={!shownYear || exporting}
-						title={shownYear ? `Download the ${shownYear} ledger as a CSV` : undefined}
+						title={shownYear ? `Download the ${yearLabel(shownYear)} ledger as a CSV` : undefined}
 						className="
 							rounded-full
 							border
@@ -1814,8 +2121,11 @@ export default function TreasurerAnalytics() {
 					<Select
 						value={shownYear}
 						onChange={setYear}
-						options={years}
+						options={[...years, ALL_YEARS]}
+						labelFor={yearLabel}
 						label="School year"
+						extraLabel="+ add or remove years…"
+						onExtra={() => setEditingYears(true)}
 					/>
 					{error && (
 						<span className="
@@ -1839,13 +2149,19 @@ export default function TreasurerAnalytics() {
 					lg:grid-cols-3
 				">
 					<BalanceCard
-						series={balanceSeries(income, expenses, shownYear)}
+						series={balanceSeries(income, expenses, shownYear, years)}
 						year={shownYear}
-						note="what was in the account at the close of each month"
+						note={allYears
+							? 'what was in the account at the close of each school year'
+							: 'what was in the account at the close of each month'}
+						opening={allYears ? null : {
+							amount: openingBalance(income, expenses, shownYear),
+							from: hasHistoryBefore(income, expenses, shownYear) ? previousYear(shownYear) : null,
+						}}
 					/>
 
 					<GrantTracker
-						grants={grants}
+						grants={yearGrants}
 						onEdit={(grant) => setEditing({ kind: 'grants', row: grant })}
 						onAdd={() => setEditing({ kind: 'grants', row: null })}
 					/>
@@ -1863,9 +2179,9 @@ export default function TreasurerAnalytics() {
 						categories={INCOME_CATEGORIES}
 						totals={totalsByCategory(yearIncome, INCOME_CATEGORIES)}
 						total={total(yearIncome)}
-						goal={goals[shownYear] ?? 0}
+						goal={forYear(goals, shownYear)}
 						goalNote="income goal"
-						onGoal={(amount) => setTarget('incomeGoal', amount)}
+						onGoal={allYears ? undefined : (amount) => setTarget('incomeGoal', amount)}
 						tint="bg-green"
 						year={shownYear}
 					/>
@@ -1875,9 +2191,9 @@ export default function TreasurerAnalytics() {
 						categories={EXPENSE_CATEGORIES}
 						totals={totalsByCategory(yearExpenses, EXPENSE_CATEGORIES)}
 						total={total(yearExpenses)}
-						goal={budgets[shownYear] ?? 0}
+						goal={forYear(budgets, shownYear)}
 						goalNote="budget spent"
-						onGoal={(amount) => setTarget('expenseBudget', amount)}
+						onGoal={allYears ? undefined : (amount) => setTarget('expenseBudget', amount)}
 						tint="bg-orange"
 						year={shownYear}
 					/>
@@ -1892,21 +2208,43 @@ export default function TreasurerAnalytics() {
 					rows={rows}
 					year={shownYear}
 					onAdd={() => setEditing({ kind: tab, row: null })}
-					onEdit={(row) => setEditing({ kind: tab, row })}
+					onEdit={(row) => {
+						// a grant's income row is edited as the grant it is
+						const grant = row.grantId && grants.find((entry) => entry.id === row.grantId)
+						setEditing(grant ? { kind: 'grants', row: grant } : { kind: tab, row })
+					}}
 					onDelete={(row) => setDeleting({ kind: tab, row })}
 				/>
 
-				<RequestQueue
-					requests={queue}
-					filter={queueFilter}
-					onFilter={setQueueFilter}
-					onApprove={approve}
-					onDeny={setDenying}
-					onReimburse={reimburse}
-					onView={setViewing}
-				/>
+				{/* their own receipts beside everyone's — the queue only gets
+				    the room it needs next to it on a wide screen */}
+				<div className="
+					grid
+					grid-cols-1
+					gap-6
+					2xl:grid-cols-3
+				">
+					<ReceiptsCard
+						receipts={mineOpen}
+						onSubmit={() => setComposing({ request: null })}
+						onRevise={(request) => setComposing({ request })}
+						onRevoke={setRevoking}
+					/>
 
-				{shownYear && (
+					<div className="2xl:col-span-2">
+						<RequestQueue
+							requests={queue}
+							filter={queueFilter}
+							onFilter={setQueueFilter}
+							onApprove={approve}
+							onDeny={setDenying}
+							onReimburse={reimburse}
+							onView={setViewing}
+						/>
+					</div>
+				</div>
+
+				{shownYear && !allYears && (
 					<DuesCard
 						key={`${shownYear}-${duesVersion}`}
 						year={shownYear}
@@ -1958,6 +2296,35 @@ export default function TreasurerAnalytics() {
 				<ReceiptDialog
 					request={viewing}
 					onClose={() => setViewing(null)}
+				/>
+			)}
+
+			{composing && (
+				<SubmitReceiptDialog
+					request={composing.request}
+					onClose={() => setComposing(null)}
+					onSave={sendReceipt}
+				/>
+			)}
+
+			{revoking && (
+				<ConfirmDialog
+					title="revoke this receipt?"
+					body={`${revoking.what} — ${money(revoking.amount)}. It leaves the queue and comes off the books' history. If you want it back you'd have to file it again.`}
+					confirmLabel="revoke it"
+					onCancel={() => setRevoking(null)}
+					onConfirm={revokeReceipt}
+				/>
+			)}
+
+			{editingYears && (
+				<YearsDialog
+					years={years}
+					current={current}
+					contentsOf={contentsOf}
+					onAdd={addYear}
+					onRemove={removeYear}
+					onClose={() => setEditingYears(false)}
 				/>
 			)}
 		</DashboardShell>

@@ -8,6 +8,13 @@ const router = express.Router()
 // mounted behind requireRole('officer') — officers get the read/analytics
 // tier; every write below raises the floor to treasurer
 
+// An awarded grant's income row is the grant — written and kept in step by
+// the grant triggers (see the fees_links_payouts_grant_income migration) — so
+// the ledger doesn't edit or delete it on its own, and nothing else can be
+// filed as one: a grant's `grantId` on an income row is the triggers' alone.
+// (On an expense, grantId is spending out of a grant, and is the treasurer's.)
+const GRANT_ROW = 'That row is an awarded grant — change it from the grant tracker'
+
 // helper: build a where clause from ?type=&category=&from=&to=
 function buildLedgerWhere(query) {
     const { type, category, from, to } = query
@@ -147,6 +154,10 @@ router.post('/', requireRole('treasurer'), async (req, res) => {
         return res.status(400).json({ message: 'amount must be a positive number' })
     }
 
+    if (type === 'income' && grantId !== undefined && grantId !== null) {
+        return res.status(400).json({ message: 'An awarded grant writes its own income row' })
+    }
+
     const data = { type, source, amount: parsedAmount, category }
     if (date !== undefined) {
         const d = new Date(date)
@@ -209,6 +220,14 @@ router.put('/:id', requireRole('treasurer'), async (req, res) => {
     }
 
     try {
+        const existing = await prisma.transaction.findUnique({ where: { transactionId }, select: { type: true, grantId: true } })
+        if (!existing) { return res.status(404).json({ message: 'Transaction not found' }) }
+        if (existing.type === 'income' && existing.grantId != null) {
+            return res.status(409).json({ message: GRANT_ROW })
+        }
+        if ((data.type ?? existing.type) === 'income' && (data.grantId ?? existing.grantId) != null) {
+            return res.status(400).json({ message: 'An awarded grant writes its own income row' })
+        }
         const transaction = await prisma.transaction.update({ where: { transactionId }, data })
         res.json(transaction)
     } catch (err) {
@@ -247,6 +266,9 @@ router.delete('/:id', requireRole('treasurer'), async (req, res) => {
             include: { dues: true }
         })
         if (!existing) { return res.status(404).json({ message: 'Transaction not found' }) }
+        if (existing.type === 'income' && existing.grantId != null) {
+            return res.status(409).json({ message: GRANT_ROW })
+        }
 
         await prisma.$transaction(async (tx) => {
             await tx.transaction.delete({ where: { transactionId } })

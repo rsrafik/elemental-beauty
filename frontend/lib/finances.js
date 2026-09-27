@@ -26,15 +26,17 @@ const MONTH_NAMES = [
 	'july', 'august', 'september', 'october', 'november', 'december',
 ]
 
-export const YEARS = ['2025–26', '2024–25']
-
 // Where money comes from, in slice order. The colours are the donut's and the
 // ledger's dots — one place, so a category can't be green in one card and
 // yellow in the other.
+//
+// 'fees' is what someone who hasn't paid dues pays at the door for a lab or a
+// members-only event — the non-member price (see src/dues.js).
 export const INCOME_CATEGORIES = [
 	{ key: 'grants', label: 'grants', color: '#A7CC70' },
 	{ key: 'fundraisers', label: 'fundraisers', color: '#FFDF2B' },
 	{ key: 'dues', label: 'dues', color: '#FF8A78' },
+	{ key: 'fees', label: 'entry fees', color: '#B07CE8' },
 	{ key: 'sponsors', label: 'sponsors', color: '#3990FA' },
 ]
 
@@ -79,18 +81,38 @@ export function statusLabel(status) {
 	return String(status ?? '').replace(/_/g, ' ')
 }
 
-// What the year was budgeted at. The starting figures — the treasurer edits
-// them from the summary cards, which is why the pages hold them in state.
-export const INCOME_GOAL = { '2025–26': 10000, '2024–25': 6000 }
-export const EXPENSE_BUDGET = { '2025–26': 9500, '2024–25': 6000 }
+// Where a receipt's money goes back to — the officer picks one on the form and
+// types the handle beside it. `handle` is that box's placeholder; cash is
+// handed over in person, so it has none. Mirrors PAYOUT_METHODS in
+// src/routes/reimbursementRoutes.js.
+export const PAYOUT_METHODS = [
+	{ key: 'zelle', label: 'Zelle', handle: 'phone number or email' },
+	{ key: 'venmo', label: 'Venmo', handle: '@username' },
+	{ key: 'cashapp', label: 'Cash App', handle: '$cashtag' },
+	{ key: 'paypal', label: 'PayPal', handle: 'email or @username' },
+	{ key: 'applecash', label: 'Apple Cash', handle: 'phone number or email' },
+	{ key: 'cash', label: 'Cash', handle: null },
+	{ key: 'check', label: 'Check', handle: 'name to make it out to' },
+	{ key: 'other', label: 'Other', handle: 'how to pay you back' },
+]
+
+export function payoutLabel(key) {
+	return PAYOUT_METHODS.find((method) => method.key === key)?.label ?? key
+}
+
+// 'Zelle · 765-555-0100', 'Cash', or '' on a request filed before the form asked
+export function payoutText(request) {
+	if (!request.payoutMethod) return ''
+	return [payoutLabel(request.payoutMethod), request.payoutHandle].filter(Boolean).join(' · ')
+}
 
 // What was in the account before the earliest row in the ledger. Nothing here
 // stores a running total — every figure on both pages is a sum over the
 // transaction rows — so this is the offset that makes "current balance" match
 // the actual bank statement rather than only the rows anyone has typed in.
 //
-// Set it to 0 if the ledger genuinely starts from nothing.
-export const OPENING_BALANCE = 980
+// 0: the club's books start from nothing — every dollar is a ledger row.
+export const OPENING_BALANCE = 0
 
 // ---- what the API sends, in the shape these pages read ----------------------
 
@@ -127,6 +149,9 @@ export function toIncome(transactions) {
 			source: row.source,
 			category: row.category,
 			amount: Number(row.amount),
+			// set on an awarded grant's row — which is the grant itself, kept
+			// in step with the tracker, and changed only from there
+			grantId: row.grantId ?? undefined,
 		}))
 }
 
@@ -159,6 +184,8 @@ export function toGrants(grants) {
 		awarded: row.amountAwarded == null ? null : Number(row.amountAwarded),
 		status: row.status,
 		due: day(row.deadline),
+		// the day it was awarded — which year its income lands in
+		granted: row.dateGranted ? day(row.dateGranted) : null,
 	}))
 }
 
@@ -181,19 +208,26 @@ export function toRequests(rows) {
 		status: row.status,
 		denialReason: row.denialExplanation ?? null,
 		previousDenial: row.previousDenial ?? null,
+		payoutMethod: row.payoutMethod ?? '',
+		payoutHandle: row.payoutHandle ?? '',
 	}))
 }
 
 // GET /year-targets -> { '2025–26': 10000 }, one map per figure, which is the
-// shape the summary cards index into.
+// shape the summary cards index into. `years` is every year that has a row —
+// the years the treasurer added, which the picker offers even before any
+// money lands in them — and `contents` what the server found in each, the
+// reasons it can't be deleted ([] when it can).
 export function toTargets(rows) {
 	const goals = {}
 	const budgets = {}
+	const contents = {}
 	for (const row of rows) {
 		goals[row.schoolYear] = Number(row.incomeGoal)
 		budgets[row.schoolYear] = Number(row.expenseBudget)
+		contents[row.schoolYear] = row.contents ?? []
 	}
-	return { goals, budgets }
+	return { goals, budgets, contents, years: rows.map((row) => row.schoolYear) }
 }
 
 // ---- numbers ---------------------------------------------------------------
@@ -255,19 +289,64 @@ export function monthSlot(date) {
 	return (Number(date.split('-')[1]) - 8 + 12) % 12
 }
 
+// The year picker's "all years": every page figure over the whole history.
+export const ALL_YEARS = 'all'
+
+// '2025–26', or 'all years'
+export function yearLabel(year) {
+	return year === ALL_YEARS ? 'all years' : year
+}
+
 export function inYear(entries, year) {
+	if (year === ALL_YEARS) return entries
 	return entries.filter((entry) => schoolYear(entry.date) === year)
 }
 
-// Which years the picker offers. Read off the ledgers rather than listed by
-// hand, so a row dated into a year nobody has used yet brings that year with
-// it instead of disappearing into a view that can't be selected. YEARS and the
-// year we're in now are folded in, so an empty year the club is partway
-// through still shows up (and its dues can be marked before any money lands).
-export function yearsIn(...lists) {
-	const found = new Set([...YEARS, schoolYear(today())])
-	for (const entry of lists.flat()) found.add(schoolYear(entry.date))
+// The school year a grant belongs to: an awarded one the year its income
+// landed in (the day it was granted), anything else the year it's due.
+export function grantYear(grant) {
+	return schoolYear(grant.status === 'awarded' && grant.granted ? grant.granted : grant.due)
+}
+
+export function grantsInYear(grants, year) {
+	if (year === ALL_YEARS) return grants
+	return grants.filter((grant) => grantYear(grant) === year)
+}
+
+// A figure kept per year (the income goal, the budget): the year's own, or
+// every year's added up for "all years".
+export function forYear(byYear, year) {
+	if (year === ALL_YEARS) return sum(Object.values(byYear))
+	return byYear[year] ?? 0
+}
+
+// Which years the picker offers, newest first. Read off the ledgers rather
+// than listed by hand, so a row dated into a year nobody has used yet brings
+// that year with it instead of disappearing into a view that can't be
+// selected. The year we're in now is always there, and so is every year the
+// treasurer has added (`added` — the year-target rows, see toTargets), so an
+// empty year still shows up and its dues can be marked before any money lands.
+export function yearsIn(ledgers, added = []) {
+	const found = new Set([...added, schoolYear(today())])
+	for (const entry of ledgers) found.add(schoolYear(entry.date))
 	return [...found].sort().reverse()
+}
+
+// '2026–27' -> '2025–26'
+export function previousYear(year) {
+	return yearFrom(Number(year.slice(0, 4)) - 1)
+}
+
+// Whether anything was filed before this year opened — false for the club's
+// first year on the books, which has nothing to carry over.
+export function hasHistoryBefore(income, expenses, year) {
+	const start = yearStart(year)
+	return [...income, ...expenses].some((entry) => entry.date < start)
+}
+
+// '2026' -> '2026–27', the en dash every school year is written with
+export function yearFrom(start) {
+	return `${start}–${String(Number(start) + 1).slice(2)}`
 }
 
 export function totalsByCategory(entries, categories) {
@@ -284,7 +363,9 @@ export function total(entries) {
 }
 
 // What was in the account the day this year opened: everything banked before
-// then, on top of the balance the books started at.
+// then, on top of the balance the books started at. This is how one year's
+// closing balance carries into the next — the new year's tables start empty,
+// but its balance line starts where the last one ended.
 export function openingBalance(income, expenses, year) {
 	const start = yearStart(year)
 	return (
@@ -296,7 +377,23 @@ export function openingBalance(income, expenses, year) {
 
 // The balance at the close of each month, which is what the chart plots. Months
 // with nothing in them hold the line flat rather than dropping it to zero.
-export function balanceSeries(income, expenses, year) {
+//
+// For "all years" it's one point per school year instead — the balance at the
+// close of each — after the balance the books started at.
+export function balanceSeries(income, expenses, year, years = []) {
+	if (year === ALL_YEARS) {
+		const series = [{ month: 'start', value: OPENING_BALANCE }]
+		for (const each of [...years].sort()) {
+			const end = yearEnd(each)
+			series.push({
+				month: each,
+				value: OPENING_BALANCE +
+					total(income.filter((entry) => entry.date <= end)) -
+					total(expenses.filter((entry) => entry.date <= end)),
+			})
+		}
+		return series
+	}
 	const net = MONTHS.map(() => 0)
 	for (const entry of inYear(income, year)) net[monthSlot(entry.date)] += entry.amount
 	for (const entry of inYear(expenses, year)) net[monthSlot(entry.date)] -= entry.amount

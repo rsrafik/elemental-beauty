@@ -219,6 +219,9 @@ export const yearTargets = {
 	// the budget, which is why this takes a partial rather than both figures.
 	set: (schoolYear, fields) =>
 		api(`/year-targets/${encodeURIComponent(schoolYear)}`, { method: 'PUT', body: fields }),
+	// takes a year off the picker (its ledger rows, if any, are untouched)
+	remove: (schoolYear) =>
+		api(`/year-targets/${encodeURIComponent(schoolYear)}`, { method: 'DELETE' }),
 }
 
 export const events = {
@@ -234,7 +237,8 @@ export const events = {
 	roster: (id) => api(`/events/${id}/roster`),
 	// action: checkin | uncheck | admit | offer | remove (with memberId) or add (with username)
 	rosterAction: (id, body) => api(`/events/${id}/roster`, { method: 'POST', body }),
-	checkin: (id, qrToken) => api(`/events/${id}/checkin`, { method: 'POST', body: { qrToken } }),
+	// `dues` answers a DUES_UNPAID reply on a members-only event, as a lab's does
+	checkin: (id, qrToken, dues) => api(`/events/${id}/checkin`, { method: 'POST', body: { qrToken, dues } }),
 	// the check-in page's "email all": { subject, message } to everyone signed up
 	emailAll: (id, message) => api(`/events/${id}/email-all`, { method: 'POST', body: message }),
 	// the check-in page's "confirmation": everyone signed up who hasn't
@@ -306,7 +310,8 @@ export const labs = {
 	roster: (id) => api(`/labs/${id}/roster`),
 	// action: checkin | uncheck | admit | offer | remove (with memberId) or add (with username)
 	rosterAction: (id, body) => api(`/labs/${id}/roster`, { method: 'POST', body }),
-	// `dues` answers a DUES_UNPAID reply: 'paid' (taken at the door) or 'waive'
+	// `dues` answers a DUES_UNPAID reply: 'paid' (dues taken at the door),
+	// 'fee' (the non-member price, for this one) or 'waive'
 	checkin: (id, qrToken, dues) => api(`/labs/${id}/checkin`, { method: 'POST', body: { qrToken, dues } }),
 	// the check-in page's "email all": { subject, message } to everyone signed up
 	emailAll: (id, message) => api(`/labs/${id}/email-all`, { method: 'POST', body: message }),
@@ -319,7 +324,8 @@ export const labs = {
 	// the check-in page's attendance spreadsheet
 	exportAttendance: (id) => download(`/labs/${id}/attendance`, 'attendance.csv'),
 
-	// Officers: the prelab handout, same shape as the lesson below.
+	// Officers: the prelab handout, same shape as the lesson below. Anyone
+	// holding a spot can open it too (prelabUrl).
 	uploadPrelab: (id, file) => uploadPdf(`/api/labs/${id}/prelab`, file),
 	removePrelab: (id) => api(`/labs/${id}/prelab`, { method: 'DELETE' }),
 	// the file itself, for "view" — a blob URL the caller revokes
@@ -378,4 +384,7 @@ export const dues = {
 	pay: ({ memberId, schoolYear, amount, paidOn }) =>
 		api('/dues', { method: 'POST', body: { memberId, schoolYear, amount, paidOn } }),
 	remove: (duesId) => api(`/dues/${duesId}`, { method: 'DELETE' }),
+	// the card's "clear": everyone reads as unpaid for the year again; the
+	// money they paid stays in the ledger
+	clear: (schoolYear) => api(`/dues?schoolYear=${encodeURIComponent(schoolYear)}`, { method: 'DELETE' }),
 }

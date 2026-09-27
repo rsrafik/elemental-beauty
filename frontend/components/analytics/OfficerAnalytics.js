@@ -26,16 +26,23 @@ import {
 import { finances as financesApi, yearTargets } from '@/lib/api'
 import { RECEIPT_MAX, shrinkImage } from '@/lib/images'
 import {
+	ALL_YEARS,
 	EXPENSE_CATEGORIES,
-	EXPENSE_BUDGET,
 	INCOME_CATEGORIES,
-	INCOME_GOAL,
+	PAYOUT_METHODS,
 	REQUEST_STATUSES,
 	balanceSeries,
+	forYear,
+	hasHistoryBefore,
+	openingBalance,
+	previousYear,
+	grantYear,
+	grantsInYear,
 	inYear,
 	money,
 	monthStats,
 	prettyDate,
+	schoolYear,
 	sum,
 	toExpenses,
 	toGrants,
@@ -43,7 +50,9 @@ import {
 	toRequests,
 	toTargets,
 	total,
+	today,
 	totalsByCategory,
+	yearLabel,
 	yearsIn,
 } from '@/lib/finances'
 
@@ -76,7 +85,7 @@ import {
 //
 // The picked photo is held as a data URL (shrunk — see lib/images.js), which
 // is both the preview and what's sent: the request stores it as-is.
-function ReceiptDialog({ request, onClose, onSave }) {
+export function ReceiptDialog({ request, onClose, onSave }) {
 	// every way out of this dialog goes through dismiss, so the card animates
 	// away whether it was cancelled or sent
 	const { closing, dismiss } = useDismiss()
@@ -88,8 +97,14 @@ function ReceiptDialog({ request, onClose, onSave }) {
 		category: request?.category ?? EXPENSE_CATEGORIES[0].key,
 		date: request?.date ?? '',
 		amount: request ? String(request.amount) : '',
+		payoutMethod: request?.payoutMethod ?? '',
+		payoutHandle: request?.payoutHandle ?? '',
 	})
 	const [image, setImage] = useState(request?.image ?? null) // { file, preview }
+
+	// where the money goes back to; cash has nothing to type
+	const payout = PAYOUT_METHODS.find((method) => method.key === form.payoutMethod)
+	const needsHandle = Boolean(payout?.handle)
 
 	const set = (field) => (event) =>
 		setForm((previous) => ({ ...previous, [field]: event.target.value }))
@@ -115,7 +130,9 @@ function ReceiptDialog({ request, onClose, onSave }) {
 		form.date !== '' &&
 		form.amount !== '' &&
 		Number.isFinite(amount) &&
-		amount > 0
+		amount > 0 &&
+		Boolean(payout) &&
+		(!needsHandle || form.payoutHandle.trim() !== '')
 
 	const submit = (event) => {
 		event.preventDefault()
@@ -128,6 +145,8 @@ function ReceiptDialog({ request, onClose, onSave }) {
 				date: form.date,
 				amount,
 				image,
+				payoutMethod: form.payoutMethod,
+				payoutHandle: needsHandle ? form.payoutHandle.trim() : '',
 			})
 		)
 	}
@@ -259,6 +278,43 @@ function ReceiptDialog({ request, onClose, onSave }) {
 					</div>
 				</label>
 
+				{/* where to send it back: the platform, and the number or
+				    username on it beside it */}
+				<div>
+					<Label>pay me back by</Label>
+					<div className="
+						grid
+						grid-cols-1
+						sm:grid-cols-[minmax(0,2fr)_minmax(0,3fr)]
+						gap-3
+					">
+						<select
+							value={form.payoutMethod}
+							onChange={set('payoutMethod')}
+							aria-label="Payout method"
+							className={`${FIELD} cursor-pointer ${form.payoutMethod ? '' : 'text-black/45'}`}
+						>
+							<option value="" disabled>choose one</option>
+							{PAYOUT_METHODS.map((method) => (
+								<option key={method.key} value={method.key} className="text-black">
+									{method.label}
+								</option>
+							))}
+						</select>
+						<input
+							type="text"
+							value={needsHandle ? form.payoutHandle : ''}
+							onChange={set('payoutHandle')}
+							disabled={!needsHandle}
+							aria-label="Where to send it"
+							placeholder={payout
+								? payout.handle ?? 'handed over in person'
+								: 'phone number or username'}
+							className={`${FIELD} disabled:bg-black/[0.04] disabled:cursor-not-allowed`}
+						/>
+					</div>
+				</div>
+
 				<div>
 					<Label>receipt photo</Label>
 					<div className="
@@ -350,7 +406,7 @@ function ReceiptDialog({ request, onClose, onSave }) {
 // been filed — the wrong amount, a duplicate, something the club ended up not
 // owing — and once the money has actually been handed over there's nothing left
 // to withdraw. Those rows aren't on this card.
-function ReceiptsCard({ receipts, onSubmit, onRevise, onRevoke }) {
+export function ReceiptsCard({ receipts, onSubmit, onRevise, onRevoke }) {
 	const owed = sum(
 		receipts
 			.filter((receipt) => receipt.status !== 'denied')
@@ -845,8 +901,10 @@ export default function OfficerAnalytics() {
 	const [income, setIncome] = useState([])
 	const [expenses, setExpenses] = useState([])
 	const [grants, setGrants] = useState([])
-	const [goals, setGoals] = useState(INCOME_GOAL)
-	const [budgets, setBudgets] = useState(EXPENSE_BUDGET)
+	const [goals, setGoals] = useState({})
+	const [budgets, setBudgets] = useState({})
+	// the years the treasurer has added (see yearsIn)
+	const [addedYears, setAddedYears] = useState([])
 
 	// Their own compensation requests, which is the half of this page they can
 	// actually change.
@@ -876,12 +934,10 @@ export default function OfficerAnalytics() {
 				setExpenses(ledgerOut)
 				setRequests(toRequests(mine))
 
-				const { goals, budgets } = toTargets(targets)
-				setGoals((previous) => ({ ...previous, ...goals }))
-				setBudgets((previous) => ({ ...previous, ...budgets }))
-
-				// open on the most recent year the books actually have rows in
-				setYear((previous) => previous ?? yearsIn(ledgerIn, ledgerOut)[0])
+				const { goals, budgets, years } = toTargets(targets)
+				setGoals(goals)
+				setBudgets(budgets)
+				setAddedYears(years)
 			})
 			.catch((err) => live && setError(err.message))
 
@@ -895,8 +951,11 @@ export default function OfficerAnalytics() {
 		return () => { live = false }
 	}, [])
 
-	const years = yearsIn(income, expenses)
-	const shownYear = year ?? years[0]
+	// opens on the year we're in; the picker has the rest
+	// every year with something in it; "all years" is the whole history
+	const years = yearsIn([...income, ...expenses], [...addedYears, ...grants.map(grantYear)])
+	const shownYear = year ?? schoolYear(today())
+	const allYears = shownYear === ALL_YEARS
 
 	const yearIncome = inYear(income, shownYear)
 	const yearExpenses = inYear(expenses, shownYear)
@@ -923,6 +982,8 @@ export default function OfficerAnalytics() {
 			amountRequested: values.amount,
 			// the picked photo, as a data URL — see the note on the dialog
 			receipt: values.image?.preview ?? null,
+			payoutMethod: values.payoutMethod,
+			payoutHandle: values.payoutHandle,
 		}
 
 		setComposing(null)
@@ -997,7 +1058,8 @@ export default function OfficerAnalytics() {
 					<Select
 						value={shownYear}
 						onChange={setYear}
-						options={years}
+						options={[...years, ALL_YEARS]}
+						labelFor={yearLabel}
 						label="School year"
 					/>
 					{error && (
@@ -1021,12 +1083,19 @@ export default function OfficerAnalytics() {
 					lg:grid-cols-3
 				">
 					<BalanceCard
-						series={balanceSeries(income, expenses, shownYear)}
+						series={balanceSeries(income, expenses, shownYear, years)}
 						year={shownYear}
-						note="what was in the account at the close of each month"
+						note={allYears
+							? 'what was in the account at the close of each school year'
+							: 'what was in the account at the close of each month'}
+						opening={allYears ? null : {
+							amount: openingBalance(income, expenses, shownYear),
+							from: hasHistoryBefore(income, expenses, shownYear) ? previousYear(shownYear) : null,
+						}}
 					/>
 
-					<GrantTracker grants={grants} />
+					{/* by the year an awarded grant landed in, or the rest are due */}
+					<GrantTracker grants={grantsInYear(grants, shownYear)} />
 				</div>
 
 				{/* the two summaries, side by side so the split reads as one pair */}
@@ -1041,7 +1110,7 @@ export default function OfficerAnalytics() {
 						categories={INCOME_CATEGORIES}
 						totals={totalsByCategory(yearIncome, INCOME_CATEGORIES)}
 						total={total(yearIncome)}
-						goal={goals[shownYear] ?? 0}
+						goal={forYear(goals, shownYear)}
 						goalNote="income goal"
 						tint="bg-green"
 						year={shownYear}
@@ -1052,7 +1121,7 @@ export default function OfficerAnalytics() {
 						categories={EXPENSE_CATEGORIES}
 						totals={totalsByCategory(yearExpenses, EXPENSE_CATEGORIES)}
 						total={total(yearExpenses)}
-						goal={budgets[shownYear] ?? 0}
+						goal={forYear(budgets, shownYear)}
 						goalNote="budget spent"
 						tint="bg-orange"
 						year={shownYear}
