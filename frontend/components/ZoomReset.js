@@ -3,69 +3,55 @@
 import { useEffect } from 'react'
 import { usePathname } from 'next/navigation'
 
-// Undoes the zoom an iPhone puts on the page when a field is tapped.
+// Stops an iPhone zooming the page in when a field is tapped.
 //
-// Safari zooms in on any field whose text is under 16px, and every browser on
-// an iPhone is Safari underneath. It never zooms back out on its own, and the
-// zoom outlives the page: sign in with Enter and the dashboard arrives already
-// zoomed in. So once nothing is being typed into — focus has left the fields,
-// or a new page has come up — this puts the zoom back where it was.
+// Safari zooms in on any field whose text is under 16px (the site's are 13–14),
+// and every browser on an iPhone is Safari underneath. It never zooms back out,
+// and the zoom outlives the page: sign in with Enter and the dashboard arrives
+// already zoomed in.
 //
-// There's no call for setting the zoom. What there is: a viewport that says
-// `maximum-scale=1` pulls the page back to 1, and taking that back off a moment
-// later leaves pinch-zoom working as before. That's the whole trick.
+// The fix is `maximum-scale=1` on the viewport, on iOS only. There it stops the
+// focus zoom and nothing else: iOS has ignored maximum-scale for pinching since
+// iOS 10, so people can still zoom in by hand. Android is left alone because
+// Chrome there does honour it, and would lose pinch-zoom.
 //
-// Only the zoom a field caused is undone. The scale is noted when a field is
-// first focused; if the page was already pinched in by hand at that point, it's
-// left alone.
+// (The first version waited for the field to lose focus and then flicked the
+// limit on and off to pull the zoom back out. On a real phone that didn't
+// work — the page stayed zoomed — so now the zoom never happens.)
+//
+// Next writes the viewport tag itself and rewrites it when a page with its own
+// viewport (/login) comes or goes, so the limit is put back after every page
+// change and whenever the tag's content is changed out from under it.
 
-const TYPING = 'input:not([type=checkbox], [type=radio], [type=button], [type=submit], [type=file], [type=range], [type=color]), textarea, select, [contenteditable="true"]'
+const LIMIT = 'maximum-scale=1'
 
-const scale = () => window.visualViewport?.scale ?? 1
+function isIOS() {
+	const ua = navigator.userAgent
+	// iPadOS reports itself as a Mac; the touch points give it away
+	return /iP(hone|ad|od)/.test(ua) || (/Macintosh/.test(ua) && navigator.maxTouchPoints > 1)
+}
 
-let before = null  // the scale when a field took focus, while one has it
-
-function zoomBack() {
-	const started = before
-	before = null
-	// nothing to undo: no field zoomed us, we'd been pinched in already, or
-	// the field didn't actually zoom
-	if (started == null || started > 1.01 || scale() <= started + 0.01) return
-
+function limit() {
 	const meta = document.querySelector('meta[name="viewport"]')
-	if (!meta) return
-	const content = meta.getAttribute('content')
-	meta.setAttribute('content', `${content}, maximum-scale=1`)
-	// long enough for Safari to apply it, then pinch-zoom is handed back
-	setTimeout(() => meta.setAttribute('content', content), 300)
+	const content = meta?.getAttribute('content')
+	if (!meta || content.includes('maximum-scale')) return
+	meta.setAttribute('content', `${content}, ${LIMIT}`)
 }
 
 export default function ZoomReset() {
 	const pathname = usePathname()
 
 	useEffect(() => {
-		const onFocusIn = (event) => {
-			if (before == null && event.target.matches?.(TYPING)) before = scale()
-		}
-		// focus moving from one field straight to the next isn't leaving —
-		// wait for the new one to take it before deciding
-		const onFocusOut = () => {
-			setTimeout(() => {
-				if (!document.activeElement?.matches?.(TYPING)) zoomBack()
-			}, 0)
-		}
-		document.addEventListener('focusin', onFocusIn)
-		document.addEventListener('focusout', onFocusOut)
-		return () => {
-			document.removeEventListener('focusin', onFocusIn)
-			document.removeEventListener('focusout', onFocusOut)
-		}
+		if (!isIOS()) return
+		limit()
+		// the tag rewritten or swapped by Next's head management
+		const observer = new MutationObserver(limit)
+		observer.observe(document.head, { subtree: true, childList: true, attributes: true, attributeFilter: ['content'] })
+		return () => observer.disconnect()
 	}, [])
 
-	// A new page: the field that zoomed us may have been taken away with the
-	// old one without ever reporting that it lost focus.
 	useEffect(() => {
-		if (!document.activeElement?.matches?.(TYPING)) zoomBack()
+		if (isIOS()) limit()
 	}, [pathname])
 
 	return null

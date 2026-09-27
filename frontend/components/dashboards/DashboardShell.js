@@ -17,6 +17,13 @@ import { navFor, showInstagramFor } from '@/lib/nav'
 // Below `lg` it pins the page to the visible height and switches off page
 // scrolling, so a swipe can't drag the panels up under the menu bar.
 //
+// `overflow-clip`, not `overflow-hidden`, to switch it off: hidden makes the
+// page a scroll container, and a sticky child of a scroll container gets that
+// container's padding added to its offset — the menu bar slid 16px down onto
+// the gap under it. Clip hides the overflow without being one. The menu bar's
+// place there (32px down, 48px from `sm`) is kept on purpose with the top
+// padding instead; the pages' panels are sized to it (MemberLabs, MemberEvents).
+//
 // The sidebar figures out which item is active from the URL, so there's
 // nothing to pass in for that. The menu it's given comes from the signed-in
 // role, so it can't offer a page the API would then refuse.
@@ -44,7 +51,7 @@ export default function DashboardShell({
 		<main className={`
 			bg-cream
 			w-full
-			${fit ? 'h-dvh overflow-hidden' : 'min-h-svh'}
+			${fit ? 'h-dvh overflow-clip pt-8 sm:pt-12' : 'min-h-svh'}
 			lg:h-screen
 			overflow-x-clip
 			lg:overflow-hidden

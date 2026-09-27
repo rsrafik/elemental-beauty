@@ -509,9 +509,13 @@ function LabGrid({ items, icons, renderAction }) {
 			overflow-y-auto
 			p-3
 		">
+			{/* one card across on a phone, at 85% of the panel's width —
+			    full width made each card too big for the panel it sits in */}
 			<div className="
 				grid
 				grid-cols-1
+				max-sm:mx-auto
+				max-sm:w-[85%]
 				sm:grid-cols-2
 				xl:grid-cols-3
 				2xl:grid-cols-4
@@ -760,8 +764,8 @@ export default function MemberLabs() {
 				page-plain
 				${TAB_SIZES}
 				relative
-				h-[calc(100dvh-7rem)]
-				sm:h-[calc(100dvh-8rem)]
+				h-[calc(100dvh-8rem)]
+				sm:h-[calc(100dvh-9.5rem)]
 				lg:h-auto
 				lg:absolute
 				lg:inset-0
