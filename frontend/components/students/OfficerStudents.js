@@ -15,8 +15,9 @@ import ActivityLog from '@/components/students/ActivityLog'
 //
 // Accounts that haven't become members yet are on it too, as role 'user':
 // signed up, but the email link or the waiver is still outstanding. They have
-// no member row, so no points and no role to change — just a place on the sheet
-// so an officer can see they exist.
+// no member row, so no points. An admin can still pick them a role from the
+// same pill as everyone else, which makes them a member on the spot — vouched
+// for in person, the same footing as adding a student from scratch.
 //
 // The page keeps the cream background and the white stops at the table, so the
 // roster reads as a sheet of paper laid on the desk rather than a second app
@@ -481,8 +482,13 @@ function RoleMenu({ anchor, current, onPick, onClose }) {
 		}
 	}, [onClose])
 
+	// 'user' is listed only while it's the current role, so the menu shows where
+	// the row stands — nothing can be moved back to it, since that would mean
+	// taking away a membership rather than changing one
+	const options = current === 'user' ? ['user', ...ROLES] : ROLES
+
 	// flips above the pill when the last rows don't leave room below
-	const height = ROLES.length * 36 + 16
+	const height = options.length * 36 + 16
 	const below = anchor.bottom + 6
 	const top = below + height > window.innerHeight ? anchor.top - height - 6 : below
 
@@ -503,7 +509,7 @@ function RoleMenu({ anchor, current, onPick, onClose }) {
 				shadow-[0_10px_30px_rgba(0,0,0,0.2)]
 			"
 		>
-			{ROLES.map((role) => (
+			{options.map((role) => (
 				<button
 					key={role}
 					type="button"
@@ -1433,14 +1439,19 @@ export default function OfficerStudents() {
 	// Applied to the table first and rolled back if the API refuses: the menu
 	// closes on click, so leaving the pill on the old role until a round trip
 	// finishes reads as the click having missed.
+	//
+	// A 'user' row picking a role is a promotion: the server makes the member
+	// row, and they start on 0 points like anyone new.
 	const changeRole = async (next) => {
 		const id = roleMenu.id
-		const previous = students.find((student) => student.id === id)?.role
+		const before = students.find((student) => student.id === id)
 		setRoleMenu(null)
+		if (!before || next === before.role) return
 		setError(null)
 
+		const points = before.role === 'user' ? 0 : before.points
 		setStudents((prev) =>
-			prev.map((student) => (student.id === id ? { ...student, role: next } : student))
+			prev.map((student) => (student.id === id ? { ...student, role: next, points } : student))
 		)
 
 		try {
@@ -1448,7 +1459,9 @@ export default function OfficerStudents() {
 		} catch (err) {
 			setStudents((prev) =>
 				prev.map((student) =>
-					student.id === id ? { ...student, role: previous } : student
+					student.id === id
+						? { ...student, role: before.role, points: before.points }
+						: student
 				)
 			)
 			setError(err.message)
@@ -1815,12 +1828,7 @@ export default function OfficerStudents() {
 										    else the role is a plain label, with no caret
 										    advertising a menu they can't open */}
 										<td className="px-2 py-2.5">
-											{student.role === 'user' ? (
-												<RoleTag
-													role="user"
-													title="not a member yet — becomes one once they confirm their email and sign the waiver"
-												/>
-											) : isAdmin ? (
+											{isAdmin ? (
 												<RolePill
 													role={student.role}
 													open={roleMenu?.id === student.id}

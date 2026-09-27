@@ -78,9 +78,15 @@ export default function WaiverPopup({ onClose, onSign }) {
 
 		async function draw() {
 			try {
-				const pdfjs = await import('pdfjs-dist')
+				// The legacy build, not the default one. pdf.js 6 calls methods
+				// so new — Map#getOrInsertComputed, Math.sumPrecise — that the
+				// Safari on most iPhones doesn't have them, and the default build
+				// dies with "getOrInsertComputed is not a function". Legacy ships
+				// the same code with those polyfilled. The worker has to match:
+				// it runs the same code in its own thread, with its own globals.
+				const pdfjs = await import('pdfjs-dist/legacy/build/pdf.mjs')
 				pdfjs.GlobalWorkerOptions.workerSrc = new URL(
-					'pdfjs-dist/build/pdf.worker.min.mjs',
+					'pdfjs-dist/legacy/build/pdf.worker.min.mjs',
 					import.meta.url
 				).toString()
 				task = pdfjs.getDocument({ url: WAIVER_URL })

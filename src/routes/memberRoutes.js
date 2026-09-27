@@ -508,7 +508,24 @@ router.put('/:id/role', requireRole('admin'), async (req, res) => {
     try {
         const updated = await prisma.$transaction(async (tx) => {
             const before = await tx.member.findUnique({ where: { userId: targetId }, select: { role: true } })
-            if (!before) { throw Object.assign(new Error('Member not found'), { code: 'P2025' }) }
+
+            // No member row: an account that signed up and stopped short of the
+            // email link or the waiver ('user' on /students). Giving it a role
+            // makes it a member there and then — the admin is vouching for them
+            // in person, the same footing as adding a student, so both gates
+            // are marked passed the way that route marks them.
+            if (!before) {
+                const user = await tx.user.findUnique({ where: { userId: targetId }, select: { userId: true } })
+                if (!user) { throw Object.assign(new Error('Member not found'), { code: 'P2025' }) }
+                await tx.user.update({
+                    where: { userId: targetId },
+                    data: { emailVerified: true, waiverSigned: true }
+                })
+                const member = await tx.member.create({ data: { userId: targetId, role } })
+                await log({ actorId: req.userId, action: 'role_changed', targetId, details: { from: 'user', to: role } }, tx)
+                return member
+            }
+
             const member = await tx.member.update({
                 where: { userId: targetId },
                 data: { role }
@@ -521,6 +538,9 @@ router.put('/:id/role', requireRole('admin'), async (req, res) => {
         res.json(updated)
     } catch (err) {
         if (err.code === 'P2025') { return res.status(404).json({ message: 'Member not found' }) }
+        // two admins promoting the same account at once: the second finds the
+        // member row already made
+        if (err.code === 'P2002') { return res.status(409).json({ message: 'They were just made a member — reload to see it' }) }
         console.error(err.message)
         res.sendStatus(500)
     }

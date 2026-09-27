@@ -112,3 +112,37 @@ test('an officer can remove an account that never became a member', { skip }, as
     })
     assert.equal(await prisma.user.findUnique({ where: { userId: account } }), null)
 })
+
+test('an admin giving an account a role makes it a member, with both gates marked passed', { skip }, async () => {
+    const admin = await person('admin')
+    const account = await person(null)
+
+    await as(admin, 'admin', async (base) => {
+        const reply = await fetch(`${base}/${account}/role`, {
+            method: 'PUT',
+            headers: { 'content-type': 'application/json' },
+            body: JSON.stringify({ role: 'member' })
+        })
+        assert.equal(reply.status, 200)
+    })
+    const user = await prisma.user.findUnique({ where: { userId: account }, include: { member: true } })
+    assert.equal(user.member.role, 'member')
+    assert.equal(user.member.points, 0)
+    assert.equal(user.emailVerified, true)
+    assert.equal(user.waiverSigned, true)
+    const entry = await prisma.activityLog.findFirst({ where: { targetId: account, action: 'role_changed' } })
+    assert.deepEqual(entry.details, { from: 'user', to: 'member' })
+})
+
+test('an officer cannot promote an account — role changes are an admin\'s', { skip }, async () => {
+    const officer = await person('officer')
+    const account = await person(null)
+    await as(officer, 'officer', async (base) => {
+        const reply = await fetch(`${base}/${account}/role`, {
+            method: 'PUT',
+            headers: { 'content-type': 'application/json' },
+            body: JSON.stringify({ role: 'member' })
+        })
+        assert.equal(reply.status, 403)
+    })
+})
