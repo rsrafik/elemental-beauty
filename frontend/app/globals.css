@@ -445,6 +445,13 @@ html:has(.auth-page) body {
   background: #FDF4E0;
 }
 
+/* …and it doesn't rubber-band. Pulled down past the top, iOS drags the whole
+   page with your finger, so the bamboo band — which is meant to sit against the
+   top edge — comes away from it with cream showing above. */
+html:has(.auth-page) {
+  overscroll-behavior-y: none;
+}
+
 /* ---- the grove opening ----------------------------------------------------
  *
  * On load both edges of /login start at no width and grow to whatever their

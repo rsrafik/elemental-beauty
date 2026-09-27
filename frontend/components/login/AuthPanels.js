@@ -1,6 +1,7 @@
 'use client'
 
 import { useEffect, useRef, useState } from 'react'
+import { preload } from 'react-dom'
 import { useRouter } from 'next/navigation'
 
 import FoldText from '@/components/FoldText'
@@ -140,7 +141,17 @@ const UNFOLD = {
 	creaseShading: 0
 }
 
+// A JPEG, not the PNG it was cut from: the artwork has no transparency to
+// keep, and the PNG was 2.9 MB — on a phone the band had finished opening long
+// before the picture arrived, so it flashed in empty and the grove popped in
+// after. This is about a fifth of that.
+const BAMBOO = '/bamboo.jpg'
+
 export default function AuthPanels() {
+	// Asked for in the <head>, ahead of the fonts and scripts, rather than
+	// whenever the <img> is reached — it's the first thing the page shows.
+	preload(BAMBOO, { as: 'image', fetchPriority: 'high' })
+
 	const [front, setFront] = useState('login')
 
 	// The forgot-password dialog. Email verification is switched off, so signing
@@ -353,7 +364,7 @@ function Bamboo() {
 				md:w-[20vw]
 			">
 				<img
-					src="/bamboo.png"
+					src={BAMBOO}
 					alt=""
 					className="
 						absolute
@@ -377,7 +388,7 @@ function Bamboo() {
 				md:w-[20vw]
 			">
 				<img
-					src="/bamboo.png"
+					src={BAMBOO}
 					alt=""
 					className="
 						absolute
@@ -428,7 +439,7 @@ function BambooBand({ edge }) {
 			`}
 		>
 			<img
-				src="/bamboo.png"
+				src={BAMBOO}
 				alt=""
 				className={`
 					absolute
