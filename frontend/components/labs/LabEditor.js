@@ -4,6 +4,7 @@ import { useEffect, useRef, useState, useSyncExternalStore } from 'react'
 import { useRouter } from 'next/navigation'
 import DashboardShell from '@/components/dashboards/DashboardShell'
 import { BackButton, useDesignZoom } from '@/components/labs/LabViewParts'
+import MemberLabContent from '@/components/labs/MemberLabContent'
 import {
 	INSET,
 	EditorButton,
@@ -435,6 +436,71 @@ function StepsBox({ id, value, onChange, invalid, title }) {
 	)
 }
 
+// ---- preview ---------------------------------------------------------------
+
+function EyeIcon({ off = false, className }) {
+	return (
+		<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" className={className} aria-hidden="true">
+			<path d="M2 12s3.6-7 10-7 10 7 10 7-3.6 7-10 7S2 12 2 12Z" />
+			<circle cx="12" cy="12" r="3" />
+			{off && <path d="M4 4l16 16" />}
+		</svg>
+	)
+}
+
+// The eye beside the back arrow: shows the lab as a member will see it once
+// they're through the quiz, built from what's in the form right now — saved or
+// not — and back to the editor on a second press.
+function PreviewToggle({ on, onToggle }) {
+	return (
+		<button
+			type="button"
+			onClick={onToggle}
+			aria-pressed={on}
+			aria-label={on ? 'Back to editing' : 'Preview as a member'}
+			title={on ? 'back to editing' : 'preview as a member'}
+			className="
+				w-8
+				h-8
+				flex
+				items-center
+				justify-center
+				cursor-pointer
+				text-black
+				transition-transform
+				duration-200
+				ease-out
+				hover:scale-110
+				active:scale-95
+			"
+		>
+			<EyeIcon off={on} className="w-8 h-8" />
+		</button>
+	)
+}
+
+// The form as the member page's lab row: the same fields toBody would save,
+// under the names GET /api/labs/:id gives them. A lesson picked but not yet
+// uploaded is handed over as the file itself so the preview can show it.
+function previewLab(form, { id, lesson, lab }) {
+	const body = toBody(form)
+	return {
+		labId: id ? Number(id) : null,
+		title: body.title,
+		description: body.description,
+		image: body.image,
+		date: body.date,
+		startTime: body.startTime,
+		location: body.location,
+		ingredients: body.ingredients,
+		equipment: body.equipment,
+		instructions: body.instructions,
+		hasLesson: Boolean(lesson || lab?.hasLesson),
+		lessonPdfName: lesson?.name ?? lab?.lessonPdfName,
+		lessonFile: lesson,
+	}
+}
+
 // ---- page ------------------------------------------------------------------
 
 export default function LabEditor({ id }) {
@@ -448,6 +514,7 @@ export default function LabEditor({ id }) {
 	const [missing, setMissing] = useState(() => new Set())
 	const [status, setStatus] = useState(null)
 	const [busy, setBusy] = useState(false)
+	const [previewing, setPreviewing] = useState(false)
 	const [dirty, setDirty] = useState(false)
 	const [confirmDiscard, setConfirmDiscard] = useState(false)
 	const coverInput = useRef(null)
@@ -586,6 +653,27 @@ export default function LabEditor({ id }) {
 
 	const lessonName = lesson?.name ?? lab?.lessonPdfName
 
+	const toggle = form && (
+		<PreviewToggle on={previewing} onToggle={() => setPreviewing((on) => !on)} />
+	)
+
+	// The member page's own frame (see MemberLabView) — the content bleeds over
+	// the shell's padding on the top, right and bottom the way it does there.
+	if (previewing && form) {
+		return (
+			<DashboardShell className="
+				lg:-mt-8
+				lg:-mb-8
+				lg:-mr-8
+				lg:py-8
+				lg:pr-8
+			">
+				<BackButton before={toggle} />
+				<MemberLabContent lab={previewLab(form, { id, lesson, lab })} />
+			</DashboardShell>
+		)
+	}
+
 	return (
 		<DashboardShell className="
 			lg:-mt-8
@@ -593,7 +681,7 @@ export default function LabEditor({ id }) {
 			lg:-mr-8
 			lg:overflow-hidden!
 		">
-			<BackButton />
+			<BackButton before={toggle} />
 			{!form ? (
 				<p className="
 					mt-20

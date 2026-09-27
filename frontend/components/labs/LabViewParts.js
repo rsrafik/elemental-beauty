@@ -276,7 +276,11 @@ const BACK_CLASS = `
 // back by the zoom because `zoom` multiplies top/right as well.
 const SHELL_PAD = 32
 
-export function BackButton({ href = '/labs', label = 'Back to labs' }) {
+//
+// `before` is anything that belongs beside it — the lab editor's preview eye —
+// laid to its left in both places, so it rides along with the arrow wherever
+// the arrow is pinned.
+export function BackButton({ href = '/labs', label = 'Back to labs', before = null }) {
 	const zoom = useDesignZoom()
 	const mounted = useSyncExternalStore(subscribe, () => true, () => false)
 	const top = (SHELL_PAD - 4 * zoom) / zoom
@@ -287,9 +291,12 @@ export function BackButton({ href = '/labs', label = 'Back to labs' }) {
 			<div className="
 				flex
 				justify-end
+				items-center
+				gap-4
 				mb-4
 				lg:hidden
 			">
+				{before}
 				<Link
 					href={href}
 					aria-label={label}
@@ -300,22 +307,26 @@ export function BackButton({ href = '/labs', label = 'Back to labs' }) {
 			</div>
 
 			{mounted && createPortal(
-				<Link
-					href={href}
-					aria-label={label}
+				<div
 					style={{ zoom, top, right }}
-					className={`
+					className="
 						hidden
 						lg:flex
 						fixed
 						z-40
-						w-8
-						h-8
-						${BACK_CLASS}
-					`}
+						items-center
+						gap-4
+					"
 				>
-					<BackArrowIcon className="w-8 h-8" />
-				</Link>,
+					{before}
+					<Link
+						href={href}
+						aria-label={label}
+						className={`w-8 h-8 ${BACK_CLASS}`}
+					>
+						<BackArrowIcon className="w-8 h-8" />
+					</Link>
+				</div>,
 				document.body
 			)}
 		</>

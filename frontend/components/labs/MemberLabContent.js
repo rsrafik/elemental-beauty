@@ -318,6 +318,7 @@ export default function MemberLabContent({ lab }) {
 						lab.hasLesson ? (
 							<LabLesson
 								labId={lab.labId}
+								file={lab.lessonFile}
 								fileName={lab.lessonPdfName}
 								zoom={zoom * viewZoom}
 								style={{ height: lessonHeight }}

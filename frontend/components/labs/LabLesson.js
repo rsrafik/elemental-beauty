@@ -440,7 +440,9 @@ function Thumbnail({ doc, number, active, onClick }) {
 
 // ---- viewer ----------------------------------------------------------------
 
-export default function LabLesson({ labId, fileName, zoom = 1, style }) {
+// `file` shows a PDF that hasn't been uploaded yet instead of the lab's saved
+// one — the editor's member preview, with a new lesson picked but not saved.
+export default function LabLesson({ labId, file = null, fileName, zoom = 1, style }) {
 	const rootRef = useRef(null)
 	const containerRef = useRef(null)
 	const viewerRef = useRef(null)
@@ -480,7 +482,7 @@ export default function LabLesson({ labId, fileName, zoom = 1, style }) {
 				const { EventBus, PDFLinkService, PDFViewer, LinkTarget } =
 					await import('pdfjs-dist/legacy/web/pdf_viewer.mjs')
 
-				const data = await labsApi.lesson(labId)
+				const data = file ? await file.arrayBuffer() : await labsApi.lesson(labId)
 				if (!live) return
 				// pdf.js takes the buffer over, so keep a copy for the download
 				bytes.current = data.slice()
@@ -531,7 +533,7 @@ export default function LabLesson({ labId, fileName, zoom = 1, style }) {
 			task?.destroy()
 			pdfViewer.current = null
 		}
-	}, [labId])
+	}, [labId, file])
 
 	const goTo = (n) => {
 		const viewer = pdfViewer.current
