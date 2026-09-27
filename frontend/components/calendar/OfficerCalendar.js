@@ -4,10 +4,11 @@ import { useEffect, useState } from 'react'
 import { useDismiss } from '@/lib/dismiss'
 import DashboardShell from '@/components/dashboards/DashboardShell'
 import { eventCategories, events as eventsApi, labs as labsApi } from '@/lib/api'
-import { buildMonths, typesIn } from '@/lib/calendar'
+import { buildMonths, calendarOnly, typesIn } from '@/lib/calendar'
 import { thisMonth } from '@/lib/dates'
 import { hiddenTracks } from '@/lib/roles'
 import { useRole } from '@/lib/session'
+import { EventDialog as EditEventDialog, toCard } from '@/components/events/OfficerEvents'
 
 // /calendar for officer / treasurer / admin: the member month view, plus the
 // button that puts something new on it.
@@ -511,13 +512,88 @@ function Pill({ children, className = '' }) {
 	)
 }
 
+// What a cell (and the agenda under the grid on a phone) says about one thing:
+// its tag, its name, and its time and room when it has them.
+function EntryText({ entry }) {
+	return (
+		<>
+			<p className="
+				font-vietnam
+				text-[10px]
+				uppercase
+				tracking-[0.12em]
+				text-black/45
+			">
+				{entry.type}
+			</p>
+			<p className="
+				font-vietnam
+				text-sm
+				leading-tight
+				text-black
+				mt-0.5
+			">
+				{entry.title}
+			</p>
+			{entry.time && (
+				<p className="
+					font-vietnam
+					text-xs
+					text-black/50
+					mt-0.5
+				">
+					{prettyTime(entry.time)}
+				</p>
+			)}
+			{entry.location && (
+				<p className="
+					font-vietnam
+					text-xs
+					text-black/50
+					mt-0.5
+				">
+					{entry.location}
+				</p>
+			)}
+		</>
+	)
+}
+
+// Events /events doesn't list — the board's and meetings (see calendarOnly) —
+// can only be edited from here, so their entry is a button that opens the
+// editor. Everything else is edited where it's listed, and stays plain text.
+const editableHere = (entry) => entry.eventId != null && calendarOnly(entry.track, entry.type)
+
+function Entry({ entry, onOpen }) {
+	if (!editableHere(entry)) return <EntryText entry={entry} />
+	return (
+		<button
+			type="button"
+			onClick={() => onOpen(entry)}
+			aria-label={`Edit ${entry.title}`}
+			className="
+				block
+				w-full
+				text-left
+				cursor-pointer
+				rounded-[6px]
+				transition-opacity
+				duration-200
+				hover:opacity-60
+			"
+		>
+			<EntryText entry={entry} />
+		</button>
+	)
+}
+
 // One square of the grid. Out-of-month days keep their number but lose the
 // badge, which is what makes the month itself read as a block. The badge takes
 // its colour from the first thing on the day.
 // `wave` is the cell's row plus its column, handed to the entrance animation as
 // --wave: every cell on the same diagonal arrives together and each diagonal
 // follows the one before it, so the month washes in from the top-left corner.
-function Day({ number, inMonth, entries: dayEntries, wave = 0 }) {
+function Day({ number, inMonth, entries: dayEntries, wave = 0, onOpen }) {
 	const first = dayEntries[0]
 	const badge = first ? TRACKS[first.track].pill : 'bg-black text-cream'
 	return (
@@ -569,34 +645,7 @@ function Day({ number, inMonth, entries: dayEntries, wave = 0 }) {
 					md:block
 					mt-3
 				">
-					<p className="
-						font-vietnam
-						text-[10px]
-						uppercase
-						tracking-[0.12em]
-						text-black/45
-					">
-						{entry.type}
-					</p>
-					<p className="
-						font-vietnam
-						text-sm
-						leading-tight
-						text-black
-						mt-0.5
-					">
-						{entry.title}
-					</p>
-					{entry.time && (
-						<p className="
-							font-vietnam
-							text-xs
-							text-black/50
-							mt-0.5
-						">
-							{prettyTime(entry.time)}
-						</p>
-					)}
+					<Entry entry={entry} onOpen={onOpen} />
 				</div>
 			))}
 		</div>
@@ -606,7 +655,7 @@ function Day({ number, inMonth, entries: dayEntries, wave = 0 }) {
 // What the cells can't say on a narrow screen. Every entry the month holds, in
 // date order, carrying the same badge colour its cell does so the list and the
 // grid read as the same thing.
-function Agenda({ days }) {
+function Agenda({ days, onOpen }) {
 	if (!days.length) return null
 	return (
 		<div className="
@@ -665,35 +714,11 @@ function Agenda({ days }) {
 							`}>
 								{number}
 							</span>
-							<div className="min-w-0">
-								<p className="
-									font-vietnam
-									text-[10px]
-									uppercase
-									tracking-[0.12em]
-									text-black/45
-								">
-									{entry.type}
-								</p>
-								<p className="
-									font-vietnam
-									text-sm
-									leading-tight
-									text-black
-									mt-0.5
-								">
-									{entry.title}
-								</p>
-								{entry.time && (
-									<p className="
-										font-vietnam
-										text-xs
-										text-black/50
-										mt-0.5
-									">
-										{prettyTime(entry.time)}
-									</p>
-								)}
+							<div className="
+								min-w-0
+								flex-1
+							">
+								<Entry entry={entry} onOpen={onOpen} />
 							</div>
 						</li>
 					))
@@ -1144,11 +1169,17 @@ export default function OfficerCalendar() {
 	// into January of the next year on its own.
 	const [view, setView] = useState(thisMonth)
 	const [dialogOpen, setDialogOpen] = useState(false)
+	// The event open in the editor, as /events' cards shape it — set by
+	// clicking one of the calendar-only entries (see Entry), null when closed.
+	const [editing, setEditing] = useState(null)
 
 	// Every lab and event, keyed by month then day. Fetched once and stepped
 	// through locally — the club's calendar is small enough that a request per
 	// month would be more round trips than rows.
 	const [months, setMonths] = useState({})
+	// The rows behind them, for the editor: an entry only carries what the
+	// cell prints, and the form wants the whole event.
+	const [eventRows, setEventRows] = useState([])
 
 	// The tag list, as rows in event_categories. `types` is what the legend
 	// draws (names, including 'Lab' and anything an event still carries whose
@@ -1169,6 +1200,7 @@ export default function OfficerCalendar() {
 				// drafts aren't happening yet — they stay on /labs until published
 				const built = buildMonths(labs.filter((lab) => lab.published !== false), events)
 				setMonths(built)
+				setEventRows(events)
 				setCategories(tags)
 				setTypes(typesIn(built, tags))
 				return true
@@ -1266,6 +1298,46 @@ export default function OfficerCalendar() {
 			setError(err.message)
 		}
 		setDialogOpen(false)
+	}
+
+	const openEntry = (entry) => {
+		const row = eventRows.find((event) => event.eventId === entry.eventId)
+		if (row) setEditing(toCard(row))
+	}
+
+	// The editor's save and delete, for a calendar-only event. Same body /events
+	// sends; the whole page reloads afterwards since the entry may have moved
+	// day, changed colour or gone.
+	const updateEvent = async (values) => {
+		setError(null)
+		try {
+			await eventsApi.update(editing.id, {
+				title: values.title,
+				date: values.date,
+				startTime: values.time || null,
+				categoryId: values.categoryId === '' ? null : Number(values.categoryId),
+				track: values.track,
+				description: values.description,
+				image: values.image,
+				capacity: values.spots.trim() === '' ? null : Number(values.spots),
+				location: values.location.trim() || null,
+			})
+			await load()
+		} catch (err) {
+			setError(err.message)
+		}
+		setEditing(null)
+	}
+
+	const deleteEvent = async () => {
+		setError(null)
+		try {
+			await eventsApi.remove(editing.id)
+			await load()
+		} catch (err) {
+			setError(err.message)
+		}
+		setEditing(null)
 	}
 
 	const weeks = monthWeeks(view.year, view.month)
@@ -1577,6 +1649,7 @@ export default function OfficerCalendar() {
 									number={day.number}
 									inMonth={day.inMonth}
 									entries={day.inMonth ? listFor(monthEntries, day.number) : []}
+									onOpen={openEntry}
 								/>
 							))}
 						</div>
@@ -1589,7 +1662,7 @@ export default function OfficerCalendar() {
 						border-black/20
 					" />
 
-					<Agenda days={agendaDays} />
+					<Agenda days={agendaDays} onOpen={openEntry} />
 				</div>
 			</div>
 
@@ -1598,6 +1671,16 @@ export default function OfficerCalendar() {
 					categories={categoriesFrom(categories)}
 					onClose={() => setDialogOpen(false)}
 					onSave={saveEvent}
+				/>
+			)}
+
+			{editing && (
+				<EditEventDialog
+					event={editing}
+					categories={categories}
+					onClose={() => setEditing(null)}
+					onSave={updateEvent}
+					onDelete={deleteEvent}
 				/>
 			)}
 

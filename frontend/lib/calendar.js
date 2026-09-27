@@ -7,9 +7,11 @@
 //
 // The shape both calendars read is:
 //
-//   { '2026-08': { 6: [ { type, title, track, time, href }, … ], … }, … }
+//   { '2026-08': { 6: [ { type, title, track, time, location, href }, … ], … }, … }
 //
 // `href` is the thing's own page — what the member calendar links a day to.
+// An event's entry also carries its `eventId`, which is what the officer
+// calendar opens the editor on for the ones /events doesn't list.
 //
 // A day is always a list, even with one thing on it. The member grid has room
 // for one and takes the first; the officer grid stacks them.
@@ -52,6 +54,7 @@ export function buildMonths(labs = [], events = []) {
 			title: lab.title,
 			track: LAB_TRACK,
 			time: null,
+			location: lab.location ?? null,
 			href: `/labs/view?id=${lab.labId}`,
 		})
 	}
@@ -59,10 +62,12 @@ export function buildMonths(labs = [], events = []) {
 	for (const event of events) {
 		put(months, event.date, {
 			id: `event-${event.eventId}`,
+			eventId: event.eventId,
 			type: event.category?.name ?? UNTAGGED,
 			title: event.title,
 			track: event.track,
 			time: event.startTime ?? null,
+			location: event.location ?? null,
 			href: `/events/view?id=${event.eventId}`,
 		})
 	}

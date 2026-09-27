@@ -45,7 +45,7 @@ const tracksFor = (role) => TRACK_KEYS.filter((key) => !hiddenTracks(role).inclu
 // GET /api/events, flattened for the cards. `date` is kept the way the date
 // input wants it ('YYYY-MM-DD') so editing prefills instead of re-parsing what
 // the card prints.
-function toCard(event) {
+export function toCard(event) {
 	return {
 		id: event.eventId,
 		title: event.title,
@@ -415,7 +415,10 @@ function ConfirmDeleteDialog({ label, onCancel, onConfirm }) {
 //
 // `onDelete` only comes in when there's an event to delete, which is what puts
 // the delete button on the footer.
-function EventDialog({ event, categories, onClose, onSave, onDelete }) {
+//
+// The officer calendar opens this too, for the events this page doesn't list
+// (see calendarOnly) — otherwise there'd be nowhere to edit them.
+export function EventDialog({ event, categories, onClose, onSave, onDelete }) {
 	const role = useRole()
 	// dismiss plays the exit animation and then closes for real — lib/dismiss.js
 	const { closing, dismiss } = useDismiss()
