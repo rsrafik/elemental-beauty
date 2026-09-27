@@ -181,7 +181,7 @@ elemental-beauty/
 ## Database design
 
 - **Normalized schema.** Junction tables (`MemberLab`, `MemberEvent`) handle many-to-many relationships and hold each person's attendance status for each lab and event.
-- **Ledger integrity in the database.** When a reimbursement is marked *reimbursed*, a Postgres trigger writes the matching row to the `Transactions` ledger, so the books can't drift from the reimbursement records.
+- **Ledger integrity in the database.** When a reimbursement is marked *reimbursed*, a Postgres trigger writes the matching row to the `Transactions` ledger, so the books can't drift from the reimbursement records. Awarding a grant works the same way: a trigger books it as income, keeps that row in step with the grant, and takes it back out if the grant is un-awarded.
 - **Quiz validity.** A deferred constraint trigger requires every quiz question to have a correct answer, checked at commit time so a question and its options can be saved together.
 - **Tracked migrations.** Every schema change is a versioned Prisma migration.
 
