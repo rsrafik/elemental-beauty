@@ -20,7 +20,8 @@ import {
 import DateTimeField from '@/components/labs/DateTimeField'
 import { labs as labsApi } from '@/lib/api'
 import { isoDate } from '@/lib/dates'
-import { parseSections } from '@/lib/labContent'
+import { parseInstructions } from '@/lib/labContent'
+import { pastedSteps } from '@/lib/pasteSteps'
 // cover photos are shrunk before they're sent — see lib/images.js
 import { shrinkImage } from '@/lib/images'
 
@@ -47,9 +48,17 @@ const LG = 1024
 // how many empty sections a brand new lab starts with — the mockup's two
 const NEW_SECTIONS = 2
 
+// A step wears a filled bullet; a warning under it, indented, a hollow one.
 const BULLET = '• '
+const WARN = '    ◦ '
+const IS_STEP = /^\s*•\s?/
+const IS_WARN = /^\s*◦\s?/
 
-const INSTRUCTION_HINT = ['instruction 1 [CAUTION: ]', 'instruction 2', 'instruction 3']
+const INSTRUCTION_HINT = [
+	{ text: 'instruction 1' },
+	{ text: 'press tab for a warning under it', warning: true },
+	{ text: 'instruction 2' },
+]
 
 const MATERIALS_HINT = '# Oils & Fats\n- Coconut oil - 230g\n- Olive oil - 200g'
 
@@ -64,13 +73,26 @@ function useWide() {
 
 // ---- form <-> lab ----------------------------------------------------------
 
-// A section's steps are typed one per line, each shown with a bullet in front.
-const toSteps = (items) => items.map((item) => BULLET + item).join('\n')
-const fromSteps = (text) =>
-	text
-		.split('\n')
-		.map((line) => line.replace(/^\s*•\s?/, '').trim())
-		.filter(Boolean)
+// A section's steps are typed one per line behind a bullet, each followed by
+// its warnings, if any, on hollow-bullet lines of their own.
+const toSteps = (part) =>
+	part.items
+		.flatMap((item, i) => [BULLET + item, ...(part.warnings[i] ?? []).map((w) => WARN + w)])
+		.join('\n')
+
+// -> [{ text, warnings }]. A warning with no step above it becomes a step
+// rather than being dropped.
+function fromSteps(text) {
+	const steps = []
+	for (const line of text.split('\n')) {
+		const warning = IS_WARN.test(line)
+		const body = line.replace(warning ? IS_WARN : IS_STEP, '').trim()
+		if (!body) continue
+		if (warning && steps.length) steps[steps.length - 1].warnings.push(body)
+		else steps.push({ text: body, warnings: [] })
+	}
+	return steps
+}
 
 function emptySection() {
 	return { title: '', steps: '' }
@@ -79,9 +101,9 @@ function emptySection() {
 // The lab (or its parked draft, laid over it) as the form holds it.
 function toForm(lab) {
 	const source = { ...lab, ...(lab.draft ?? {}) }
-	const sections = parseSections(source.instructions).map((part) => ({
+	const sections = parseInstructions(source.instructions).map((part) => ({
 		title: part.heading ?? '',
-		steps: toSteps(part.items),
+		steps: toSteps(part),
 	}))
 	const date = source.date ? isoDate(source.date) : ''
 	return {
@@ -119,7 +141,10 @@ function toBody(form) {
 		.filter((section) => section.title || section.steps.length)
 		.map((section) => [
 			...(section.title ? [`# ${section.title}`] : []),
-			...section.steps.map((step) => `- ${step}`),
+			...section.steps.flatMap((step) => [
+				`- ${step.text}`,
+				...step.warnings.map((warning) => `! ${warning}`),
+			]),
 		].join('\n'))
 		.join('\n\n')
 	return {
@@ -242,7 +267,18 @@ function InlineField({ id, label, required, invalid, className = '', children })
 // One instructions box. Every line is a step and wears a bullet, so Enter
 // starts the next step with one ready, and backspacing over a bare bullet
 // takes the line away instead of leaving a dot behind.
-function StepsBox({ id, value, onChange, invalid }) {
+//
+// Tab makes the line a warning on the step above — indented, hollow bullet,
+// shown in red as "WARNING:" to members — and Shift+Tab (or backspacing over
+// its bare bullet) makes it a step again. A paste is read for its steps rather
+// than line by line (lib/pasteSteps.js), so a numbered list from a document
+// lands one bullet per step instead of one per wrapped line — and a document's
+// opening line, its section name, goes in the title box if that's still empty.
+//
+// `onChange(steps, extra)` — `extra` is `{ title }` when a paste supplies one,
+// sent in the same call because two separate section updates in one event
+// would each start from the same old form and the second would undo the first.
+function StepsBox({ id, value, onChange, invalid, title }) {
 	const ref = useRef(null)
 	// where to put the caret once the edit lands
 	const caret = useRef(null)
@@ -256,27 +292,90 @@ function StepsBox({ id, value, onChange, invalid }) {
 	const normalise = (text) =>
 		text
 			.split('\n')
-			.map((line) => (line.startsWith(BULLET) || line === '' ? line : BULLET + line.replace(/^\s*•\s?/, '')))
+			.map((line) => {
+				if (line === '' || line.startsWith(BULLET) || line.startsWith(WARN)) return line
+				if (IS_WARN.test(line)) return WARN + line.replace(IS_WARN, '')
+				return BULLET + line.replace(IS_STEP, '')
+			})
 			.join('\n')
 
+	// the line the caret is on: where it starts, and its bullet
+	const lineAt = (at) => {
+		const start = value.lastIndexOf('\n', at - 1) + 1
+		const end = value.indexOf('\n', at)
+		const line = value.slice(start, end === -1 ? value.length : end)
+		const prefix = line.startsWith(WARN) ? WARN : line.startsWith(BULLET) ? BULLET : ''
+		return { start, line, prefix }
+	}
+
+	// swap the bullet on the caret's line, keeping the caret on the same letter
+	const rebullet = (at, from, to) => {
+		const { start } = lineAt(at)
+		caret.current = Math.max(start + to.length, at + to.length - from.length)
+		onChange(value.slice(0, start) + to + value.slice(start + from.length))
+	}
+
 	const onKeyDown = (event) => {
-		const el = event.target
-		const { selectionStart: start, selectionEnd: end } = el
-		if (event.key === 'Enter') {
+		const { selectionStart: start, selectionEnd: end } = event.target
+		const { start: lineStart, prefix } = lineAt(start)
+
+		if (event.key === 'Tab') {
+			if (event.shiftKey && prefix === WARN) {
+				event.preventDefault()
+				rebullet(start, WARN, BULLET)
+			} else if (!event.shiftKey) {
+				event.preventDefault()
+				if (prefix === BULLET) rebullet(start, BULLET, WARN)
+			}
+			// Shift+Tab on a step is left alone, so it still moves focus back
+		} else if (event.key === 'Enter') {
 			event.preventDefault()
 			const next = value.slice(0, start) + '\n' + BULLET + value.slice(end)
 			caret.current = start + 1 + BULLET.length
 			onChange(next)
-		} else if (event.key === 'Backspace' && start === end) {
-			const lineStart = value.lastIndexOf('\n', start - 1) + 1
-			if (value.slice(lineStart, start) === BULLET) {
-				event.preventDefault()
+		} else if (event.key === 'Backspace' && start === end && prefix && value.slice(lineStart, start) === prefix) {
+			event.preventDefault()
+			if (prefix === WARN) {
+				// a bare warning bullet steps back out to a step
+				rebullet(start, WARN, BULLET)
+			} else {
 				// the bullet and the line break before it
 				const from = Math.max(0, lineStart - 1)
 				caret.current = from
 				onChange(value.slice(0, from) + value.slice(start))
 			}
 		}
+	}
+
+	const onPaste = (event) => {
+		let pasted = pastedSteps(event.clipboardData)
+		if (!pasted) return
+		event.preventDefault()
+
+		let extra
+		if (pasted[0].kind === 'heading') {
+			if (!title?.trim()) {
+				extra = { title: pasted[0].text }
+				pasted = pasted.slice(1)
+			} else {
+				pasted = [{ ...pasted[0], kind: 'step' }, ...pasted.slice(1)]
+			}
+			if (!pasted.length) return onChange(value, extra)
+		}
+
+		const { selectionStart: start, selectionEnd: end } = event.target
+		const block = pasted.map((item) => (item.kind === 'warning' ? WARN : BULLET) + item.text).join('\n')
+
+		// on a line of its own: a bare bullet the caret sits after is replaced,
+		// and text already on the line keeps its own line either side
+		const { start: lineStart } = lineAt(start)
+		const bare = /^\s*[•◦]?\s*$/.test(value.slice(lineStart, start))
+		const head = bare ? value.slice(0, lineStart) : value.slice(0, start) + '\n'
+		const tail = value.slice(end)
+		const joiner = tail && !tail.startsWith('\n') ? '\n' : ''
+
+		caret.current = head.length + block.length
+		onChange(normalise(head + block + joiner + tail), extra)
 	}
 
 	return (
@@ -287,15 +386,16 @@ function StepsBox({ id, value, onChange, invalid }) {
 				value={value}
 				onChange={(event) => onChange(normalise(event.target.value))}
 				onKeyDown={onKeyDown}
+				onPaste={onPaste}
 				className={`
 					${fieldClass('green', invalid)}
 					block
-					h-[133.8px]
+					h-[180px]
 					resize-y
 					px-[14px]
 					py-[11px]
 					text-[13px]
-					leading-[14.5px]
+					leading-[22px]
 				`}
 			/>
 			{!value && (
@@ -308,25 +408,25 @@ function StepsBox({ id, value, onChange, invalid }) {
 						top-[11px]
 						font-vietnam
 						text-[13px]
-						leading-[14.5px]
+						leading-[22px]
 						text-[#A6A6A6]
 					"
 				>
 					{INSTRUCTION_HINT.map((line) => (
 						<li
-							key={line}
-							className="
+							key={line.text}
+							className={`
 								relative
-								pl-[14px]
-							"
+								${line.warning ? 'pl-[42px]' : 'pl-[14px]'}
+							`}
 						>
-							<span className="
+							<span className={`
 								absolute
-								left-[1px]
-							">
-								•
+								${line.warning ? 'left-[29px]' : 'left-[1px]'}
+							`}>
+								{line.warning ? '◦' : '•'}
 							</span>
-							{line}
+							{line.text}
 						</li>
 					))}
 				</ul>
@@ -800,7 +900,8 @@ export default function LabEditor({ id }) {
 										<StepsBox
 											id={`lab-steps-${i}`}
 											value={section.steps}
-											onChange={(steps) => setSection(i, { steps })}
+											onChange={(steps, extra) => setSection(i, { steps, ...extra })}
+											title={section.title}
 											invalid={first && flagged.has('section-steps')}
 										/>
 									</div>

@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo, useState, useSyncExternalStore } from 'react'
 import { createPortal } from 'react-dom'
-import { parseSections, stepsOf } from '@/lib/labContent'
+import { parseInstructions, stepsOf } from '@/lib/labContent'
 
 // The instruction tab of the full lab. Two modes, swapped with the button at
 // the top:
@@ -121,6 +121,24 @@ function useWindowSize() {
 	return { width, height }
 }
 
+// ---- warnings --------------------------------------------------------------
+
+// A step's warnings, in red under it — the lines an officer marked with Tab in
+// the editor (see lib/labContent.js). The same in the list and on the cards;
+// only the size and spacing the caller passes differ.
+function Warnings({ list, className = '' }) {
+	if (!list?.length) return null
+	return (
+		<div className={className}>
+			{list.map((warning, i) => (
+				<p key={i} className="text-red">
+					<span className="font-semibold">WARNING:</span> {warning}
+				</p>
+			))}
+		</div>
+	)
+}
+
 // ---- regular mode ----------------------------------------------------------
 
 function RegularList({ parts }) {
@@ -159,6 +177,7 @@ function RegularList({ parts }) {
 									{i + 1}.
 								</span>
 								{step}
+								<Warnings list={part.warnings[i]} />
 							</li>
 						))}
 					</ol>
@@ -299,6 +318,16 @@ function CardFace({ step }) {
 				">
 					{step.text}
 				</p>
+				<Warnings
+					list={step.warnings}
+					className="
+						mt-[10px]
+						max-w-[290px]
+						font-vietnam
+						text-[14.5px]
+						leading-[23.4px]
+					"
+				/>
 			</div>
 		</>
 	)
@@ -359,6 +388,16 @@ function FullscreenFace({ step }) {
 				">
 					{step.text}
 				</p>
+				<Warnings
+					list={step.warnings}
+					className="
+						mt-[20px]
+						max-w-[700px]
+						font-vietnam
+						text-[29px]
+						leading-[47px]
+					"
+				/>
 			</div>
 		</>
 	)
@@ -695,7 +734,7 @@ function Flashcards({ parts }) {
 // ---- tab -------------------------------------------------------------------
 
 export default function LabInstructions({ text }) {
-	const parts = useMemo(() => parseSections(text), [text])
+	const parts = useMemo(() => parseInstructions(text), [text])
 	const [flashcards, setFlashcards] = useState(false)
 
 	// The toggle and the list share one block, centred in the column — wider

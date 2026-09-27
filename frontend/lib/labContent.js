@@ -13,6 +13,14 @@
 // first heading land in a section with no heading.
 //
 // Instructions use the same shape: a heading is a part, an item is a step.
+// They add one more kind of line — a warning, which belongs to the step above:
+//
+//   # Lye Solution
+//   - Slowly add the NaOH to the water
+//   ! Highly exothermic. Never add water to NaOH.
+//
+// A section's warnings sit in `warnings`, one list per item, so `items` stays
+// a plain list of strings for the ingredients and equipment that never use it.
 
 const MARKER = /^(?:[-*•]|\d+[.)])\s+/
 
@@ -25,16 +33,26 @@ export function parseSections(text) {
 		if (!line) continue
 
 		if (line.startsWith('#')) {
-			current = { heading: line.replace(/^#+\s*/, ''), items: [] }
+			current = { heading: line.replace(/^#+\s*/, ''), items: [], warnings: [] }
 			sections.push(current)
 			continue
 		}
 
+		// a warning with no step above it to belong to is kept as a step, so
+		// nothing typed is ever lost
+		const warning = line.startsWith('!') ? line.replace(/^!+\s*/, '') : null
+		if (warning && current?.items.length) {
+			current.warnings[current.items.length - 1].push(warning)
+			continue
+		}
+		if (warning === '') continue
+
 		if (!current) {
-			current = { heading: null, items: [] }
+			current = { heading: null, items: [], warnings: [] }
 			sections.push(current)
 		}
-		current.items.push(line.replace(MARKER, ''))
+		current.items.push(warning ?? line.replace(MARKER, ''))
+		current.warnings.push([])
 	}
 
 	return sections
@@ -53,6 +71,25 @@ function letter(index) {
 	return out
 }
 
+// Instructions as parseSections reads them, with one addition: a step typed
+// the old way, its caution inline — "Stir until dissolved [CAUTION: hot]" —
+// has the caution lifted out into a warning of its own, so labs written before
+// warnings existed show them the same way.
+const INLINE_CAUTION = /\s*\[\s*(?:caution|warning)\s*:\s*([^\]]*)\]/gi
+
+export function parseInstructions(text) {
+	return parseSections(text).map((part) => {
+		const warnings = part.warnings.map((list) => [...list])
+		const items = part.items.map((item, i) => {
+			const lifted = [...item.matchAll(INLINE_CAUTION)].map((m) => m[1].trim()).filter(Boolean)
+			if (!lifted.length) return item
+			warnings[i].unshift(...lifted)
+			return item.replace(INLINE_CAUTION, '').trim()
+		})
+		return { ...part, items, warnings }
+	})
+}
+
 export function stepsOf(parts) {
 	const steps = []
 	parts.forEach((part, p) => {
@@ -62,6 +99,7 @@ export function stepsOf(parts) {
 				label: `${p + 1}${letter(i)}`,
 				title: part.heading,
 				text,
+				warnings: part.warnings?.[i] ?? [],
 			})
 		})
 	})
