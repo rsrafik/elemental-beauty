@@ -160,6 +160,7 @@ export default function AuthPanels() {
 
 	return (
 		<main className="
+			auth-page
 			relative
 			flex
 			min-h-svh
@@ -189,8 +190,9 @@ export default function AuthPanels() {
 				w-full
 				flex-col
 				items-center
-				px-4
 				py-6
+				pl-[max(1rem,env(safe-area-inset-left))]
+				pr-[max(1rem,env(safe-area-inset-right))]
 				lg:w-auto
 				lg:p-0
 			">
@@ -400,6 +402,10 @@ function Bamboo() {
 // the panel from both ends instead of the bottom edge ending on bare stalks
 // fading out to cream. Each band fades into the page on its inner edge, so the
 // crop never reads as a hard line.
+//
+// The page is `viewport-fit=cover` (app/login/page.js), so on a phone the top
+// band starts under the status bar and the bottom one under the home
+// indicator. Each is grown by that inset, which is 0 everywhere else.
 function BambooBand({ edge }) {
 	const top = edge === 'top'
 
@@ -410,14 +416,15 @@ function BambooBand({ edge }) {
 				bamboo-drop
 				pointer-events-none
 				relative
-				h-[clamp(88px,15svh,160px)]
 				w-full
 				shrink-0
 				overflow-hidden
 				lg:hidden
 				${top
-					? '[mask-image:linear-gradient(to_bottom,black_55%,transparent)]'
-					: '[mask-image:linear-gradient(to_top,black_55%,transparent)]'}
+					? `h-[calc(clamp(88px,15svh,160px)_+_env(safe-area-inset-top))]
+					   [mask-image:linear-gradient(to_bottom,black_55%,transparent)]`
+					: `h-[calc(clamp(88px,15svh,160px)_+_env(safe-area-inset-bottom))]
+					   [mask-image:linear-gradient(to_top,black_55%,transparent)]`}
 			`}
 		>
 			<img

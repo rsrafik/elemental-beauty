@@ -435,6 +435,15 @@
   }
 }
 
+/* The login page is cream edge to edge. The body's own colour goes near-black
+   in dark mode, and iOS Safari paints that into the strip behind its status bar
+   and into the overscroll past the bottom of the page — a black bar at both
+   ends of a cream page. */
+html:has(.auth-page),
+html:has(.auth-page) body {
+  background: #FDF4E0;
+}
+
 /* ---- the grove opening ----------------------------------------------------
  *
  * On load both edges of /login start at no width and grow to whatever their
