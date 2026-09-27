@@ -10,8 +10,8 @@ import AwardPointsDialog from '@/components/students/AwardPointsDialog'
 import ActivityLog from '@/components/students/ActivityLog'
 
 // /students — officer and up only. The member roster as one sheet: search,
-// sort by any column that holds a value, filter by role, add a student, and
-// select rows to delete in a batch.
+// sort by any column that holds a value, filter by role, add a student (an
+// admin's job only), and select rows to delete in a batch.
 //
 // Accounts that haven't become members yet are on it too, as role 'user':
 // signed up, but the email link or the waiver is still outstanding. They have
@@ -1663,7 +1663,10 @@ export default function OfficerStudents() {
 							Activity
 						</button>
 
-						<button
+						{/* adding someone vouches for them in person and skips the
+						    waiver, so it's an admin's call — the API refuses
+						    anyone else */}
+						{isAdmin && <button
 							type="button"
 							onClick={() => setAdding(true)}
 							className="
@@ -1692,7 +1695,7 @@ export default function OfficerStudents() {
 						>
 							<PlusIcon className="w-4 h-4" />
 							Add a student
-						</button>
+						</button>}
 					</div>
 				</div>
 
@@ -2024,12 +2027,9 @@ export default function OfficerStudents() {
 				/>
 			)}
 
-			{adding && (
+			{adding && isAdmin && (
 				<AddStudentDialog
-					/* only an admin may create staff — the same rule the API
-					   enforces, so the dropdown can't offer what a POST would then
-					   refuse */
-					roles={isAdmin ? ROLES : ['member']}
+					roles={ROLES}
 					onClose={() => setAdding(false)}
 					onSave={addStudent}
 				/>

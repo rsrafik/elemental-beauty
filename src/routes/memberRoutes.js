@@ -281,7 +281,7 @@ router.get('/me/history', async (req, res) => {
 // is its first half (see accountEmail.js), so the two always move together; a
 // new address has to be verified again.
 router.put('/me', async (req, res) => {
-    const { firstName, lastName, instagram, profilePicture, emailClub, emailEvents } = req.body
+    const { firstName, lastName, instagram, profilePicture, emailClub } = req.body
 
     const data = {}
     if (firstName !== undefined) {
@@ -299,9 +299,8 @@ router.put('/me', async (req, res) => {
         data.username = username
     }
     if (instagram !== undefined) { data.instagram = instagram }
-    // the two email opt-outs (see schema.prisma)
+    // the club-wide email opt-out (see schema.prisma)
     if (emailClub !== undefined) { data.emailClub = emailClub === true }
-    if (emailEvents !== undefined) { data.emailEvents = emailEvents === true }
     if (profilePicture !== undefined) { data.profilePicture = profilePicture }
 
     try {
@@ -324,7 +323,6 @@ router.put('/me', async (req, res) => {
                 emailVerified: true,
                 waiverSigned: true,
                 emailClub: true,
-                emailEvents: true,
                 createdAt: true
             }
         })
@@ -421,14 +419,14 @@ router.put('/:id/points', requireRole('officer'), denyRole('jboard'), async (req
     }
 })
 
-// Officer+: add a student from the roster. This is the one place an account is
-// created WITH a membership already on it — signing yourself up gets you an
-// account and nothing else, and the waiver is what promotes it. An officer
+// Admin only: add a student from the roster. This is the one place an account
+// is created WITH a membership already on it — signing yourself up gets you an
+// account and nothing else, and the waiver is what promotes it. An admin
 // adding somebody has already done that vouching in person.
 //
 // The password is a starter one they change from /account, which is why the
 // dialog asks for it in plain sight rather than mailing an invitation.
-router.post('/', requireRole('officer'), async (req, res) => {
+router.post('/', requireRole('admin'), async (req, res) => {
     const { firstName, lastName, password, role = 'member', instagram } = req.body
 
     if (!firstName?.trim() || !lastName?.trim() || !req.body.email || !password) {
@@ -439,10 +437,6 @@ router.post('/', requireRole('officer'), async (req, res) => {
     if (!ROLES.includes(role)) {
         return res.status(400).json({ message: `role must be one of: ${ROLES.join(', ')}` })
     }
-    if (!canManage(req.role, role)) {
-        return res.status(403).json({ message: `Only an admin can add ${role}s` })
-    }
-
     // the username is the email's first half, same as signing up
     const { email, username: handle, error } = fromEmail(req.body.email)
     if (error) { return res.status(400).json({ message: error }) }
