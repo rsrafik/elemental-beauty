@@ -52,6 +52,23 @@ export function hiddenTracks(role) {
 	return HIDDEN_TRACKS[role] ?? []
 }
 
+// Tracks a role can see but starts with switched off in the calendar's key:
+// officers and the treasurer see j-board's days only once they click its pill.
+const DEFAULT_OFF_TRACKS = {
+	officer: ['jboard'],
+	treasurer: ['jboard'],
+}
+export function defaultOffTracks(role) {
+	return DEFAULT_OFF_TRACKS[role] ?? []
+}
+
+// Whether the key's switched-off tracks differ from where `role` started —
+// what puts "clear filter" under it.
+export function tracksChangedFrom(role, offTracks) {
+	const start = defaultOffTracks(role)
+	return start.length !== offTracks.length || start.some((track) => !offTracks.includes(track))
+}
+
 // How a role is written on the page — its name, except j-board, which the
 // database has to spell without the hyphen.
 export function roleLabel(role) {

@@ -9,7 +9,7 @@ import { buildMonths, calendarOnly, categoryNameOf, typesIn } from '@/lib/calend
 import HideFromEventsToggle from '@/components/events/HideFromEventsToggle'
 import EventDetailsDialog from '@/components/events/EventDetailsDialog'
 import { thisMonth } from '@/lib/dates'
-import { hiddenTracks } from '@/lib/roles'
+import { defaultOffTracks, hiddenTracks, tracksChangedFrom } from '@/lib/roles'
 import { useRole } from '@/lib/session'
 import { EventDialog as EditEventDialog, toCard } from '@/components/events/OfficerEvents'
 
@@ -57,13 +57,17 @@ function categoriesFrom(categories) {
 
 // Who the day is for. This is the colour dimension: the badge on the day and
 // the pill in the legend share these classes, so they can never drift apart.
+//
+// `hollow` is the same colour as an outline, for a key pill switched off: the
+// ring is inset so the pill keeps its size, and the text takes the colour (a
+// darker shade of it for yellow and green, which don't read on cream).
 const TRACKS = {
-	members: { label: 'members', pill: 'bg-orange text-white' },
-	officers: { label: 'officers', pill: 'bg-yellow text-black' },
-	open: { label: 'open to all', pill: 'bg-green text-black' },
-	online: { label: 'online', pill: 'bg-blue text-white' },
-	board: { label: 'EB board', pill: 'bg-[#6B4FBF] text-white' },
-	jboard: { label: 'j-board', pill: 'bg-[#D6488F] text-white' },
+	members: { label: 'members', pill: 'bg-orange text-white', hollow: 'ring-orange text-orange' },
+	officers: { label: 'officers', pill: 'bg-yellow text-black', hollow: 'ring-yellow text-yellow-dark' },
+	open: { label: 'open to all', pill: 'bg-green text-black', hollow: 'ring-green text-green-dark' },
+	online: { label: 'online', pill: 'bg-blue text-white', hollow: 'ring-blue text-blue' },
+	board: { label: 'EB board', pill: 'bg-[#6B4FBF] text-white', hollow: 'ring-[#6B4FBF] text-[#6B4FBF]' },
+	jboard: { label: 'j-board', pill: 'bg-[#D6488F] text-white', hollow: 'ring-[#D6488F] text-[#D6488F]' },
 }
 
 // Officers-only, EB-board and j-board days never reach the member calendar,
@@ -490,28 +494,40 @@ function ConfirmRemoveDialog({ label, onCancel, onConfirm }) {
 // Sized to fit the key in two rows of three even in the 280px column at xl;
 // `xl:grow` then stretches each row to the column's width so the two finish
 // level.
-function Pill({ children, className = '' }) {
+// A pill in the colour key, which doubles as a filter: filled, that track's
+// days are on the grid; clicked, it hollows out to an outline and they're
+// hidden. Click again to bring them back.
+function Pill({ track, on, onToggle }) {
 	return (
-		<span className={`
-			rounded-full
-			px-3
-			xl:px-2.5
-			2xl:px-3
-			py-1.5
-			font-vietnam
-			font-semibold
-			text-xs
-			xl:text-[10px]
-			2xl:text-xs
-			uppercase
-			tracking-[0.1em]
-			whitespace-nowrap
-			text-center
-			xl:grow
-			${className}
-		`}>
-			{children}
-		</span>
+		<button
+			type="button"
+			aria-pressed={on}
+			onClick={onToggle}
+			className={`
+				rounded-full
+				px-3
+				xl:px-2.5
+				2xl:px-3
+				py-1.5
+				font-vietnam
+				font-semibold
+				text-xs
+				xl:text-[10px]
+				2xl:text-xs
+				uppercase
+				tracking-[0.1em]
+				whitespace-nowrap
+				text-center
+				xl:grow
+				cursor-pointer
+				transition-colors
+				duration-200
+				ease-out
+				${on ? TRACKS[track].pill : `bg-transparent ring-2 ring-inset ${TRACKS[track].hollow}`}
+			`}
+		>
+			{TRACKS[track].label}
+		</button>
 	)
 }
 
@@ -1193,6 +1209,14 @@ export default function OfficerCalendar() {
 	// (see EventDetailsDialog).
 	const [viewing, setViewing] = useState(null)
 
+	// The tracks switched off in the colour key: their days leave the grid and
+	// the agenda. Everything starts on, bar j-board for officers and the
+	// treasurer (see defaultOffTracks).
+	const [offTracks, setOffTracks] = useState(() => defaultOffTracks(role))
+	const toggleTrack = (track) =>
+		setOffTracks((prev) => (prev.includes(track) ? prev.filter((t) => t !== track) : [...prev, track]))
+	const tracksChanged = tracksChangedFrom(role, offTracks)
+
 	// Every lab and event, keyed by month then day. Fetched once and stepped
 	// through locally — the club's calendar is small enough that a request per
 	// month would be more round trips than rows.
@@ -1375,13 +1399,15 @@ export default function OfficerCalendar() {
 	const weeks = monthWeeks(view.year, view.month)
 	const stamp = monthKey(view.year, view.month)
 	const monthEntries = months[stamp] ?? {}
+	// a day's entries, less any on a track switched off in the key
+	const shown = (number) => listFor(monthEntries, number).filter((entry) => !offTracks.includes(entry.track))
 
 	// The same days the grid draws a badge for, in date order — what the narrow
 	// layout lists under the month.
 	const agendaDays = Object.keys(monthEntries)
 		.map(Number)
 		.sort((a, b) => a - b)
-		.map((number) => ({ number, entries: listFor(monthEntries, number) }))
+		.map((number) => ({ number, entries: shown(number) }))
 		.filter(({ entries: dayEntries }) => dayEntries.length)
 
 	return (
@@ -1583,7 +1609,8 @@ export default function OfficerCalendar() {
 							)}
 						</div>
 
-						{/* colour key: the badge colour says who the day is for. Two
+						{/* colour key: the badge colour says who the day is for, and
+						    clicking a pill hides or shows that track. Two
 						    rows, split down the middle, whatever the role sees —
 						    centred like the tags above when stacked; at xl the pills
 						    grow to fill the column, so there's nothing to centre */}
@@ -1601,12 +1628,42 @@ export default function OfficerCalendar() {
 									gap-1.5
 								">
 									{row.map((trackKey) => (
-										<Pill key={trackKey} className={TRACKS[trackKey].pill}>
-											{TRACKS[trackKey].label}
-										</Pill>
+										<Pill
+											key={trackKey}
+											track={trackKey}
+											on={!offTracks.includes(trackKey)}
+											onToggle={() => toggleTrack(trackKey)}
+										/>
 									))}
 								</div>
 							))}
+						</div>
+
+						{/* back to how the key started, once it's been changed. Holds its
+						    line while there's nothing to clear, same as the tags' one, so
+						    the pills don't jump when it appears */}
+						<div className="
+							mt-2
+							text-center
+						">
+							<button
+								type="button"
+								onClick={() => setOffTracks(defaultOffTracks(role))}
+								tabIndex={tracksChanged ? 0 : -1}
+								aria-hidden={!tracksChanged}
+								className={`
+									font-vietnam
+									text-sm
+									text-black/45
+									cursor-pointer
+									transition-colors
+									duration-150
+									hover:text-black/70
+									${tracksChanged ? '' : 'invisible'}
+								`}
+							>
+								clear filter
+							</button>
 						</div>
 					</div>
 				</div>
@@ -1681,7 +1738,7 @@ export default function OfficerCalendar() {
 									number={day.number}
 									inMonth={day.inMonth}
 									today={day.inMonth && isToday(view, day.number)}
-									entries={day.inMonth ? listFor(monthEntries, day.number) : []}
+									entries={day.inMonth ? shown(day.number) : []}
 									onOpen={openEntry}
 								/>
 							))}

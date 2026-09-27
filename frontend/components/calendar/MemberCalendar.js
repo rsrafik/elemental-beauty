@@ -45,13 +45,17 @@ const TYPES = [
 
 // Who the day is for. This is the colour dimension: the badge on the day and
 // the pill in the legend share these classes, so they can never drift apart.
+//
+// `hollow` is the same colour as an outline, for a key pill switched off: the
+// ring is inset so the pill keeps its size, and the text takes the colour (a
+// darker shade of it for yellow and green, which don't read on cream).
 const TRACKS = {
-	members: { label: 'members', pill: 'bg-orange text-white' },
-	officers: { label: 'officers', pill: 'bg-yellow text-black' },
-	open: { label: 'open to all', pill: 'bg-green text-black' },
-	online: { label: 'online', pill: 'bg-blue text-white' },
-	board: { label: 'EB board', pill: 'bg-[#6B4FBF] text-white' },
-	jboard: { label: 'j-board', pill: 'bg-[#D6488F] text-white' },
+	members: { label: 'members', pill: 'bg-orange text-white', hollow: 'ring-orange text-orange' },
+	officers: { label: 'officers', pill: 'bg-yellow text-black', hollow: 'ring-yellow text-yellow-dark' },
+	open: { label: 'open to all', pill: 'bg-green text-black', hollow: 'ring-green text-green-dark' },
+	online: { label: 'online', pill: 'bg-blue text-white', hollow: 'ring-blue text-blue' },
+	board: { label: 'EB board', pill: 'bg-[#6B4FBF] text-white', hollow: 'ring-[#6B4FBF] text-[#6B4FBF]' },
+	jboard: { label: 'j-board', pill: 'bg-[#D6488F] text-white', hollow: 'ring-[#D6488F] text-[#D6488F]' },
 }
 
 // Officer-only, EB-board and j-board days aren't a member's business: they're
@@ -158,21 +162,33 @@ function StepButton({ back = false, label, onClick }) {
 	)
 }
 
-function Pill({ children, className = '' }) {
+// A pill in the colour key, which doubles as a filter: filled, that track's
+// days are on the grid; clicked, it hollows out to an outline and they're
+// hidden. Click again to bring them back.
+function Pill({ track, on, onToggle }) {
 	return (
-		<span className={`
-			rounded-full
-			px-4
-			py-1.5
-			font-vietnam
-			font-semibold
-			text-xs
-			uppercase
-			tracking-[0.12em]
-			${className}
-		`}>
-			{children}
-		</span>
+		<button
+			type="button"
+			aria-pressed={on}
+			onClick={onToggle}
+			className={`
+				rounded-full
+				px-4
+				py-1.5
+				font-vietnam
+				font-semibold
+				text-xs
+				uppercase
+				tracking-[0.12em]
+				cursor-pointer
+				transition-colors
+				duration-200
+				ease-out
+				${on ? TRACKS[track].pill : `bg-transparent ring-2 ring-inset ${TRACKS[track].hollow}`}
+			`}
+		>
+			{TRACKS[track].label}
+		</button>
 	)
 }
 
@@ -382,6 +398,13 @@ export default function MemberCalendar() {
 	const togglePick = (type) =>
 		setPicked((prev) => (prev.includes(type) ? prev.filter((t) => t !== type) : [...prev, type]))
 
+	// The tracks switched off in the colour key — all on to start with. A day
+	// only shows things on a track that's still on.
+	const [offTracks, setOffTracks] = useState([])
+	const toggleTrack = (track) =>
+		setOffTracks((prev) => (prev.includes(track) ? prev.filter((t) => t !== track) : [...prev, track]))
+	const tracksChanged = offTracks.length > 0
+
 	useEffect(() => {
 		let live = true
 		Promise.all([labsApi.list(), eventsApi.list(), eventCategories.list()])
@@ -417,6 +440,7 @@ export default function MemberCalendar() {
 	const visible = (day) => {
 		const first = (day ?? []).find((entry) =>
 			VISIBLE_TRACKS.includes(entry.track) &&
+			!offTracks.includes(entry.track) &&
 			(picked.length === 0 || picked.includes(entry.type))
 		)
 		return first ?? null
@@ -615,8 +639,9 @@ export default function MemberCalendar() {
 							</button>
 						</div>
 
-						{/* colour key: the badge colour says who the day is for —
-						    centred when stacked, like the officer calendar's */}
+						{/* colour key: the badge colour says who the day is for, and
+						    clicking a pill hides or shows that track — centred when
+						    stacked, like the officer calendar's */}
 						<div className="
 							mt-6
 							flex
@@ -626,10 +651,40 @@ export default function MemberCalendar() {
 							gap-2
 						">
 							{VISIBLE_TRACKS.map((key) => (
-								<Pill key={key} className={TRACKS[key].pill}>
-									{TRACKS[key].label}
-								</Pill>
+								<Pill
+									key={key}
+									track={key}
+									on={!offTracks.includes(key)}
+									onToggle={() => toggleTrack(key)}
+								/>
 							))}
+						</div>
+
+						{/* back to how the key started, once it's been changed. Holds its
+						    line while there's nothing to clear, same as the tags' one, so
+						    the pills don't jump when it appears */}
+						<div className="
+							mt-2
+							text-center
+						">
+							<button
+								type="button"
+								onClick={() => setOffTracks([])}
+								tabIndex={tracksChanged ? 0 : -1}
+								aria-hidden={!tracksChanged}
+								className={`
+									font-vietnam
+									text-sm
+									text-black/45
+									cursor-pointer
+									transition-colors
+									duration-150
+									hover:text-black/70
+									${tracksChanged ? '' : 'invisible'}
+								`}
+							>
+								clear filter
+							</button>
 						</div>
 					</div>
 				</div>
