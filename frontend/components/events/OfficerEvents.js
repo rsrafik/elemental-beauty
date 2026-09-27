@@ -8,6 +8,7 @@ import { eventCategories, events as eventsApi } from '@/lib/api'
 import { isoDate, prettyTime } from '@/lib/dates'
 import { calendarOnly, categoryNameOf } from '@/lib/calendar'
 import HideFromEventsToggle from '@/components/events/HideFromEventsToggle'
+import { LinksField, cleanLinks } from '@/components/events/EventLinks'
 import { hiddenTracks } from '@/lib/roles'
 import { useRole } from '@/lib/session'
 import { splitByDate, CompletedDivider, COMPLETED_CARD } from '@/components/CardSections'
@@ -60,6 +61,7 @@ export function toCard(event) {
 		capacity: event.capacity ?? null,
 		location: event.location ?? '',
 		hideFromEvents: event.hideFromEvents ?? false,
+		links: event.links ?? [],
 	}
 }
 
@@ -438,6 +440,8 @@ export function EventDialog({ event, categories, onClose, onSave, onDelete }) {
 		hideFromEvents: event?.hideFromEvents ?? false,
 	})
 	const [image, setImage] = useState(event?.image ?? null)
+	// { title, url } rows, blank ones included while they're being filled in
+	const [links, setLinks] = useState(event?.links ?? [])
 	const [confirmingDelete, setConfirmingDelete] = useState(false)
 
 	const set = (field) => (changed) =>
@@ -481,6 +485,7 @@ export function EventDialog({ event, categories, onClose, onSave, onDelete }) {
 				title: form.title.trim(),
 				description: form.description.trim(),
 				image,
+				links: cleanLinks(links),
 			})
 		)
 	}
@@ -762,6 +767,9 @@ export function EventDialog({ event, categories, onClose, onSave, onDelete }) {
 							</label>
 						</div>
 					</div>
+
+					{/* optional — listed under the picture on the event's page */}
+					<LinksField links={links} onChange={setLinks} fieldClass={FIELD} Label={Label} />
 				</div>
 
 				{/* delete sits apart from the pair on the right, so it can't be hit
@@ -960,6 +968,7 @@ export default function OfficerEvents({ openNew = false }) {
 			capacity: values.spots.trim() === '' ? null : Number(values.spots),
 			location: values.location.trim() || null,
 			hideFromEvents: values.hideFromEvents,
+			links: values.links,
 		}
 
 		setError(null)

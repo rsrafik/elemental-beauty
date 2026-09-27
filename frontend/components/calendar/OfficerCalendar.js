@@ -7,6 +7,8 @@ import DashboardShell from '@/components/dashboards/DashboardShell'
 import { eventCategories, events as eventsApi, labs as labsApi } from '@/lib/api'
 import { buildMonths, calendarOnly, categoryNameOf, typesIn } from '@/lib/calendar'
 import HideFromEventsToggle from '@/components/events/HideFromEventsToggle'
+import { LinksField, cleanLinks } from '@/components/events/EventLinks'
+import { COVER_MAX, shrinkImage } from '@/lib/images'
 import EventDetailsDialog from '@/components/events/EventDetailsDialog'
 import { thisMonth } from '@/lib/dates'
 import { defaultOffTracks, hiddenTracks, tracksChangedFrom } from '@/lib/roles'
@@ -790,9 +792,11 @@ function Label({ children }) {
 
 // Mounted only while open, so every visit starts on a blank form.
 //
-// The picked image is held as an object URL for the preview. The calendar never
-// draws it — it rides along so the events dashboard, which does show photos,
-// has one once this is posting to the API.
+// The picked image is shrunk and held as a data URL — the photo itself, which
+// is what the API stores, and the same thing /events' dialog sends. (It used
+// to be an object URL in an object, which the API refused, so any event added
+// here with a picture failed to save.) The calendar never draws it; the events
+// pages do.
 function EventDialog({ categories, onClose, onSave }) {
 	const role = useRole()
 	// dismiss plays the exit animation and then closes for real — lib/dismiss.js
@@ -810,7 +814,9 @@ function EventDialog({ categories, onClose, onSave }) {
 		location: '',
 		hideFromEvents: false,
 	})
-	const [image, setImage] = useState(null) // { file, preview }
+	const [image, setImage] = useState(null) // a data URL
+	// { title, url } rows, blank ones included while they're being filled in
+	const [links, setLinks] = useState([])
 
 	const set = (field) => (event) =>
 		setForm((prev) => ({ ...prev, [field]: event.target.value }))
@@ -827,10 +833,10 @@ function EventDialog({ categories, onClose, onSave }) {
 	const pickImage = (event) => {
 		const file = event.target.files?.[0]
 		if (!file) return
-		setImage((prev) => {
-			if (prev?.preview) URL.revokeObjectURL(prev.preview)
-			return { file, preview: URL.createObjectURL(file) }
-		})
+		// shrunk first — a phone photo is megabytes (see lib/images.js)
+		shrinkImage(file, COVER_MAX).then(setImage).catch(() => {})
+		// so picking the same file twice still fires a change
+		event.target.value = ''
 	}
 
 	// blank = unlimited; anything else has to be a whole number of seats
@@ -846,6 +852,7 @@ function EventDialog({ categories, onClose, onSave }) {
 				title: form.title.trim(),
 				description: form.description.trim(),
 				image,
+				links: cleanLinks(links),
 			})
 		)
 	}
@@ -1087,7 +1094,7 @@ function EventDialog({ categories, onClose, onSave }) {
 							">
 								{image && (
 									<img
-										src={image.preview}
+										src={image}
 										alt=""
 										className="
 											w-full
@@ -1126,6 +1133,9 @@ function EventDialog({ categories, onClose, onSave }) {
 							</label>
 						</div>
 					</div>
+
+					{/* optional — listed under the picture on the event's page */}
+					<LinksField links={links} onChange={setLinks} fieldClass={FIELD} Label={Label} />
 				</div>
 
 				<div className="
@@ -1320,7 +1330,7 @@ export default function OfficerCalendar() {
 	// `type` — official or social, which is what attendance is scored on — isn't
 	// on this form, so a new event takes 'social'. Change it from /events, where
 	// the same event has a full editor.
-	const saveEvent = async ({ title, date, time, categoryId, track, description, image, spots, location, hideFromEvents }) => {
+	const saveEvent = async ({ title, date, time, categoryId, track, description, image, spots, location, hideFromEvents, links }) => {
 		setError(null)
 		try {
 			await eventsApi.create({
@@ -1334,6 +1344,7 @@ export default function OfficerCalendar() {
 				capacity: spots.trim() === '' ? null : Number(spots),
 				location: location.trim() || null,
 				hideFromEvents,
+				links,
 				type: 'social',
 			})
 			await load()
@@ -1377,6 +1388,7 @@ export default function OfficerCalendar() {
 				capacity: values.spots.trim() === '' ? null : Number(values.spots),
 				location: values.location.trim() || null,
 				hideFromEvents: values.hideFromEvents,
+				links: values.links,
 			})
 			await load()
 		} catch (err) {

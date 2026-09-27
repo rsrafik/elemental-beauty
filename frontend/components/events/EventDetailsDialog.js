@@ -3,6 +3,7 @@
 import { useEffect } from 'react'
 import { useDismiss } from '@/lib/dismiss'
 import { longDate, prettyTime } from '@/lib/dates'
+import { LinkList } from '@/components/events/EventLinks'
 
 // What the officer calendar opens instead of the editor when the event isn't
 // yours to change: a j-board event an officer, treasurer or admin added, seen
@@ -142,6 +143,8 @@ export default function EventDetailsDialog({ event, trackLabel, onClose }) {
 						"
 					/>
 				)}
+
+				<LinkList links={event.links} className="mt-4" />
 
 				<dl className="
 					mt-5
