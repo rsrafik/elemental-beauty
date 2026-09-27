@@ -6,10 +6,9 @@ import { clubToday } from './clubTime.js'
 // the spot (labRoutes.js, POST /:labId/checkin). See DuesPayment in
 // schema.prisma.
 
-// J-board and above (j-board, treasurer, admin) don't pay dues: they're left
-// off the treasurer's dues card and never asked at the door. Officers still
-// pay like members.
-export const DUES_EXEMPT = ['jboard', 'treasurer', 'admin']
+// Only members and j-board pay dues. Officers, the treasurer and admins don't:
+// they're left off the treasurer's dues card and never asked at the door.
+export const DUES_EXEMPT = ['officer', 'treasurer', 'admin']
 
 // '2026-07-28' -> '2025–26'. August starts a new one — the same rule as
 // schoolYear() in frontend/lib/finances.js.
