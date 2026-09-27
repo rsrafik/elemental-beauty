@@ -5,6 +5,7 @@ import { Boogaloo } from "next/font/google";
 import localFont from "next/font/local";
 import { SessionProvider } from "@/lib/session";
 import ZoomReset from "@/components/ZoomReset";
+import { NavTracker } from "@/lib/history";
 import "./globals.css";
 
 const bevietnampro = Be_Vietnam_Pro({
@@ -122,6 +123,9 @@ export default function RootLayout({ children }) {
           them fetching the same thing on every navigation. */}
       <body className="min-h-full flex flex-col" suppressHydrationWarning>
         <SessionProvider>{children}</SessionProvider>
+        {/* lets the back arrow tell a page reached from inside the app from
+            one opened fresh (lib/history.js) */}
+        <NavTracker />
         {/* zooms back out after an iPhone zooms in on a tapped field */}
         <ZoomReset />
       </body>
