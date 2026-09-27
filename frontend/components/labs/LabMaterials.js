@@ -13,13 +13,18 @@ import { parseSections } from '@/lib/labContent'
 // would spill into a third column out of sight, so if that happens the card
 // stops holding its height and balances the two columns instead.
 
-const LINE = 14.4
+// A touch bigger than the mockup's 12px on 14.4, which read small in the
+// cards once they grew to fill the column.
+const TEXT = 14
+const LINE = 17
 
-// The mockup's columns hold 19 lines exactly. Zoomed twice over (the page's
-// zoom and the right column's), rounding can make the 19th overflow by a
-// fraction of a pixel and push a whole section across, so the column gets a
-// sliver of room it can't fit another line into.
-const COLUMN_HEIGHT = 19 * LINE + 2
+// The mockup's columns are 19 of its lines tall; at this size that height
+// holds 16. Zoomed twice over (the page's zoom and the right column's),
+// rounding can make the last line overflow by a fraction of a pixel and push a
+// whole section across, so the column gets a sliver of room it can't fit
+// another line into.
+const COLUMN_LINES = 16
+const COLUMN_HEIGHT = COLUMN_LINES * LINE + 2
 
 function Sections({ text, className = '' }) {
 	const sections = useMemo(() => parseSections(text), [text])
@@ -41,12 +46,14 @@ function Sections({ text, className = '' }) {
 
 	if (sections.length === 0) {
 		return (
-			<p className={`
-				font-vietnam
-				text-[12px]
-				text-black/50
-				${className}
-			`}>
+			<p
+				className={`
+					font-vietnam
+					text-black/50
+					${className}
+				`}
+				style={{ fontSize: TEXT }}
+			>
 				Nothing listed yet.
 			</p>
 		)
@@ -57,11 +64,11 @@ function Sections({ text, className = '' }) {
 			ref={ref}
 			className={`
 				font-vietnam
-				text-[12px]
 				text-black
 				${className}
 			`}
 			style={{
+				fontSize: TEXT,
 				columnCount: 2,
 				columnGap: 21.5,
 				columnFill: spills ? 'balance' : 'auto',
@@ -87,7 +94,7 @@ function Sections({ text, className = '' }) {
 								key={i}
 								className="
 									relative
-									pl-[15.6px]
+									pl-[18px]
 								"
 							>
 								<span
