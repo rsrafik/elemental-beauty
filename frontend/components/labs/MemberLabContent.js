@@ -1,11 +1,12 @@
 'use client'
 
-import { useLayoutEffect, useRef, useState, useSyncExternalStore } from 'react'
+import { useCallback, useLayoutEffect, useRef, useState, useSyncExternalStore } from 'react'
 import { metaLine, useDesignZoom } from '@/components/labs/LabViewParts'
 import SkeuoButton from '@/components/labs/SkeuoButton'
 import LabMaterials from '@/components/labs/LabMaterials'
 import LabLesson from '@/components/labs/LabLesson'
 import LabInstructions from '@/components/labs/LabInstructions'
+import FitTitle from '@/components/FitTitle'
 
 // The full lab, once the member has passed the quiz. Two columns:
 //
@@ -65,6 +66,12 @@ const VIEW_H = 834 - 64
 // as too big next to the left one. The lesson viewer still runs edge to edge;
 // it's its toolbar and everything in the other two tabs that shrink.
 const VIEW_SCALE = 0.9
+
+// The materials tab doesn't take the mockup's card size on a wide screen: the
+// two cards fill this much of the right column's width and of the window's
+// height (less the shell's padding), and sit centred in both.
+const MATERIALS_FILL_W = 0.95
+const MATERIALS_FILL_H = 0.92
 const VIEW_LEFT = 22.8
 const VIEW_RIGHT = 19.4
 const LEFT_COL = 331.2
@@ -153,6 +160,16 @@ export default function MemberLabContent({ lab }) {
 	const { width, height } = useViewport()
 	const wide = width >= LG
 
+	// The title's second test (FitTitle): above `lg` the page is one window
+	// tall, so the section buttons have to end inside it — above the shell's
+	// bottom padding — or the left column scrolls just to reach them. Below
+	// `lg` the page scrolls as a whole and there's nothing to protect.
+	const tabsRef = useRef(null)
+	const buttonsFit = useCallback(() => {
+		if (window.innerWidth < LG || !tabsRef.current) return true
+		return tabsRef.current.getBoundingClientRect().bottom <= window.innerHeight - SHELL_PAD
+	}, [])
+
 	// How much the right column is zoomed on top of the page's own zoom: the
 	// width it has, in design pixels, over the width it has in the mockup —
 	// or the height it has over the mockup's, whichever is smaller — taken
@@ -163,6 +180,12 @@ export default function MemberLabContent({ lab }) {
 			(height - 2 * SHELL_PAD) / zoom / VIEW_H
 		) * VIEW_SCALE
 		: 1
+
+	// The right column's room, in the page's design pixels: across, what the
+	// sidebar, the left column and the column's own padding leave; down, the
+	// window less the shell's padding top and bottom.
+	const roomW = (width - SHELL_LEFT) / zoom - LEFT_COL - VIEW_LEFT - VIEW_RIGHT
+	const roomH = (height - 2 * SHELL_PAD) / zoom
 
 	// From the viewer's top to the bottom of the window, in the right column's
 	// own (twice-zoomed) pixels — and the bottom padding it reaches through to
@@ -222,18 +245,22 @@ export default function MemberLabContent({ lab }) {
 				">
 					{metaLine(lab)}
 				</p>
-				<h1 className="
-					mt-[3.3px]
-					lg:max-w-[288px]
-					font-beachday
-					text-[40px]
-					sm:text-[54px]
-					leading-[65.2px]
-					text-salmon
-					break-words
-				">
-					{lab.title}
-				</h1>
+				{/* two lines at most, and on a wide screen small enough that the
+				    section buttons still end inside the window (see FitTitle) */}
+				<FitTitle
+					text={lab.title}
+					fits={buttonsFit}
+					className="
+						mt-[3.3px]
+						lg:max-w-[288px]
+						font-beachday
+						text-[40px]
+						sm:text-[54px]
+						leading-[1.207]
+						text-salmon
+						break-words
+					"
+				/>
 				{lab.description && (
 					<div className="lg:max-w-[288px]">
 						<Description text={lab.description} />
@@ -250,6 +277,7 @@ export default function MemberLabContent({ lab }) {
 					lg:justify-center
 				">
 				<div
+					ref={tabsRef}
 					role="tablist"
 					aria-label="Lab sections"
 					className="
@@ -287,29 +315,41 @@ export default function MemberLabContent({ lab }) {
 					min-w-0
 					lg:pl-[22.8px]
 					lg:pr-[19.4px]
-					${tab === 'materials' ? 'lg:pt-[36.1px]' : ''}
+					${tab === 'materials' ? 'lg:pt-0' : ''}
 					${tab === 'lesson' ? 'lg:pt-[74.4px]' : ''}
 					${tab === 'instructions' ? 'lg:pt-[40px]' : ''}
 				`}
-				// The lesson viewer runs to the window's bottom edge, and the
-				// equipment card ends 23px short of it, inside the shell's 32px
-				// padding, as in the mockup. Both reach through that padding
-				// rather than having it push them into a scroll.
-				style={(tab === 'lesson' || tab === 'materials') && wide
+				// The lesson viewer runs to the window's bottom edge, reaching
+				// through the shell's 32px padding rather than having it push it
+				// into a scroll. (The materials cards used to do the same; they
+				// now sit centred inside the padding instead.)
+				style={tab === 'lesson' && wide
 					? { marginBottom: -SHELL_PAD / zoom }
 					: undefined}
 			>
 				<div style={{ zoom: viewZoom }}>
 					{tab === 'materials' && (
-						<div className="
-							pb-[24px]
-							lg:pb-0
-							flex
-							justify-center
-						">
+						// wide: as tall as the window's room, so the cards can
+						// centre in it; sizes are divided back by viewZoom
+						// because this sits inside it
+						<div
+							className="
+								pb-[24px]
+								lg:pb-0
+								flex
+								justify-center
+								lg:items-center
+							"
+							style={wide ? { height: roomH / viewZoom } : undefined}
+						>
 							<LabMaterials
 								ingredients={lab.ingredients}
 								equipment={lab.equipment}
+								fill={wide}
+								style={wide ? {
+									width: (roomW * MATERIALS_FILL_W) / viewZoom,
+									height: (roomH * MATERIALS_FILL_H) / viewZoom,
+								} : undefined}
 							/>
 						</div>
 					)}

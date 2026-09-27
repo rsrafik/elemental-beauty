@@ -131,27 +131,38 @@ function TabLabel({ children, className = '' }) {
 
 // The mockup's cards are 576.6 wide; these run a little wider than that, so
 // the two lists get more room and wrap less. Heights are the mockup's.
-export default function LabMaterials({ ingredients, equipment }) {
+//
+// `fill` hands the size to the caller instead: the pair takes the box `style`
+// gives it and the two cards split its height evenly, each scrolling on its
+// own if its list outgrows it. The member lab page uses it on wide screens to
+// fill the right column rather than sit at the top of it.
+export default function LabMaterials({ ingredients, equipment, fill = false, style }) {
+	const card = fill ? 'flex-1 min-h-0 flex flex-col' : ''
+	const body = fill ? 'flex-1 min-h-0 overflow-y-auto' : 'min-h-[306px]'
 	return (
-		<div className="w-[630px] max-w-full">
+		<div
+			className={fill ? 'flex flex-col max-w-full' : 'w-[630px] max-w-full'}
+			style={style}
+		>
 			{/* ingredients: body, then its tab hanging off the bottom-left
 			    corner — the corner it hangs from is the one square one */}
-			<div className="
+			<div className={`
 				rounded-[10px]
 				rounded-bl-none
 				bg-salmon/90
 				px-[15px]
 				py-[13px]
-			">
-				<div className="
+				${card}
+			`}>
+				<div className={`
 					rounded-[7px]
 					bg-cream
-					min-h-[306px]
+					${body}
 					pt-[16.3px]
 					pb-[16.3px]
 					pl-[21.8px]
 					pr-[21.3px]
-				">
+				`}>
 					<Sections text={ingredients} />
 				</div>
 			</div>
@@ -171,22 +182,23 @@ export default function LabMaterials({ ingredients, equipment }) {
 			">
 				equipment
 			</TabLabel>
-			<div className="
+			<div className={`
 				rounded-[10px]
 				rounded-tr-none
 				bg-green
 				px-[15px]
 				py-[13px]
-			">
-				<div className="
+				${card}
+			`}>
+				<div className={`
 					rounded-[7px]
 					bg-cream
-					min-h-[306px]
+					${body}
 					pt-[16.3px]
 					pb-[16.3px]
 					pl-[17.6px]
 					pr-[25.5px]
-				">
+				`}>
 					<Sections text={equipment} />
 				</div>
 			</div>
