@@ -13,6 +13,11 @@ import ActivityLog from '@/components/students/ActivityLog'
 // sort by any column that holds a value, filter by role, add a student, and
 // select rows to delete in a batch.
 //
+// Accounts that haven't become members yet are on it too, as role 'user':
+// signed up, but the email link or the waiver is still outstanding. They have
+// no member row, so no points and no role to change — just a place on the sheet
+// so an officer can see they exist.
+//
 // The page keeps the cream background and the white stops at the table, so the
 // roster reads as a sheet of paper laid on the desk rather than a second app
 // chrome. Title, search and buttons all sit on the cream above it.
@@ -34,20 +39,27 @@ import ActivityLog from '@/components/students/ActivityLog'
 
 // ---- data ------------------------------------------------------------------
 
+// What a role can be changed to, or added as. 'user' isn't one — it's the
+// absence of a member row, which only the waiver or deleting the row changes.
 const ROLES = ['member', 'officer', 'jboard', 'treasurer', 'admin']
+
+// What the filter offers: every role on the sheet, 'user' included.
+const FILTER_ROLES = ['user', ...ROLES]
 
 // Sorting roles alphabetically would put admin above officer for no reason —
 // rank is the order anyone actually means by "sort by role". Mirrors RANK in
-// lib/roles.js (minus 'user', which has no member row and so no table row).
+// lib/roles.js.
 const ROLE_ORDER = {
-	member: 0,
-	officer: 1,
-	jboard: 2,
-	treasurer: 3,
-	admin: 4,
+	user: 0,
+	member: 1,
+	officer: 2,
+	jboard: 3,
+	treasurer: 4,
+	admin: 5,
 }
 
 const ROLE_PILL = {
+	user: 'bg-black/[0.06] text-black/55',
 	member: 'bg-salmon-lightest text-salmon-dark',
 	officer: 'bg-blue-light text-blue-med',
 	jboard: 'bg-[#E8DEFF] text-[#6B4FBF]',
@@ -1117,7 +1129,7 @@ function RoleFilter({ roles, onChange }) {
 						flex-col
 						gap-0.5
 					">
-						{ROLES.map((role) => (
+						{FILTER_ROLES.map((role) => (
 							<label
 								key={role}
 								className="
@@ -1177,10 +1189,17 @@ function RoleFilter({ roles, onChange }) {
 
 // ---- page ------------------------------------------------------------------
 
-// Points as the table shows them: -1 for the roles it leaves blank
-// (lib/roles.js), so they sit past every member's 0.
+// Whether a row has a points cell at all: not for staff, who run the board
+// rather than compete on it (lib/roles.js), and not for a 'user', who has no
+// member row to keep points on.
+function earnsPoints(student) {
+	return student.role !== 'user' && onLeaderboard(student.role)
+}
+
+// Points as the table shows them: -1 for the rows it leaves blank, so they sit
+// past every member's 0.
 function boardPoints(student) {
-	return onLeaderboard(student.role) ? student.points : -1
+	return earnsPoints(student) ? student.points : -1
 }
 
 // `joined` falls through to the string branch on purpose: 'YYYY-MM-DD' sorts
@@ -1230,9 +1249,8 @@ export default function OfficerStudents() {
 	// and to the API together, so there's nothing to re-poll for.
 	useEffect(() => {
 		let live = true
-		membersApi
-			.list()
-			.then((rows) => live && setStudents(rows.map(toRow)))
+		Promise.all([membersApi.list(), membersApi.accounts()])
+			.then(([members, accounts]) => live && setStudents([...members, ...accounts].map(toRow)))
 			.catch((err) => live && setError(err.message))
 		return () => { live = false }
 	}, [])
@@ -1322,7 +1340,8 @@ export default function OfficerStudents() {
 	// You can never remove yourself from the roster — leaving is /account's
 	// "delete my account" (DELETE /auth/me), not something done from here.
 	const canRemove = (student) =>
-		student.id !== user?.userId && (isAdmin || student.role === 'member')
+		student.id !== user?.userId &&
+		(isAdmin || student.role === 'member' || student.role === 'user')
 
 	const isSelected = (id) => selected.includes(id)
 	const toggleRow = (id) =>
@@ -1796,7 +1815,12 @@ export default function OfficerStudents() {
 										    else the role is a plain label, with no caret
 										    advertising a menu they can't open */}
 										<td className="px-2 py-2.5">
-											{isAdmin ? (
+											{student.role === 'user' ? (
+												<RoleTag
+													role="user"
+													title="not a member yet — becomes one once they confirm their email and sign the waiver"
+												/>
+											) : isAdmin ? (
 												<RolePill
 													role={student.role}
 													open={roleMenu?.id === student.id}
@@ -1819,8 +1843,9 @@ export default function OfficerStudents() {
 											tabular-nums
 										">
 											{/* officers, treasurers and admins don't earn points
-											    (lib/roles.js), so their cell stays empty */}
-											{onLeaderboard(student.role) && (
+											    (lib/roles.js), and a 'user' has nowhere to keep
+											    them, so their cells stay empty */}
+											{earnsPoints(student) && (
 											<span className="
 												inline-flex
 												items-center

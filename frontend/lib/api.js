@@ -171,6 +171,8 @@ export const auth = {
 
 export const members = {
 	list: () => api('/members'),
+	// officer+: signed up, not a member yet (role 'user')
+	accounts: () => api('/members/accounts'),
 	me: () => api('/members/me'),
 	// the dashboard's "Email All" — sent by the server to everyone who wants
 	// club-wide email; the reply is { sent }

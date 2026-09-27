@@ -22,8 +22,11 @@ const ROLES = ['member', 'officer', 'jboard', 'treasurer', 'admin']
 //
 // It covers creating as well as deleting, and for the same reason: an officer
 // who could add an admin could add themselves a second account and log into it.
+//
+// An account with no member row yet ('user' — signed up, still short of the
+// email link or the waiver) is on the same footing as a plain member.
 function canManage(actorRole, targetRole) {
-    return actorRole === 'admin' || targetRole === 'member'
+    return actorRole === 'admin' || targetRole === 'member' || targetRole === 'user'
 }
 
 // Roster — whitelisted fields only; passwordHash never leaves the server, and
@@ -66,6 +69,44 @@ router.get('/', async (req, res) => {
                     : rest
             }
         }))
+    } catch (err) {
+        console.error(err.message)
+        res.sendStatus(500)
+    }
+})
+
+// Officer+: accounts with no membership yet — signed up, but the email link or
+// the waiver is still outstanding (see promoteIfEligible in authRoutes). Kept
+// apart from GET / on purpose: that one is the roster check-in reads and the
+// leaderboard ranks, and neither should see someone who isn't a member.
+//
+// Shaped like a GET / row so /students can lay them in the same table: role
+// 'user', and no points or join date because there's no member row to hold them.
+router.get('/accounts', requireRole('officer'), async (req, res) => {
+    try {
+        const users = await prisma.user.findMany({
+            where: { member: null },
+            select: {
+                userId: true,
+                username: true,
+                firstName: true,
+                lastName: true,
+                instagram: true,
+                profilePicture: true,
+                createdAt: true,
+                email: true,
+                emailVerified: true,
+                waiverSigned: true
+            },
+            orderBy: { createdAt: 'asc' }
+        })
+        res.json(users.map(({ userId, ...user }) => ({
+            userId,
+            role: 'user',
+            points: null,
+            dateJoined: null,
+            user
+        })))
     } catch (err) {
         console.error(err.message)
         res.sendStatus(500)
@@ -424,8 +465,12 @@ router.delete('/:id', requireRole('officer'), async (req, res) => {
     }
 
     try {
-        const target = await prisma.member.findUnique({ where: { userId: targetId } })
-        if (!target) { return res.status(404).json({ message: 'Member not found' }) }
+        // an account that never became a member has no member row, and is
+        // removed the same way — as role 'user', with nothing to its name
+        const member = await prisma.member.findUnique({ where: { userId: targetId } })
+        const account = member ? null : await prisma.user.findUnique({ where: { userId: targetId }, select: { userId: true } })
+        if (!member && !account) { return res.status(404).json({ message: 'Member not found' }) }
+        const target = member ?? { role: 'user', points: 0 }
         if (!canManage(req.role, target.role)) {
             return res.status(403).json({ message: `Only an admin can remove ${target.role}s` })
         }
