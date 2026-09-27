@@ -520,9 +520,12 @@ export default function MemberEvents() {
 		let live = true
 		eventsApi
 			.list()
-			// meetings stay on the calendar only — see calendarOnly
+			// meetings, and anything switched to "hide from events", stay on
+			// the calendar only — see calendarOnly
 			.then((list) => live && setRows(
-				list.filter((event) => !calendarOnly(event.track, event.category?.name)).map(toCard)
+				list
+					.filter((event) => !event.hideFromEvents && !calendarOnly(event.track, event.category?.name))
+					.map(toCard)
 			))
 			.catch((err) => live && setError(err.message))
 		return () => { live = false }

@@ -10,8 +10,8 @@
 //   { '2026-08': { 6: [ { type, title, track, time, location, href }, … ], … }, … }
 //
 // `href` is the thing's own page — what the member calendar links a day to.
-// An event's entry also carries its `eventId`, which is what the officer
-// calendar opens the editor on for the ones /events doesn't list.
+// Each entry also carries its row's id — `labId` or `eventId` — which is what
+// the officer calendar opens the lab or event's editor on.
 //
 // A day is always a list, even with one thing on it. The member grid has room
 // for one and takes the first; the officer grid stacks them.
@@ -50,6 +50,7 @@ export function buildMonths(labs = [], events = []) {
 	for (const lab of labs) {
 		put(months, lab.date, {
 			id: `lab-${lab.labId}`,
+			labId: lab.labId,
 			type: LAB_TYPE,
 			title: lab.title,
 			track: LAB_TRACK,
@@ -108,4 +109,10 @@ const MEETING = 'meeting'
 
 export function calendarOnly(track, categoryName) {
 	return CALENDAR_ONLY_TRACKS.includes(track) || categoryName?.toLowerCase() === MEETING
+}
+
+// A form's category is the <select>'s value, which comes back a string; the
+// tag rows' ids are numbers.
+export function categoryNameOf(categories, categoryId) {
+	return categories.find((category) => String(category.categoryId) === String(categoryId))?.name
 }

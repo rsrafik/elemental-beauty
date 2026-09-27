@@ -177,3 +177,23 @@ test("an officer can't file a j-board event, nor j-board an officers one", { ski
         made.events.push((await reply.json()).eventId)
     })
 })
+
+test('"hide from events" is saved on create and edit, and must be a boolean', { skip }, async () => {
+    const officer = await person('officer')
+    await as(officer, 'officer', async (base) => {
+        const send = (method, url, body) => fetch(url, {
+            method,
+            headers: { 'content-type': 'application/json' },
+            body: JSON.stringify(body)
+        })
+        const reply = await send('POST', base, { title: `${tag} hidden`, type: 'social', date: '2030-03-01', hideFromEvents: true })
+        assert.equal(reply.status, 201)
+        const created = await reply.json()
+        made.events.push(created.eventId)
+        assert.equal(created.hideFromEvents, true)
+
+        const edited = await send('PUT', `${base}/${created.eventId}`, { hideFromEvents: false })
+        assert.equal((await edited.json()).hideFromEvents, false)
+        assert.equal((await send('PUT', `${base}/${created.eventId}`, { hideFromEvents: 'yes' })).status, 400)
+    })
+})

@@ -1,10 +1,12 @@
 'use client'
 
 import { useEffect, useState } from 'react'
+import { useRouter } from 'next/navigation'
 import { useDismiss } from '@/lib/dismiss'
 import DashboardShell from '@/components/dashboards/DashboardShell'
 import { eventCategories, events as eventsApi, labs as labsApi } from '@/lib/api'
-import { buildMonths, calendarOnly, typesIn } from '@/lib/calendar'
+import { buildMonths, calendarOnly, categoryNameOf, typesIn } from '@/lib/calendar'
+import HideFromEventsToggle from '@/components/events/HideFromEventsToggle'
 import { thisMonth } from '@/lib/dates'
 import { hiddenTracks } from '@/lib/roles'
 import { useRole } from '@/lib/session'
@@ -559,13 +561,11 @@ function EntryText({ entry }) {
 	)
 }
 
-// Events /events doesn't list — the board's and meetings (see calendarOnly) —
-// can only be edited from here, so their entry is a button that opens the
-// editor. Everything else is edited where it's listed, and stays plain text.
-const editableHere = (entry) => entry.eventId != null && calendarOnly(entry.track, entry.type)
-
+// Every entry is a button into its editor: an event opens the same dialog
+// /events edits with, a lab goes to its edit page. This calendar is only ever
+// shown to officer and up, who are exactly the roles allowed to edit both.
 function Entry({ entry, onOpen }) {
-	if (!editableHere(entry)) return <EntryText entry={entry} />
+	if (entry.eventId == null && entry.labId == null) return <EntryText entry={entry} />
 	return (
 		<button
 			type="button"
@@ -587,13 +587,19 @@ function Entry({ entry, onOpen }) {
 	)
 }
 
+// Whether `number` in the month on screen is today — its badge glows.
+function isToday(view, number) {
+	const now = new Date()
+	return view.year === now.getFullYear() && view.month === now.getMonth() && number === now.getDate()
+}
+
 // One square of the grid. Out-of-month days keep their number but lose the
 // badge, which is what makes the month itself read as a block. The badge takes
 // its colour from the first thing on the day.
 // `wave` is the cell's row plus its column, handed to the entrance animation as
 // --wave: every cell on the same diagonal arrives together and each diagonal
 // follows the one before it, so the month washes in from the top-left corner.
-function Day({ number, inMonth, entries: dayEntries, wave = 0, onOpen }) {
+function Day({ number, inMonth, entries: dayEntries, wave = 0, today = false, onOpen }) {
 	const first = dayEntries[0]
 	const badge = first ? TRACKS[first.track].pill : 'bg-black text-cream'
 	return (
@@ -631,6 +637,7 @@ function Day({ number, inMonth, entries: dayEntries, wave = 0, onOpen }) {
 				${inMonth
 					? `${badge} group-hover:scale-110`
 					: 'text-black/40'}
+				${today ? 'calendar-today' : ''}
 			`}>
 				{number}
 			</span>
@@ -783,6 +790,7 @@ function EventDialog({ categories, onClose, onSave }) {
 		description: '',
 		spots: '',
 		location: '',
+		hideFromEvents: false,
 	})
 	const [image, setImage] = useState(null) // { file, preview }
 
@@ -1025,6 +1033,12 @@ function EventDialog({ categories, onClose, onSave }) {
 						</label>
 					</div>
 
+					<HideFromEventsToggle
+						checked={form.hideFromEvents}
+						locked={calendarOnly(form.track, categoryNameOf(categories, form.categoryId))}
+						onChange={(hideFromEvents) => setForm((prev) => ({ ...prev, hideFromEvents }))}
+					/>
+
 					<label className="block">
 						<Label>description</Label>
 						<textarea
@@ -1165,12 +1179,13 @@ function EventDialog({ categories, onClose, onSave }) {
 
 export default function OfficerCalendar() {
 	const role = useRole()
+	const router = useRouter()
 	// Which month is on screen. Stepping goes through Date so December rolls
 	// into January of the next year on its own.
 	const [view, setView] = useState(thisMonth)
 	const [dialogOpen, setDialogOpen] = useState(false)
 	// The event open in the editor, as /events' cards shape it — set by
-	// clicking one of the calendar-only entries (see Entry), null when closed.
+	// clicking its entry (see Entry), null when closed.
 	const [editing, setEditing] = useState(null)
 
 	// Every lab and event, keyed by month then day. Fetched once and stepped
@@ -1276,7 +1291,7 @@ export default function OfficerCalendar() {
 	// `type` — official or social, which is what attendance is scored on — isn't
 	// on this form, so a new event takes 'social'. Change it from /events, where
 	// the same event has a full editor.
-	const saveEvent = async ({ title, date, time, categoryId, track, description, image, spots, location }) => {
+	const saveEvent = async ({ title, date, time, categoryId, track, description, image, spots, location, hideFromEvents }) => {
 		setError(null)
 		try {
 			await eventsApi.create({
@@ -1289,6 +1304,7 @@ export default function OfficerCalendar() {
 				image,
 				capacity: spots.trim() === '' ? null : Number(spots),
 				location: location.trim() || null,
+				hideFromEvents,
 				type: 'social',
 			})
 			await load()
@@ -1300,12 +1316,18 @@ export default function OfficerCalendar() {
 		setDialogOpen(false)
 	}
 
+	// A lab has a whole page of an editor (lessons, quiz, PDFs), so it goes
+	// there; an event opens the dialog in place.
 	const openEntry = (entry) => {
+		if (entry.labId != null) {
+			router.push(`/labs/edit?id=${entry.labId}`)
+			return
+		}
 		const row = eventRows.find((event) => event.eventId === entry.eventId)
 		if (row) setEditing(toCard(row))
 	}
 
-	// The editor's save and delete, for a calendar-only event. Same body /events
+	// The editor's save and delete. Same body /events
 	// sends; the whole page reloads afterwards since the entry may have moved
 	// day, changed colour or gone.
 	const updateEvent = async (values) => {
@@ -1321,6 +1343,7 @@ export default function OfficerCalendar() {
 				image: values.image,
 				capacity: values.spots.trim() === '' ? null : Number(values.spots),
 				location: values.location.trim() || null,
+				hideFromEvents: values.hideFromEvents,
 			})
 			await load()
 		} catch (err) {
@@ -1648,6 +1671,7 @@ export default function OfficerCalendar() {
 									wave={i + column + 1}
 									number={day.number}
 									inMonth={day.inMonth}
+									today={day.inMonth && isToday(view, day.number)}
 									entries={day.inMonth ? listFor(monthEntries, day.number) : []}
 									onOpen={openEntry}
 								/>

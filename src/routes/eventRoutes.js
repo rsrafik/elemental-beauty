@@ -133,7 +133,7 @@ router.get('/:id', async (req, res) => {
 // ---- officer+ event management ----
 
 router.post('/', requireRole('officer'), async (req, res) => {
-    const { title, type, track, categoryId, description, date, startTime, location, image, capacity } = req.body
+    const { title, type, track, categoryId, description, date, startTime, location, image, capacity, hideFromEvents } = req.body
 
     if (!title || !date) {
         return res.status(400).json({ message: 'title and date are required' })
@@ -143,6 +143,9 @@ router.post('/', requireRole('officer'), async (req, res) => {
     }
     if (track !== undefined && !EVENT_TRACKS.includes(track)) {
         return res.status(400).json({ message: `track must be one of: ${EVENT_TRACKS.join(', ')}` })
+    }
+    if (hideFromEvents !== undefined && typeof hideFromEvents !== 'boolean') {
+        return res.status(400).json({ message: 'hideFromEvents must be true or false' })
     }
     // an officer can't file something j-board-only, nor j-board something
     // officers-only — it'd vanish off their own calendar the moment it saved
@@ -172,7 +175,8 @@ router.post('/', requireRole('officer'), async (req, res) => {
                 startTime: startTime || null,
                 location: location?.trim() || null,
                 image,
-                capacity
+                capacity,
+                hideFromEvents: hideFromEvents ?? false
             }
         })
         res.status(201).json(event)
@@ -210,6 +214,12 @@ router.put('/:id', requireRole('officer'), async (req, res) => {
         data.track = req.body.track
     }
     if (req.body.categoryId !== undefined) { data.categoryId = req.body.categoryId }
+    if (req.body.hideFromEvents !== undefined) {
+        if (typeof req.body.hideFromEvents !== 'boolean') {
+            return res.status(400).json({ message: 'hideFromEvents must be true or false' })
+        }
+        data.hideFromEvents = req.body.hideFromEvents
+    }
     if (req.body.startTime !== undefined) {
         if (req.body.startTime && !TIME.test(req.body.startTime)) {
             return res.status(400).json({ message: 'startTime must be HH:MM' })

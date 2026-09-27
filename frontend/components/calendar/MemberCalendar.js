@@ -176,13 +176,19 @@ function Pill({ children, className = '' }) {
 	)
 }
 
+// Whether `number` in the month on screen is today — its badge glows.
+function isToday(view, number) {
+	const now = new Date()
+	return view.year === now.getFullYear() && view.month === now.getMonth() && number === now.getDate()
+}
+
 // One square of the grid. Out-of-month days keep their number but lose the
 // badge, which is what makes the month itself read as a block.
 //
 // `wave` is the cell's row plus its column, handed to the entrance animation as
 // --wave: every cell on the same diagonal arrives together and each diagonal
 // follows the one before it, so the month washes in from the top-left corner.
-function Day({ number, inMonth, entry, wave = 0 }) {
+function Day({ number, inMonth, entry, wave = 0, today = false }) {
 	const badge = entry ? TRACKS[entry.track].pill : 'bg-black text-cream'
 	return (
 		<div
@@ -219,6 +225,7 @@ function Day({ number, inMonth, entry, wave = 0 }) {
 				${inMonth
 					? `${badge} group-hover:scale-110`
 					: 'text-black/40'}
+				${today ? 'calendar-today' : ''}
 			`}>
 				{number}
 			</span>
@@ -696,6 +703,7 @@ export default function MemberCalendar() {
 									wave={i + column + 1}
 									number={day.number}
 									inMonth={day.inMonth}
+									today={day.inMonth && isToday(view, day.number)}
 									entry={day.inMonth ? visible(monthEntries[day.number]) : null}
 								/>
 							))}

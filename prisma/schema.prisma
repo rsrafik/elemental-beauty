@@ -345,6 +345,10 @@ model Event {
   location    String?
   image       String?
   capacity    Int? // null = unlimited seats
+  // The "hide from events" switch: kept off both /events pages, whoever it's
+  // for and whatever its tag — it still shows on the calendar. Meetings and
+  // the board's tracks are kept off regardless (frontend/lib/calendar.js).
+  hideFromEvents Boolean @default(false) @map("hide_from_events")
   // when the check-in page's "confirmation" last went out (src/offers.js)
   confirmSentAt DateTime? @map("confirm_sent_at") @db.Timestamptz()
   // the day-before reminder, same as a lab's (src/reminders.js)

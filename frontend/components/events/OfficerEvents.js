@@ -6,7 +6,8 @@ import { useDismiss } from '@/lib/dismiss'
 import DashboardShell from '@/components/dashboards/DashboardShell'
 import { eventCategories, events as eventsApi } from '@/lib/api'
 import { isoDate, prettyTime } from '@/lib/dates'
-import { calendarOnly } from '@/lib/calendar'
+import { calendarOnly, categoryNameOf } from '@/lib/calendar'
+import HideFromEventsToggle from '@/components/events/HideFromEventsToggle'
 import { hiddenTracks } from '@/lib/roles'
 import { useRole } from '@/lib/session'
 import { splitByDate, CompletedDivider, COMPLETED_CARD } from '@/components/CardSections'
@@ -58,6 +59,7 @@ export function toCard(event) {
 		description: event.description ?? '',
 		capacity: event.capacity ?? null,
 		location: event.location ?? '',
+		hideFromEvents: event.hideFromEvents ?? false,
 	}
 }
 
@@ -416,8 +418,8 @@ function ConfirmDeleteDialog({ label, onCancel, onConfirm }) {
 // `onDelete` only comes in when there's an event to delete, which is what puts
 // the delete button on the footer.
 //
-// The officer calendar opens this too, for the events this page doesn't list
-// (see calendarOnly) — otherwise there'd be nowhere to edit them.
+// The officer calendar opens this too, when an event on it is clicked —
+// including the ones this page doesn't list, which have nowhere else to edit.
 export function EventDialog({ event, categories, onClose, onSave, onDelete }) {
 	const role = useRole()
 	// dismiss plays the exit animation and then closes for real — lib/dismiss.js
@@ -433,6 +435,7 @@ export function EventDialog({ event, categories, onClose, onSave, onDelete }) {
 		description: event?.description ?? '',
 		spots: event?.capacity == null ? '' : String(event.capacity),
 		location: event?.location ?? '',
+		hideFromEvents: event?.hideFromEvents ?? false,
 	})
 	const [image, setImage] = useState(event?.image ?? null)
 	const [confirmingDelete, setConfirmingDelete] = useState(false)
@@ -683,6 +686,12 @@ export function EventDialog({ event, categories, onClose, onSave, onDelete }) {
 							/>
 						</label>
 					</div>
+
+					<HideFromEventsToggle
+						checked={form.hideFromEvents}
+						locked={calendarOnly(form.track, categoryNameOf(categories, form.categoryId))}
+						onChange={(hideFromEvents) => setForm((prev) => ({ ...prev, hideFromEvents }))}
+					/>
 
 					<label className="block">
 						<Label>description</Label>
@@ -950,6 +959,7 @@ export default function OfficerEvents({ openNew = false }) {
 			image: values.image,
 			capacity: values.spots.trim() === '' ? null : Number(values.spots),
 			location: values.location.trim() || null,
+			hideFromEvents: values.hideFromEvents,
 		}
 
 		setError(null)
@@ -967,11 +977,12 @@ export default function OfficerEvents({ openNew = false }) {
 		closeEditor()
 	}
 
-	// Board and meeting events are calendar-only (see calendarOnly), so they're
-	// dropped here rather than on load: one saved as a meeting, or moved to the
-	// board, leaves the sheet the moment the form closes.
-	const categoryName = (id) => categories.find((c) => c.categoryId === id)?.name
-	const listed = events.filter((row) => !calendarOnly(row.track, categoryName(row.categoryId)))
+	// Board and meeting events are calendar-only (see calendarOnly), and so is
+	// anything with "hide from events" switched on. Dropped here rather than on
+	// load, so one saved that way leaves the sheet the moment the form closes.
+	const listed = events.filter((row) =>
+		!row.hideFromEvents && !calendarOnly(row.track, categoryNameOf(categories, row.categoryId))
+	)
 
 	// coming up (or today) first, then what's already happened, greyed out
 	const { upcoming, completed } = splitByDate(listed)
