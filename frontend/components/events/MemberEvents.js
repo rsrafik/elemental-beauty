@@ -621,7 +621,7 @@ export default function MemberEvents() {
 	const currentNudge = showUpcoming && peeking ? PEEK : 0
 
 	return (
-		<DashboardShell className="
+		<DashboardShell fit className="
 			relative
 			lg:-mt-8
 			lg:-mb-8
