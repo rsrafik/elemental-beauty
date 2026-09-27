@@ -15,6 +15,12 @@ import { APP_URL } from './verification.js'
 // and never hold up the reply — a mail hiccup is logged, not thrown.
 
 const money = (amount) => Number(amount).toLocaleString('en-US', { style: 'currency', currency: 'USD' })
+
+// How each payout method is written (see PAYOUT_METHODS in reimbursementRoutes.js)
+const PAYOUT_LABEL = {
+    cash: 'cash', zelle: 'Zelle', venmo: 'Venmo', cashapp: 'Cash App', paypal: 'PayPal',
+    applecash: 'Apple Cash', check: 'check', other: 'other'
+}
 const PAGE = () => `${APP_URL}/analytics`
 
 async function treasurers() {
@@ -44,6 +50,9 @@ export async function notifyTreasurer(request, { resent = false } = {}) {
                 lines: [
                     `${name} ${resent ? 'fixed and resent' : 'handed in'} “${request.title}” for ${money(request.amountRequested)}, filed under ${request.category}.`,
                     ...(request.explanation ? [`What it was for: ${request.explanation}`] : []),
+                    ...(request.payoutMethod
+                        ? [`Pay them back by ${PAYOUT_LABEL[request.payoutMethod] ?? request.payoutMethod}${request.payoutHandle ? `: ${request.payoutHandle}` : ''}`]
+                        : []),
                     ...(resent && request.previousDenial ? [`It was denied before because: ${request.previousDenial}`] : [])
                 ],
                 button: { label: 'Review it', url: PAGE() },

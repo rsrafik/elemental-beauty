@@ -11,6 +11,26 @@ const STATUSES = ['pending', 'approved', 'reimbursed', 'denied']
 // is spending, so the income half of the enum is never a valid answer here.
 const EXPENSE_CATEGORIES = ['lab', 'events', 'guests', 'marketing']
 
+// Where the money goes back to: the platform, and the handle on it (a phone
+// number, email or username). Cash is handed over, so it needs no handle; the
+// rest do. Mirrored for the form in frontend/lib/finances.js.
+export const PAYOUT_METHODS = ['cash', 'zelle', 'venmo', 'cashapp', 'paypal', 'applecash', 'check', 'other']
+
+// { payoutMethod, payoutHandle } as the body sent them. Returns the fields to
+// write ({} when neither was sent) or { error }.
+function readPayout(body) {
+    if (body.payoutMethod === undefined && body.payoutHandle === undefined) { return {} }
+    const method = body.payoutMethod ?? null
+    if (method !== null && !PAYOUT_METHODS.includes(method)) {
+        return { error: `payoutMethod must be one of: ${PAYOUT_METHODS.join(', ')}` }
+    }
+    const handle = String(body.payoutHandle ?? '').trim().slice(0, 200) || null
+    if (method && method !== 'cash' && !handle) {
+        return { error: 'Say where to send it — the phone number, email or username' }
+    }
+    return { fields: { payoutMethod: method, payoutHandle: method === 'cash' ? null : handle } }
+}
+
 // Officer+: submit a request. Status is NOT read from the body — the DB
 // defaults it to pending, and only the treasurer route below changes it.
 //
@@ -20,6 +40,8 @@ const EXPENSE_CATEGORIES = ['lab', 'events', 'guests', 'marketing']
 // day, so the spending lands in the month the club incurred it.
 router.post('/', async (req, res) => {
     const { title, explanation, amountRequested, category, receipt, date } = req.body
+    const payout = readPayout(req.body)
+    if (payout.error) { return res.status(400).json({ message: payout.error }) }
 
     if (!title || amountRequested === undefined || !category) {
         return res.status(400).json({ message: 'title, amountRequested, and category are required' })
@@ -48,6 +70,7 @@ router.post('/', async (req, res) => {
                 amountRequested: amount,
                 category,
                 receipt,
+                ...payout.fields,
                 ...(purchased ? { date: purchased } : {})
             }
         })
@@ -108,6 +131,9 @@ router.put('/:id', async (req, res) => {
         }
         data.date = purchased
     }
+    const payout = readPayout(req.body)
+    if (payout.error) { return res.status(400).json({ message: payout.error }) }
+    Object.assign(data, payout.fields)
 
     try {
         const existing = await prisma.reimbursement.findUnique({ where: { reimbursementId } })
