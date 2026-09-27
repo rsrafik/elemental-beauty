@@ -10,7 +10,13 @@ import { log } from '../activity.js'
 const router = express.Router()
 
 const EVENT_TYPES = ['official', 'social']
-const EVENT_TRACKS = ['members', 'officers', 'open', 'online']
+const EVENT_TRACKS = ['members', 'officers', 'open', 'online', 'board']
+
+// Tracks a plain member never sees: to them these events don't exist. Both are
+// for the board — everyone from officer up, j-board included. 'board' ("EB
+// board") is the one the events form offers for the whole board.
+const STAFF_TRACKS = ['officers', 'board']
+const hiddenFrom = (event, role) => role === 'member' && STAFF_TRACKS.includes(event.track)
 
 // 'HH:MM' — what <input type="time"> hands back, and what the calendar prints.
 const TIME = /^([01][0-9]|2[0-3]):[0-5][0-9]$/
@@ -39,7 +45,7 @@ router.get('/', async (req, res) => {
         }
         where.type = type
     }
-    if (req.role === 'member') { where.track = { not: 'officers' } }
+    if (req.role === 'member') { where.track = { notIn: STAFF_TRACKS } }
 
     try {
         const events = await prisma.event.findMany({
@@ -79,9 +85,9 @@ router.get('/:id', async (req, res) => {
             include: { category: { select: { name: true } } }
         })
         if (!event) { return res.status(404).json({ message: 'Event not found' }) }
-        // an officers-only event doesn't exist as far as a member is concerned —
+        // a board-only event doesn't exist as far as a member is concerned —
         // 404, not 403, so the reply doesn't confirm there's something there
-        if (event.track === 'officers' && req.role === 'member') {
+        if (hiddenFrom(event, req.role)) {
             return res.status(404).json({ message: 'Event not found' })
         }
 
@@ -260,9 +266,9 @@ router.post('/:eventId/rsvp', async (req, res) => {
 
     try {
         const event = await prisma.event.findUnique({ where: { eventId } })
-        // an officers-only event doesn't exist for a member — the same 404
+        // a board-only event doesn't exist for a member — the same 404
         // GET /:id gives, so signing up by id can't get round it
-        if (!event || (event.track === 'officers' && req.role === 'member')) {
+        if (!event || hiddenFrom(event, req.role)) {
             return res.status(404).json({ message: 'Event not found' })
         }
 

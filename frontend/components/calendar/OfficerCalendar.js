@@ -56,10 +56,12 @@ const TRACKS = {
 	officers: { label: 'officers', pill: 'bg-yellow text-black' },
 	open: { label: 'open to all', pill: 'bg-green text-black' },
 	online: { label: 'online', pill: 'bg-blue text-white' },
+	board: { label: 'EB board', pill: 'bg-[#6B4FBF] text-white' },
 }
 
-// Officers-only days never reach the member calendar, which filters them out.
-// This page shows all four tracks, since officers are the ones scheduling them.
+// Officers-only and EB-board days never reach the member calendar, which
+// filters them out. This page shows every track, since the board (j-board and
+// up) are the ones scheduling them and the ones they're for.
 const TRACK_KEYS = Object.keys(TRACKS)
 
 // Where the days come from now: labs and events, folded into one month map by

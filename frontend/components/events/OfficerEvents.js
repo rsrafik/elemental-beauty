@@ -23,12 +23,14 @@ import { COVER_MAX, shrinkImage } from '@/lib/images'
 // from it on purpose: they carry sign-ups and check-in, so they're created from
 // /labs instead, and /api/event-categories refuses 'lab' as a tag name.
 
-// Who the event is for. Officers-only events stay off the member calendar.
+// Who the event is for. Officers-only and EB-board events stay off the member
+// calendar and events page; EB board is j-board and everyone above a member.
 const TRACKS = {
 	members: 'members',
 	officers: 'officers',
 	open: 'open to all',
 	online: 'online',
+	board: 'EB board',
 }
 
 const TRACK_KEYS = Object.keys(TRACKS)

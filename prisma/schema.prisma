@@ -47,13 +47,15 @@ enum EventType {
 }
 
 // Who an event is for. The calendar colours a day by this and the member
-// calendar drops `officers` entirely, so it's the field that decides whether a
-// row is ever sent to a member at all — not just how it's drawn.
+// calendar drops `officers` and `board` entirely, so it's the field that
+// decides whether a row is ever sent to a member at all — not just how it's
+// drawn. `board` is "EB board": j-board and every staff role above a member.
 enum EventTrack {
   members
   officers
   open
   online
+  board
 
   @@map("event_track")
 }

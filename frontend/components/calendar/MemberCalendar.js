@@ -49,12 +49,14 @@ const TRACKS = {
 	officers: { label: 'officers', pill: 'bg-yellow text-black' },
 	open: { label: 'open to all', pill: 'bg-green text-black' },
 	online: { label: 'online', pill: 'bg-blue text-white' },
+	board: { label: 'EB board', pill: 'bg-[#6B4FBF] text-white' },
 }
 
-// Officer-only days aren't a member's business: they're kept out of the grid
-// and off the legend here. This is only the view side of that rule — the API
-// should be filtering them out before they ever reach the page.
-const VISIBLE_TRACKS = Object.keys(TRACKS).filter((track) => track !== 'officers')
+// Officer-only and EB-board days aren't a member's business: they're kept out
+// of the grid and off the legend here. This is only the view side of that rule
+// — the API filters them out before they ever reach the page.
+const STAFF_TRACKS = ['officers', 'board']
+const VISIBLE_TRACKS = Object.keys(TRACKS).filter((track) => !STAFF_TRACKS.includes(track))
 
 // Where the days come from now: labs and events, folded into one month map by
 // lib/calendar. Officer-only events never arrive here at all — the API filters
