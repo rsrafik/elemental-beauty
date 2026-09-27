@@ -533,8 +533,21 @@ function LogIn({ front, onCome, onForgot, onSubmit, onDone }) {
 				onChange={(event) => setUsername(event.target.value)}
 				className={`${FIELD} mt-[9px] bg-[#FFE9BF]`}
 			/>
+			{/* nobody picks a username — sign-up makes it from the email — so
+			    this is the one place that says what to type here. Spaced like
+			    the hints on the sign-up card, but with room between lines: on a
+			    phone it runs to two, and HINT's `leading-none` stacks them flush. */}
+			<p className="
+				font-vietnam
+				mt-[10px]
+				text-[12px]
+				leading-[1.35]
+				text-[#2B2B2B]
+			">
+				the part before the @ in the email you signed up with
+			</p>
 
-			<p className={`${LABEL} mt-[29px]`}>PASSWORD</p>
+			<p className={`${LABEL} mt-[21px]`}>PASSWORD</p>
 			<input
 				type="password"
 				name="password"
