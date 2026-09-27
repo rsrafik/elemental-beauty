@@ -1261,14 +1261,13 @@ function Toggle({ label, hint, checked, busy, onChange }) {
 	)
 }
 
-// What officers' "email all" buttons may send you. Account mail — the link
-// that confirms your address, password resets — isn't optional and isn't
-// listed.
+// Whether the officers' club-wide "email all" reaches you. Account mail — the
+// link that confirms your address, password resets — and mail about a lab or
+// event you've signed up for aren't optional, so they aren't listed.
 function EmailPrefsCard({ user, onSaved, className = '' }) {
 	const staff = hasRole('officer', user?.role)
 	const [prefs, setPrefs] = useState(() => ({
 		emailClub: user?.emailClub !== false,
-		emailEvents: user?.emailEvents !== false,
 	}))
 	const [busy, setBusy] = useState(null)
 	const [error, setError] = useState(null)
@@ -1312,9 +1311,10 @@ function EmailPrefsCard({ user, onSaved, className = '' }) {
 				text-sm
 				text-black/55
 			">
-				What officers can send you. Emails about your account — confirming
-				your address, resetting your password — always come through.
-				{staff && ' As staff you start opted out — turn these on if you want them, say for an event you’ve signed up for.'}
+				What officers can send you. Emails about your account, and about labs
+				and events you&apos;ve signed up for — confirmations, reminders,
+				messages from the officers running them — always come through.
+				{staff && ' As staff you start opted out of club-wide emails — turn them on if you want them.'}
 			</p>
 			<div className="
 				mt-3
@@ -1327,13 +1327,6 @@ function EmailPrefsCard({ user, onSaved, className = '' }) {
 					checked={prefs.emailClub}
 					busy={busy === 'emailClub'}
 					onChange={flip('emailClub')}
-				/>
-				<Toggle
-					label="lab & event emails"
-					hint="Messages about labs and events you've signed up for."
-					checked={prefs.emailEvents}
-					busy={busy === 'emailEvents'}
-					onChange={flip('emailEvents')}
 				/>
 			</div>
 			{error && (

@@ -4,7 +4,6 @@ import { actionEmail } from './emailTemplate.js'
 import { APP_URL } from './verification.js'
 import { KINDS, startsAt } from './offers.js'
 import { clubFormat } from './clubTime.js'
-import { wantsEmail } from './emailPrefs.js'
 
 // The day-before reminder: once a lab or event is less than 24 hours off,
 // everyone with a confirmed spot is emailed where and when. Runs hourly (see
@@ -12,8 +11,8 @@ import { wantsEmail } from './emailPrefs.js'
 // on the lab or event makes it once, and moving the date or time clears it so
 // a rescheduled one is reminded about again.
 //
-// It's a lab and event email like an officer's "email all", so it follows the
-// same switch on /account (users.emailEvents — see emailPrefs.js).
+// It goes to everyone with a confirmed spot, staff included: lab and event
+// mail isn't optional (see emailPrefs.js).
 //
 // Something created or published with less than a day to go is reminded about
 // on the next sweep; one that has already started never is.
@@ -61,11 +60,10 @@ export async function sendReminders(now = new Date()) {
 
             const people = await prisma[kind.link].findMany({
                 where: { [kind.key]: parentId, attendanceStatus: 'rsvped' },
-                select: { member: { select: { role: true, user: { select: { email: true, firstName: true, emailEvents: true } } } } }
+                select: { member: { select: { user: { select: { email: true, firstName: true } } } } }
             })
             const when = whenText(start, Boolean(row.startTime))
             for (const { member } of people) {
-                if (!wantsEmail(member.user.emailEvents, member.role)) { continue }
                 await sendEmail({
                     to: member.user.email,
                     subject: `Tomorrow: ${row.title}`,
@@ -79,7 +77,7 @@ export async function sendReminders(now = new Date()) {
                         ],
                         button: { label: `View the ${kind.noun}`, url: `${APP_URL}${kind.page(parentId)}` },
                         after: ['Can’t make it any more? Cancel your RSVP on the site so your spot can go to someone on the waitlist.'],
-                        reason: `You’re getting this because you signed up for ${row.title}. You can turn lab and event emails off on your account page.`
+                        reason: `You’re getting this because you signed up for ${row.title}.`
                     })
                 })
                 sent++

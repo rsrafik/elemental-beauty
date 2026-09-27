@@ -113,7 +113,6 @@ router.get('/me', authMiddleware, async (req, res) => {
                 waiverSigned: true,
                 waiverName: true,
                 emailClub: true,
-                emailEvents: true,
                 createdAt: true,
                 member: { select: { role: true, points: true, dateJoined: true } }
             }
@@ -123,10 +122,9 @@ router.get('/me', authMiddleware, async (req, res) => {
         const { member, ...account } = user
         res.json({
             ...account,
-            // what their email switches on /account show: their choice, or
-            // their role's default until they've made one
+            // what the email switch on /account shows: their choice, or their
+            // role's default until they've made one
             emailClub: wantsEmail(user.emailClub, member?.role),
-            emailEvents: wantsEmail(user.emailEvents, member?.role),
             // 'user' rather than null: the frontend ranks roles, and an account
             // with no membership is the bottom of that ladder, not the absence
             // of an answer.
