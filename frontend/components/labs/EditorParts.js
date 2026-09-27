@@ -222,13 +222,19 @@ export function StatusLine({ status }) {
 }
 
 // publish / save draft / discard, 121.7 × 32 each, 41.7 apart.
+//
+// Three of those and their gaps come to ~390px, wider than a phone's column,
+// so below `sm` they share the row instead: equal thirds with a small gap, the
+// labels still fitting at 15px.
 export function PublishBar({ onPublish, onDraft, onDiscard, busy }) {
-	const size = 'w-[121.7px] h-[32px] shrink-0'
+	const size = 'h-[32px] min-w-0 flex-1 px-2 sm:w-[121.7px] sm:flex-none sm:shrink-0 sm:px-0'
 	return (
 		<div className="
 			flex
+			w-full
 			justify-center
-			gap-4
+			gap-2
+			sm:w-auto
 			sm:gap-[41.7px]
 		">
 			<EditorButton className={size} onClick={onPublish} disabled={busy}>publish</EditorButton>
