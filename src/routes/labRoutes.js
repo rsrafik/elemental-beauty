@@ -6,7 +6,7 @@ import { POINTS } from '../points.js'
 import { mountRoster } from './roster.js'
 import { acceptOffer, confirmSpot, expireOffers, lockParent, offerNext, startsAt } from '../offers.js'
 import { log } from '../activity.js'
-import { DUES_ANSWERS, duesOwed, duesUnpaid, settleDues } from '../dues.js'
+import { DUES_ANSWERS, duesAnswerProblem, duesLookup, duesOwed, duesUnpaid, settleDues } from '../dues.js'
 
 const router = express.Router()
 const RANK_OFFICER = ['officer', 'jboard', 'treasurer', 'admin']
@@ -41,6 +41,10 @@ const QUIZ_SELECT = {
 // An open waitlist offer holds a seat too (see src/offers.js).
 const TAKEN = { attendanceStatus: { in: ['rsvped', 'attended', 'offered'] } }
 
+// Who counts as signed up for the prelab: a spot that's theirs, or held for
+// them. Not the waitlist.
+const HOLDS_SPOT = ['rsvped', 'attended', 'offered']
+
 // List labs. Always preview fields — full content is unlocked per-lab.
 // ?when=upcoming|past derived against today at query time, never stored.
 //
@@ -57,6 +61,7 @@ router.get('/', async (req, res) => {
     if (!RANK_OFFICER.includes(req.role)) { where.published = true }
 
     try {
+        const owe = await duesLookup(prisma, req.userId)
         const labs = await prisma.lab.findMany({
             where,
             select: {
@@ -81,7 +86,10 @@ router.get('/', async (req, res) => {
             taken: _count.members,
             // null when they have nothing to do with it
             mine: members[0]?.attendanceStatus ?? null,
-            quizPassed: members[0]?.quizPassed ?? null
+            quizPassed: members[0]?.quizPassed ?? null,
+            // unpaid dues: { schoolYear, amount, price } — the card shows the
+            // price, the page warns about it (see src/dues.js)
+            dues: owe(lab.date?.toISOString().slice(0, 10))
         })))
     } catch (err) {
         console.error(err.message)
@@ -121,7 +129,11 @@ router.get('/:id', async (req, res) => {
             })
         if (!lab || (!lab.published && !officer)) { return res.status(404).json({ message: 'Lab not found' }) }
 
-        const taken = await prisma.memberLab.count({ where: { labId, ...TAKEN } })
+        const [taken, owe, prelab] = await Promise.all([
+            prisma.memberLab.count({ where: { labId, ...TAKEN } }),
+            duesLookup(prisma, req.userId),
+            prisma.lab.findUnique({ where: { labId }, select: { prelabPdfName: true } })
+        ])
 
         // everyone who joined the queue before this person, plus them
         let waitlistPosition = null
@@ -155,7 +167,13 @@ router.get('/:id', async (req, res) => {
             // and hasn't yet — the lab's page offers the button
             confirmPending: link?.attendanceStatus === 'rsvped' && Boolean(link.confirmSentAt) && !link.confirmedAt,
             confirmBy: link?.confirmBy ?? null,
-            waitlistPosition
+            waitlistPosition,
+            dues: owe(lab.date?.toISOString().slice(0, 10)),
+            // the prelab the confirmation email attaches, for anyone holding
+            // a spot — so it's never only in an inbox (GET /:id/prelab)
+            prelabPdfName: officer || HOLDS_SPOT.includes(link?.attendanceStatus)
+                ? prelab?.prelabPdfName ?? null
+                : null
         })
     } catch (err) {
         console.error(err.message)
@@ -294,11 +312,22 @@ function labData(body) {
 // title; a published lab needs its date too.
 // The prelab handout — uploaded on the check-in page, attached to the
 // confirmation emails (src/offers.js). Same shape as the lesson: the PDF as the
-// request body, its name in X-Filename. Officers can read it back to check it.
-router.get('/:id/prelab', requireRole('officer'), async (req, res) => {
+// request body, its name in X-Filename. Officers can read it back to check it,
+// and anyone holding a spot can read it off the lab's page — the email isn't
+// the only copy.
+router.get('/:id/prelab', async (req, res) => {
     const labId = parseInt(req.params.id)
     if (isNaN(labId)) { return res.status(400).json({ message: 'Invalid lab id' }) }
     try {
+        if (!RANK_OFFICER.includes(req.role)) {
+            const link = await prisma.memberLab.findUnique({
+                where: { memberId_labId: { memberId: req.userId, labId } },
+                select: { attendanceStatus: true }
+            })
+            if (!HOLDS_SPOT.includes(link?.attendanceStatus)) {
+                return res.status(403).json({ message: 'The prelab is for people signed up to this lab' })
+            }
+        }
         const lab = await prisma.lab.findUnique({ where: { labId }, select: { prelabPdf: true, prelabPdfName: true } })
         if (!lab?.prelabPdf) { return res.status(404).json({ message: 'This lab has no prelab yet' }) }
         res.set({
@@ -770,8 +799,9 @@ router.delete('/:labId/rsvp', async (req, res) => {
 //
 // Dues: someone who hasn't paid for the lab's school year isn't checked in —
 // the reply is DUES_UNPAID and the page asks the officer what to do. Their
-// answer comes back as a second scan with `dues` set, 'paid' or 'waive' (see
-// src/dues.js); "wait" never reaches the server, so they stay not checked in.
+// answer comes back as a second scan with `dues` set, 'paid', 'fee' or 'waive'
+// (see src/dues.js); "wait" never reaches the server, so they stay not
+// checked in.
 //
 // Body: { qrToken, dues? }
 router.post('/:labId/checkin', requireRole('officer'), async (req, res) => {
@@ -781,7 +811,7 @@ router.post('/:labId/checkin', requireRole('officer'), async (req, res) => {
     const { qrToken, dues } = req.body
     if (!qrToken) { return res.status(400).json({ message: 'qrToken is required' }) }
     if (dues !== undefined && !DUES_ANSWERS.includes(dues)) {
-        return res.status(400).json({ message: "dues must be 'paid' or 'waive'" })
+        return res.status(400).json({ message: `dues must be one of: ${DUES_ANSWERS.join(', ')}` })
     }
 
     let decoded
@@ -825,12 +855,14 @@ router.post('/:labId/checkin', requireRole('officer'), async (req, res) => {
         // owes dues for the lab's year (today's, for one with no date)?
         const owed = await duesOwed(prisma, decoded.id, lab.date?.toISOString().slice(0, 10))
         if (owed && !dues) { return duesUnpaid(res, decoded.id, owed) }
+        const problem = owed && duesAnswerProblem(owed, dues)
+        if (problem) { return res.status(400).json({ message: problem }) }
 
         // rsvped → attended; lab points awarded atomically with the transition
         // (only this transition earns — rescans hit the guards above)
         const attendance = await prisma.$transaction(async (tx) => {
             if (owed) {
-                await settleDues(tx, { owed, dues, memberId: decoded.id, actorId: req.userId, lab: { id: labId, title: lab.title } })
+                await settleDues(tx, { owed, dues, memberId: decoded.id, actorId: req.userId, item: { kind: 'lab', id: labId, title: lab.title } })
             }
             const row = await tx.memberLab.update({
                 where: { memberId_labId: { memberId: decoded.id, labId } },

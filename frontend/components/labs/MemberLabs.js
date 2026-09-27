@@ -5,6 +5,7 @@ import { useRouter } from 'next/navigation'
 import DashboardShell from '@/components/dashboards/DashboardShell'
 import { labs as labsApi } from '@/lib/api'
 import { isoDate, longDate, prettyTime, today } from '@/lib/dates'
+import { priceText } from '@/components/labs/LabViewParts'
 
 // /labs for a user or member: browse upcoming labs, RSVP, look back at the
 // ones they've attended.
@@ -281,6 +282,9 @@ function toCard(lab) {
 		taken: lab.taken,
 		capacity: lab.capacity,
 		mine: lab.mine,
+		// what it'll cost at the door, when they haven't paid dues (0 = nothing
+		// to show — see src/dues.js)
+		price: lab.dues?.price ?? 0,
 	}
 }
 
@@ -323,6 +327,8 @@ function panels(rows) {
 				time: lab.time,
 				location: lab.location,
 				image: lab.image,
+				// still owed until they're through the door
+				price: attended ? 0 : lab.price,
 				status: attended
 					? 'attended'
 					: isToday ? 'open' : 'locked',
@@ -354,12 +360,14 @@ function panels(rows) {
 // `availability` is optional: pass it and it rides on the title's line, pinned
 // to the right edge of the card. Sections that have no seat count (a lab that's
 // already running) just leave it out and the title takes the full width.
+// `price` rides there too — the non-member price, for someone who hasn't paid
+// the year's dues.
 //
 // Clicking the card opens the lab (`onOpen`, /labs/view). Its `action` (the
 // rsvp button) is the one thing on it that doesn't — it stops the click on its
 // way out. The current section passes a plain `icon` instead, which is a status
 // marker, not a control.
-function LabCard({ title, lines, image, icon, action, availability, onOpen }) {
+function LabCard({ title, lines, image, icon, action, availability, price, onOpen }) {
 	return (
 		<div
 			role="link"
@@ -430,16 +438,35 @@ function LabCard({ title, lines, image, icon, action, availability, onOpen }) {
 					">
 						{title}
 					</p>
-					{availability && (
+					{(price || availability) && (
 						<span className="
-							font-vietnam
-							font-semibold
-							text-salmon-med
-							text-sm
+							flex
+							items-baseline
+							gap-2
 							shrink-0
 							whitespace-nowrap
 						">
-							{availability}
+							{/* what it costs someone who hasn't paid dues, set like
+							    the date and room under it */}
+							{price && (
+								<span className="
+									font-vietnam
+									text-black/70
+									text-sm
+								">
+									{price}
+								</span>
+							)}
+							{availability && (
+								<span className="
+									font-vietnam
+									font-semibold
+									text-salmon-med
+									text-sm
+								">
+									{availability}
+								</span>
+							)}
 						</span>
 					)}
 				</div>
@@ -535,6 +562,7 @@ function LabGrid({ items, icons, renderAction }) {
 						availability={
 							lab.capacity == null ? null : `${lab.taken}/${lab.capacity}`
 						}
+						price={lab.price > 0 ? priceText(lab.price) : null}
 						onOpen={() => router.push(`/labs/view?id=${lab.id}`)}
 					/>
 				))}

@@ -532,7 +532,7 @@ export default function CheckInView({ kind, id }) {
 		if (reply.code === 'DUES_UNPAID') {
 			return new Promise((resolve) => setDuesAsk({
 				reply,
-				// waive / paid: scan them again with the answer
+				// paid / fee / waive: scan them again with the answer
 				answer: async (dues) => resolve(await flashFor(await api.checkin(id, token, dues), reply.memberId)),
 				// wait (or the popup closing after an answer, when this does nothing)
 				close: () => resolve({ tone: 'yellow', text: `${reply.name ?? 'member'} not checked in — dues unpaid` }),
@@ -927,6 +927,7 @@ export default function CheckInView({ kind, id }) {
 					name={duesAsk.reply.name}
 					schoolYear={duesAsk.reply.schoolYear}
 					amount={duesAsk.reply.amount}
+					price={duesAsk.reply.price}
 					onChoose={duesAsk.answer}
 					onClose={() => {
 						duesAsk.close()

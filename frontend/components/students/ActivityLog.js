@@ -51,6 +51,10 @@ function sentence(entry) {
 			return <>{actor} took back {target}&apos;s {d.schoolYear} dues</>
 		case 'dues_waived':
 			return <>{actor} let {target} into {d.title} without paying {d.schoolYear} dues</>
+		case 'fee_paid':
+			return <>{actor} took {money(d.amount)} from {target} for {d.title} (non-member price)</>
+		case 'dues_reset':
+			return <>{actor} cleared everyone&apos;s {d.schoolYear} dues ({d.count} {d.count === 1 ? 'payment' : 'payments'})</>
 		default:
 			return <>{actor} — {entry.action}</>
 	}
@@ -67,6 +71,8 @@ const DOT = {
 	dues_paid: 'bg-yellow',
 	dues_cleared: 'bg-black/30',
 	dues_waived: 'bg-yellow',
+	fee_paid: 'bg-yellow',
+	dues_reset: 'bg-black/30',
 }
 
 function when(at) {

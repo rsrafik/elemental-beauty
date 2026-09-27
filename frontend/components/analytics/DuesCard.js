@@ -1,7 +1,7 @@
 'use client'
 
 import { useEffect, useState } from 'react'
-import { Card, CardNote, CardTitle, FIELD } from '@/components/analytics/parts'
+import { Card, CardNote, CardTitle, ConfirmDialog, FIELD } from '@/components/analytics/parts'
 import { dues as duesApi, yearTargets } from '@/lib/api'
 import { money, prettyDate, today } from '@/lib/finances'
 import { roleLabel } from '@/lib/roles'
@@ -12,10 +12,15 @@ import { roleLabel } from '@/lib/roles'
 // it — which is why it calls `onChange` (the page re-reads the books).
 //
 // The amount at the top is what a member owes that year; it's the default for
-// "paid", and stored with the year's other targets. "waive" records the year as
-// settled with no money moving (and no ledger row).
+// "paid", and stored with the year's other targets. Beside it is what someone
+// who hasn't paid is charged for a single lab or members-only event — the
+// price their cards show, and what the door takes as an entry fee (see
+// src/dues.js). "waive" records the year as settled with no money moving (and
+// no ledger row).
 //
 // Taking a payment back deletes its ledger row too (src/routes/duesRoutes.js).
+// "clear" is the other way round: everyone reads as unpaid again, a fresh
+// round, and the money already paid stays in the ledger.
 
 const FILTERS = [
 	{ key: 'all', label: 'all' },
@@ -61,8 +66,11 @@ export default function DuesCard({ year, onChange }) {
 	const [busy, setBusy] = useState(null)
 	const [query, setQuery] = useState('')
 	const [filter, setFilter] = useState('all')
-	// the owed amount as typed, before it's saved
+	// the two amounts as typed, before they're saved
 	const [amountDraft, setAmountDraft] = useState('')
+	const [priceDraft, setPriceDraft] = useState('')
+	// the clear, while it's being asked about
+	const [clearing, setClearing] = useState(false)
 
 	useEffect(() => {
 		if (!year) return
@@ -73,6 +81,7 @@ export default function DuesCard({ year, onChange }) {
 				if (!live) return
 				setData(reply)
 				setAmountDraft(reply.duesAmount ? String(reply.duesAmount) : '')
+				setPriceDraft(reply.nonmemberPrice ? String(reply.nonmemberPrice) : '')
 				setError(null)
 			})
 			.catch((err) => live && setError(err.message))
@@ -86,16 +95,23 @@ export default function DuesCard({ year, onChange }) {
 
 	const owed = data?.duesAmount ?? 0
 
-	const saveAmount = async () => {
-		const amount = Number(amountDraft)
-		if (!Number.isFinite(amount) || amount < 0 || amount === owed) return
+	// either figure, saved as it's left — `field` is its name on the year's
+	// targets and on this card's data
+	const saveFigure = (field, draft) => async () => {
+		const amount = Number(draft)
+		if (!Number.isFinite(amount) || amount < 0 || amount === (data?.[field] ?? 0)) return
 		setError(null)
 		try {
-			await yearTargets.set(year, { duesAmount: amount })
-			setData((previous) => ({ ...previous, duesAmount: amount }))
+			await yearTargets.set(year, { [field]: amount })
+			setData((previous) => ({ ...previous, [field]: amount }))
 		} catch (err) {
 			setError(err.message)
 		}
+	}
+
+	const clearAll = () => {
+		setClearing(false)
+		run('clear', () => duesApi.clear(year))
 	}
 
 	const run = async (id, call) => {
@@ -147,44 +163,30 @@ export default function DuesCard({ year, onChange }) {
 					</CardNote>
 				</div>
 
-				<label className="
+				<div className="
 					flex
-					items-center
+					flex-col
+					items-end
 					gap-2
-					font-vietnam
-					text-sm
-					text-black/60
 				">
-					owed per member
-					<span className="
-						relative
-						block
-						w-[110px]
-					">
-						<span className="
-							pointer-events-none
-							absolute
-							left-3
-							top-1/2
-							-translate-y-1/2
-							text-black/45
-						">
-							$
-						</span>
-						<input
-							type="number"
-							min="0"
-							step="5"
-							value={amountDraft}
-							onChange={(event) => setAmountDraft(event.target.value)}
-							onBlur={saveAmount}
-							onKeyDown={(event) => event.key === 'Enter' && event.currentTarget.blur()}
-							placeholder="0"
-							aria-label={`Dues owed per member for ${year}`}
-							className={`${FIELD} pl-7 tabular-nums`}
-						/>
-					</span>
-				</label>
+					<MoneyField
+						label="dues per member"
+						value={amountDraft}
+						onChange={setAmountDraft}
+						onSave={saveFigure('duesAmount', amountDraft)}
+						aria={`Dues owed per member for ${year}`}
+					/>
+					{/* what someone unpaid is charged for one lab or members-only
+					    event — on their cards, and taken at the door */}
+					<MoneyField
+						label="non-member price"
+						title="What someone who hasn't paid dues is charged for each lab or members-only event"
+						value={priceDraft}
+						onChange={setPriceDraft}
+						onSave={saveFigure('nonmemberPrice', priceDraft)}
+						aria={`Non-member price per lab or members-only event for ${year}`}
+					/>
+				</div>
 			</div>
 
 			<div className="
@@ -235,6 +237,13 @@ export default function DuesCard({ year, onChange }) {
 						</button>
 					))}
 				</div>
+				<SmallButton
+					onClick={() => setClearing(true)}
+					disabled={paid.length === 0 || busy === 'clear'}
+					title={`Mark everyone unpaid for ${year} — the money already paid stays in the ledger`}
+				>
+					{busy === 'clear' ? 'clearing…' : 'clear'}
+				</SmallButton>
 			</div>
 
 			{error && (
@@ -344,6 +353,64 @@ export default function DuesCard({ year, onChange }) {
 					</li>
 				)}
 			</ul>
+
+			{clearing && (
+				<ConfirmDialog
+					title="clear everyone's dues?"
+					body={`${paid.length === 1 ? 'The 1 member' : `All ${paid.length} members`} marked paid or waived for ${year} will read as unpaid again, ready to be marked for a new round. The ${money(collected)} already collected stays in the income ledger.`}
+					confirmLabel="clear them"
+					onCancel={() => setClearing(false)}
+					onConfirm={clearAll}
+				/>
+			)}
 		</Card>
+	)
+}
+
+// One of the two figures at the top: a label, then a dollar box saved when
+// it's left (or on enter).
+function MoneyField({ label, title, value, onChange, onSave, aria }) {
+	return (
+		<label
+			title={title}
+			className="
+				flex
+				items-center
+				gap-2
+				font-vietnam
+				text-sm
+				text-black/60
+			"
+		>
+			{label}
+			<span className="
+				relative
+				block
+				w-[110px]
+			">
+				<span className="
+					pointer-events-none
+					absolute
+					left-3
+					top-1/2
+					-translate-y-1/2
+					text-black/45
+				">
+					$
+				</span>
+				<input
+					type="number"
+					min="0"
+					step="1"
+					value={value}
+					onChange={(event) => onChange(event.target.value)}
+					onBlur={onSave}
+					onKeyDown={(event) => event.key === 'Enter' && event.currentTarget.blur()}
+					placeholder="0"
+					aria-label={aria}
+					className={`${FIELD} pl-7 tabular-nums`}
+				/>
+			</span>
+		</label>
 	)
 }

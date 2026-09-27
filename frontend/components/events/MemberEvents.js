@@ -5,6 +5,7 @@ import Link from 'next/link'
 import DashboardShell from '@/components/dashboards/DashboardShell'
 import { events as eventsApi } from '@/lib/api'
 import { isoDate, longDate, prettyTime, today } from '@/lib/dates'
+import { priceText } from '@/components/labs/LabViewParts'
 import { calendarOnly } from '@/lib/calendar'
 
 // /events for a user or member: browse what's running now and rsvp to what's
@@ -188,6 +189,9 @@ function toCard(event) {
 		taken: event.taken,
 		capacity: event.capacity,
 		mine: event.mine,
+		// what a members-only one costs at the door when they haven't paid
+		// dues (0 = nothing to show — see src/dues.js)
+		price: event.dues?.price ?? 0,
 	}
 }
 
@@ -224,6 +228,8 @@ function panels(rows) {
 				time: event.time,
 				location: event.location,
 				image: event.image,
+				// still owed until it's happened
+				price: past || event.mine === 'attended' ? 0 : event.price,
 			})
 		}
 
@@ -251,12 +257,14 @@ function panels(rows) {
 
 // `availability` is optional: pass it and it rides on the title's line, pinned
 // to the right edge of the card. The current section has no seat count and no
-// action, so its cards are just the photo, the name and the date.
+// action, so its cards are just the photo, the name and the date. `price` rides
+// on the title's line too — the non-member price, for someone who hasn't paid
+// the year's dues.
 //
 // The whole card opens the event's own page (`href`): a link stretched over it,
 // with the action row lifted above the link so the rsvp button still presses
 // on its own.
-function EventCard({ title, lines, image, action, availability, href }) {
+function EventCard({ title, lines, image, action, availability, price, href }) {
 	return (
 		<div
 			className="
@@ -330,16 +338,35 @@ function EventCard({ title, lines, image, action, availability, href }) {
 					">
 						{title}
 					</p>
-					{availability && (
+					{(price || availability) && (
 						<span className="
-							font-vietnam
-							font-semibold
-							text-blue-med
-							text-sm
+							flex
+							items-baseline
+							gap-2
 							shrink-0
 							whitespace-nowrap
 						">
-							{availability}
+							{/* what it costs someone who hasn't paid dues, set like
+							    the date and room under it */}
+							{price && (
+								<span className="
+									font-vietnam
+									text-black/70
+									text-sm
+								">
+									{price}
+								</span>
+							)}
+							{availability && (
+								<span className="
+									font-vietnam
+									font-semibold
+									text-blue-med
+									text-sm
+								">
+									{availability}
+								</span>
+							)}
 						</span>
 					)}
 				</div>
@@ -421,6 +448,7 @@ function EventGrid({ items, renderAction }) {
 								? null
 								: `${event.taken}/${event.capacity}`
 						}
+						price={event.price > 0 ? priceText(event.price) : null}
 					/>
 				))}
 			</div>

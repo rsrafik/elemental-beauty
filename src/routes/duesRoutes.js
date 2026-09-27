@@ -12,6 +12,9 @@ import { DUES_EXEMPT, recordDues } from '../dues.js'
 //                                  and their payment for that year
 //   POST   /                      { memberId, schoolYear, amount, paidOn? }
 //   DELETE /:duesId               take a payment back (and its ledger row)
+//   DELETE /?schoolYear=2025–26   the dues card's "clear": everyone reads as
+//                                  unpaid for that year again, but the money
+//                                  they paid stays in the ledger
 
 const router = express.Router()
 
@@ -26,7 +29,7 @@ router.get('/', async (req, res) => {
 
     try {
         const [target, members] = await Promise.all([
-            prisma.yearTarget.findUnique({ where: { schoolYear }, select: { duesAmount: true } }),
+            prisma.yearTarget.findUnique({ where: { schoolYear }, select: { duesAmount: true, nonmemberPrice: true } }),
             prisma.member.findMany({
                 where: { role: { notIn: DUES_EXEMPT } },
                 select: {
@@ -48,7 +51,12 @@ router.get('/', async (req, res) => {
                 : null
         }))
         rows.sort((a, b) => a.lastName.localeCompare(b.lastName) || a.firstName.localeCompare(b.firstName))
-        res.json({ schoolYear, duesAmount: Number(target?.duesAmount ?? 0), members: rows })
+        res.json({
+            schoolYear,
+            duesAmount: Number(target?.duesAmount ?? 0),
+            nonmemberPrice: Number(target?.nonmemberPrice ?? 0),
+            members: rows
+        })
     } catch (err) {
         console.error(err.message)
         res.sendStatus(500)
@@ -87,6 +95,32 @@ router.post('/', async (req, res) => {
         })
     } catch (err) {
         if (err.code === 'P2002') { return res.status(409).json({ message: 'They’re already marked paid for that year' }) }
+        console.error(err.message)
+        res.sendStatus(500)
+    }
+})
+
+// Clear the year: every payment's record goes, so everyone reads as unpaid and
+// can be marked again — a new semester's round, say. Their ledger rows stay:
+// that money was paid, and the income summary still counts it. (The foreign
+// key runs from the payment to its ledger row, so deleting payments never
+// touches a transaction.)
+router.delete('/', async (req, res) => {
+    const { schoolYear } = req.query
+    if (!SCHOOL_YEAR.test(schoolYear ?? '')) {
+        return res.status(400).json({ message: 'schoolYear must look like 2025–26' })
+    }
+
+    try {
+        const cleared = await prisma.$transaction(async (tx) => {
+            const { count } = await tx.duesPayment.deleteMany({ where: { schoolYear } })
+            if (count > 0) {
+                await log({ actorId: req.userId, action: 'dues_reset', details: { schoolYear, count } }, tx)
+            }
+            return count
+        })
+        res.json({ message: `Cleared ${cleared} ${cleared === 1 ? 'payment' : 'payments'}`, cleared })
+    } catch (err) {
         console.error(err.message)
         res.sendStatus(500)
     }

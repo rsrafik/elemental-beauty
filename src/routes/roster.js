@@ -1,11 +1,10 @@
 import prisma from '../prismaClient.js'
 import requireRole from '../middleware/requireRole.js'
-import { wantsEmail } from '../emailPrefs.js'
 import { expireOffers, lockParent, offerNext, sendConfirmations, sendOffer } from '../offers.js'
 import { emailAll, readMessage } from '../emailAll.js'
 import { log } from '../activity.js'
 import { csvCell } from '../csv.js'
-import { DUES_ANSWERS, duesOwed, duesUnpaid, settleDues } from '../dues.js'
+import { DUES_ANSWERS, asksDues, duesAnswerProblem, duesOwed, duesUnpaid, settleDues } from '../dues.js'
 
 // The officer check-in page's roster, shared by labs and events: the same
 // three columns (not checked in / checked in / waitlist) and the same buttons
@@ -15,9 +14,10 @@ import { DUES_ANSWERS, duesOwed, duesUnpaid, settleDues } from '../dues.js'
 //   POST /:id/roster     { action, memberId | username }
 //
 //     checkin   rsvped, offered (or absent) -> attended, points awarded (the
-//               green tick). At a lab, someone who owes dues comes back
-//               DUES_UNPAID, the same as the QR scan, and is answered with
-//               `dues` ('paid' | 'waive') — see src/dues.js
+//               green tick). At a lab or a members-only event, someone who
+//               owes dues comes back DUES_UNPAID, the same as the QR scan, and
+//               is answered with `dues` ('paid' | 'fee' | 'waive') — see
+//               src/dues.js
 //     uncheck   attended -> rsvped, points taken back (the x on checked in)
 //     admit     waitlisted -> offered, seat or no seat — an officer at the
 //               door can overrule the cap (the yellow button). The spot's
@@ -52,7 +52,7 @@ const USER_SELECT = {
     member: {
         select: {
             role: true,
-            user: { select: { username: true, firstName: true, lastName: true, email: true, emailEvents: true } }
+            user: { select: { username: true, firstName: true, lastName: true, email: true } }
         }
     }
 }
@@ -101,9 +101,8 @@ export function mountRoster(router, kind) {
                 firstName: member.user.firstName,
                 lastName: member.user.lastName,
                 // for the page's "copy addresses" — officers only, like the
-                // route — left off for anyone who doesn't want lab & event
-                // emails (their choice, or their role's default: emailPrefs.js)
-                email: wantsEmail(member.user.emailEvents, member.role) ? member.user.email : null
+                // route
+                email: member.user.email
             })))
         } catch (err) {
             console.error(err.message)
@@ -177,17 +176,17 @@ export function mountRoster(router, kind) {
                 where: { [key]: parentId, attendanceStatus: { in: SIGNED_UP } },
                 select: USER_SELECT
             })
-            const recipients = rows
-                .filter(({ member }) => wantsEmail(member.user.emailEvents, member.role))
-                .map(({ member }) => member.user.email)
+            // everyone signed up — lab and event mail isn't optional (see
+            // src/emailPrefs.js)
+            const recipients = rows.map(({ member }) => member.user.email)
             if (recipients.length === 0) {
-                return res.status(400).json({ message: 'Nobody signed up wants these emails' })
+                return res.status(400).json({ message: 'Nobody is signed up yet' })
             }
             const sent = await emailAll({
                 recipients,
                 subject,
                 message,
-                reason: `You’re getting this because you signed up for ${row.title}. You can turn these emails off on your account page.`
+                reason: `You’re getting this because you signed up for ${row.title}.`
             })
             res.json({ message: `Sent to ${sent} ${sent === 1 ? 'person' : 'people'}`, sent })
         } catch (err) {
@@ -263,16 +262,18 @@ export function mountRoster(router, kind) {
                 }
                 const { dues } = req.body
                 if (dues !== undefined && !DUES_ANSWERS.includes(dues)) {
-                    return res.status(400).json({ message: "dues must be 'paid' or 'waive'" })
+                    return res.status(400).json({ message: `dues must be one of: ${DUES_ANSWERS.join(', ')}` })
                 }
-                // dues are a lab's business — events don't ask
-                const owed = kindName === 'lab'
+                // labs and members-only events ask; one open to all doesn't
+                const owed = asksDues(kindName, row)
                     ? await duesOwed(prisma, memberId, row.date?.toISOString().slice(0, 10))
                     : null
                 if (owed && !dues) { return duesUnpaid(res, memberId, owed) }
+                const problem = owed && duesAnswerProblem(owed, dues)
+                if (problem) { return res.status(400).json({ message: problem }) }
                 await prisma.$transaction(async (tx) => {
                     if (owed) {
-                        await settleDues(tx, { owed, dues, memberId, actorId: req.userId, lab: { id: parentId, title: row.title } })
+                        await settleDues(tx, { owed, dues, memberId, actorId: req.userId, item: { kind: kindName, id: parentId, title: row.title } })
                     }
                     await tx[linkName].update({ where: where(parentId, memberId), data: { attendanceStatus: 'attended', offerSentAt: null } })
                     await tx.member.update({ where: { userId: memberId }, data: { points: { increment: worth } } })

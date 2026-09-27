@@ -2,7 +2,7 @@
 
 import { useState } from 'react'
 import { labs as labsApi } from '@/lib/api'
-import { LabIntro, ChunkyButton, ButtonCaption } from '@/components/labs/LabViewParts'
+import { LabIntro, ChunkyButton, ButtonCaption, DuesNotice } from '@/components/labs/LabViewParts'
 
 // Before the lab: one button that is the whole of your relationship with it.
 //
@@ -22,6 +22,10 @@ import { LabIntro, ChunkyButton, ButtonCaption } from '@/components/labs/LabView
 //
 // `ended` is a lab whose day has gone without you checking in: nothing left to
 // sign up for, so it says so instead of offering a button.
+//
+// Under the button: what it'll cost someone who hasn't paid the year's dues
+// (DuesNotice), and — for anyone holding a spot — the prelab the confirmation
+// email attaches, so an email that never arrived doesn't mean going without.
 
 export default function MemberLabSignup({ lab, ended, onChange }) {
 	const [busy, setBusy] = useState(false)
@@ -39,6 +43,21 @@ export default function MemberLabSignup({ lab, ended, onChange }) {
 
 	const [confirmed, setConfirmed] = useState(false)
 	const confirmPending = going && lab.confirmPending && !confirmed
+
+	// the prelab, opened in a new tab — the tab is opened on the click itself,
+	// before the file is fetched, or a popup blocker takes it for an ad
+	const openPrelab = async () => {
+		const tab = window.open('', '_blank')
+		setError(null)
+		try {
+			const url = await labsApi.prelabUrl(lab.labId)
+			if (tab) tab.location.href = url
+			setTimeout(() => URL.revokeObjectURL(url), 60_000)
+		} catch (err) {
+			tab?.close()
+			setError(err.message)
+		}
+	}
 
 	const confirm = async () => {
 		if (busy) return
@@ -173,6 +192,26 @@ export default function MemberLabSignup({ lab, ended, onChange }) {
 			">
 				{button}
 				{caption && <ButtonCaption>{caption}</ButtonCaption>}
+				{!ended && (going || offered) && lab.prelabPdfName && (
+					<button
+						type="button"
+						onClick={openPrelab}
+						className="
+							mt-3
+							font-vietnam
+							font-semibold
+							text-[15px]
+							text-salmon-dark
+							underline
+							underline-offset-2
+							cursor-pointer
+							hover:text-black
+						"
+					>
+						open the prelab ({lab.prelabPdfName})
+					</button>
+				)}
+				{!ended && <DuesNotice dues={lab.dues} noun="lab" />}
 				{error && (
 					<p className="
 						font-vietnam

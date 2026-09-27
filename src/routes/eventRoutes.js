@@ -6,6 +6,7 @@ import { eventPoints } from '../points.js'
 import { mountRoster } from './roster.js'
 import { acceptOffer, confirmSpot, expireOffers, lockParent, offerNext, startsAt } from '../offers.js'
 import { log } from '../activity.js'
+import { DUES_ANSWERS, asksDues, duesAnswerProblem, duesLookup, duesOwed, duesUnpaid, settleDues } from '../dues.js'
 
 const router = express.Router()
 
@@ -64,6 +65,35 @@ async function refuseLocked(eventId, role, res) {
 // 'HH:MM' — what <input type="time"> hands back, and what the calendar prints.
 const TIME = /^([01][0-9]|2[0-3]):[0-5][0-9]$/
 
+// The links an event's page lists under its photo: [{ title, url }], each an
+// http(s) address — one typed without a scheme ('linkedin.com/in/…') gets
+// https:// put on the front. A link with no title shows its address instead;
+// a row with no address at all is dropped, so an empty box left on the form
+// doesn't save. Returns { links } (null for none) or { error }.
+const MAX_LINKS = 20
+function readLinks(value) {
+    if (value === null) { return { links: null } }
+    if (!Array.isArray(value)) { return { error: 'links must be a list of { title, url }' } }
+    const links = []
+    for (const entry of value) {
+        const title = String(entry?.title ?? '').trim().slice(0, 100)
+        let url = String(entry?.url ?? '').trim()
+        if (!url) { continue }
+        if (!/^[a-z][a-z0-9+.-]*:/i.test(url)) { url = `https://${url}` }
+        let parsed
+        try { parsed = new URL(url) } catch { return { error: `${url} isn't a web address` } }
+        if (!['http:', 'https:'].includes(parsed.protocol)) { return { error: 'links must be http or https addresses' } }
+        links.push({ title, url: parsed.href })
+    }
+    if (links.length > MAX_LINKS) { return { error: `at most ${MAX_LINKS} links` } }
+    return { links: links.length ? links : null }
+}
+
+// What someone who hasn't paid dues is charged for it: the year's non-member
+// price on a members-only event (`owe` is from duesLookup). Null when they
+// owe nothing, or it's open to all.
+const duesFor = (event, owe) => asksDues('event', event) ? owe(event.date.toISOString().slice(0, 10)) : null
+
 // Seats spoken for. A waitlisted row is NOT one of them — that's the whole
 // point of the waitlist — so the count is what fills the cap and nothing else.
 // An open waitlist offer holds a seat too (see src/offers.js).
@@ -91,6 +121,7 @@ router.get('/', async (req, res) => {
     if (hiddenTracks(req.role).length) { where.track = { notIn: hiddenTracks(req.role) } }
 
     try {
+        const owe = await duesLookup(prisma, req.userId)
         const events = await prisma.event.findMany({
             where,
             include: {
@@ -111,7 +142,10 @@ router.get('/', async (req, res) => {
         res.json(events.map(({ members, _count, ...event }) => ({
             ...withCreator(event, req.role),
             taken: _count.members,
-            mine: members[0]?.attendanceStatus ?? null
+            mine: members[0]?.attendanceStatus ?? null,
+            // unpaid dues: { schoolYear, amount, price } — the card shows the
+            // price, the page warns about it (see src/dues.js)
+            dues: duesFor(event, owe)
         })))
     } catch (err) {
         console.error(err.message)
@@ -138,9 +172,10 @@ router.get('/:id', async (req, res) => {
         // Where the person asking stands on it — what /events/view switches
         // on, the same extras a lab's page gets: their status, seats gone,
         // whether they've been asked to confirm, and their place in the queue.
-        const [link, taken] = await Promise.all([
+        const [link, taken, owe] = await Promise.all([
             prisma.memberEvent.findUnique({ where: { memberId_eventId: { memberId: req.userId, eventId } } }),
-            prisma.memberEvent.count({ where: { eventId, ...TAKEN } })
+            prisma.memberEvent.count({ where: { eventId, ...TAKEN } }),
+            duesLookup(prisma, req.userId)
         ])
         let waitlistPosition = null
         if (link?.attendanceStatus === 'waitlisted') {
@@ -158,6 +193,7 @@ router.get('/:id', async (req, res) => {
             confirmBy: link?.confirmBy ?? null,
             confirmedAt: link?.confirmedAt ?? null,
             waitlistPosition,
+            dues: duesFor(event, owe),
             // true once it's begun — the page stops offering the rsvp button
             started: startsAt(event).getTime() <= Date.now()
         })
@@ -171,6 +207,8 @@ router.get('/:id', async (req, res) => {
 
 router.post('/', requireRole('officer'), async (req, res) => {
     const { title, type, track, categoryId, description, date, startTime, location, image, capacity, hideFromEvents } = req.body
+    const { links, error: linksError } = readLinks(req.body.links ?? null)
+    if (linksError) { return res.status(400).json({ message: linksError }) }
 
     if (!title || !date) {
         return res.status(400).json({ message: 'title and date are required' })
@@ -214,6 +252,7 @@ router.post('/', requireRole('officer'), async (req, res) => {
                 image,
                 capacity,
                 hideFromEvents: hideFromEvents ?? false,
+                links,
                 createdById: req.userId
             },
             include: { createdBy: CREATOR }
@@ -258,6 +297,11 @@ router.put('/:id', requireRole('officer'), async (req, res) => {
             return res.status(400).json({ message: 'hideFromEvents must be true or false' })
         }
         data.hideFromEvents = req.body.hideFromEvents
+    }
+    if (req.body.links !== undefined) {
+        const { links, error } = readLinks(req.body.links)
+        if (error) { return res.status(400).json({ message: error }) }
+        data.links = links
     }
     if (req.body.startTime !== undefined) {
         if (req.body.startTime && !TIME.test(req.body.startTime)) {
@@ -461,13 +505,20 @@ router.delete('/:eventId/rsvp', async (req, res) => {
 
 // Officer scans a member's QR. RSVP'd → checked in (+points: official 5,
 // social 3, awarded exactly once at the transition to attended). Not RSVP'd
-// → waitlisted with a distinct code. Body: { qrToken }
+// → waitlisted with a distinct code.
+//
+// A members-only event asks after dues the way a lab does: someone unpaid
+// comes back DUES_UNPAID, and the officer's answer is the same scan with
+// `dues` set (see src/dues.js). Body: { qrToken, dues? }
 router.post('/:eventId/checkin', requireRole('officer'), async (req, res) => {
     const eventId = parseInt(req.params.eventId)
     if (isNaN(eventId)) { return res.status(400).json({ message: 'Invalid event id' }) }
 
-    const { qrToken } = req.body
+    const { qrToken, dues } = req.body
     if (!qrToken) { return res.status(400).json({ message: 'qrToken is required' }) }
+    if (dues !== undefined && !DUES_ANSWERS.includes(dues)) {
+        return res.status(400).json({ message: `dues must be one of: ${DUES_ANSWERS.join(', ')}` })
+    }
 
     let decoded
     try {
@@ -508,8 +559,18 @@ router.post('/:eventId/checkin', requireRole('officer'), async (req, res) => {
             return res.status(202).json({ code: 'ALREADY_WAITLISTED', message: 'Still on the waitlist' })
         }
 
+        const owed = asksDues('event', event)
+            ? await duesOwed(prisma, decoded.id, event.date.toISOString().slice(0, 10))
+            : null
+        if (owed && !dues) { return duesUnpaid(res, decoded.id, owed) }
+        const problem = owed && duesAnswerProblem(owed, dues)
+        if (problem) { return res.status(400).json({ message: problem }) }
+
         // rsvped → attended, points awarded atomically with the transition
         const attendance = await prisma.$transaction(async (tx) => {
+            if (owed) {
+                await settleDues(tx, { owed, dues, memberId: decoded.id, actorId: req.userId, item: { kind: 'event', id: eventId, title: event.title } })
+            }
             const row = await tx.memberEvent.update({
                 where: { memberId_eventId: { memberId: decoded.id, eventId } },
                 data: { attendanceStatus: 'attended', offerSentAt: null }
@@ -527,6 +588,8 @@ router.post('/:eventId/checkin', requireRole('officer'), async (req, res) => {
         res.json({ code: 'CHECKED_IN', message: `Checked in (+${eventPoints(event.type)} points)`, attendance })
     } catch (err) {
         if (err.code === 'P2003') { return res.status(404).json({ message: 'Event or member not found' }) }
+        // the treasurer marked them paid while the popup was up — scan again
+        if (err.code === 'P2002') { return res.status(409).json({ message: 'Their dues were just marked paid — scan them again' }) }
         console.error(err.message)
         res.sendStatus(500)
     }

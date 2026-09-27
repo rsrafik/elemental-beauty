@@ -5,8 +5,9 @@ import { useSearchParams } from 'next/navigation'
 import DashboardShell from '@/components/dashboards/DashboardShell'
 import { events as eventsApi } from '@/lib/api'
 import { isoDate, today } from '@/lib/dates'
-import { BackButton, Scaled, LabIntro, ChunkyButton, ButtonCaption } from '@/components/labs/LabViewParts'
+import { BackButton, Scaled, LabIntro, ChunkyButton, ButtonCaption, DuesNotice } from '@/components/labs/LabViewParts'
 import { ShowQrButton, QrPopup } from '@/components/labs/MemberLabQuiz'
+import { LinkList } from '@/components/events/EventLinks'
 
 // /events/view?id=N for a user or member: one event — its date, time and room,
 // what it is, and the one button that is your relationship with it. The same
@@ -26,6 +27,9 @@ import { ShowQrButton, QrPopup } from '@/components/labs/MemberLabQuiz'
 //
 // Whether an rsvp lands a seat or a waitlist place is the server's call: the
 // button flips straight to "going" and the re-read corrects it.
+//
+// A members-only event warns someone who hasn't paid the year's dues what
+// it'll cost them at the door (DuesNotice). Its links sit under the photo.
 
 const CLOCK_MS = 30_000
 const fmtDeadline = (at) =>
@@ -191,7 +195,11 @@ export default function MemberEventView() {
 					lg:pl-[48px]
 					lg:pr-[16px]
 				">
-					<LabIntro lab={event} accent="text-blue">
+					<LabIntro
+						lab={event}
+						accent="text-blue"
+						aside={<LinkList links={event.links} className="mt-4" />}
+					>
 						{event.category?.name && (
 							<p className="
 								mt-4
@@ -221,6 +229,7 @@ export default function MemberEventView() {
 							{holding && !event.started && !ended && event.confirmedAt && (
 								<ButtonCaption>spot confirmed ✓</ButtonCaption>
 							)}
+							{!ended && mine !== 'attended' && <DuesNotice dues={event.dues} noun="event" />}
 							{actionError && (
 								<p className="
 									font-vietnam

@@ -3,18 +3,22 @@
 import { useState } from 'react'
 import { Popup } from '@/components/labs/LabViewParts'
 
-// What the check-in page asks when someone scanned or ticked into a lab hasn't paid
-// their dues for the year (the server's DUES_UNPAID — see POST
-// /labs/:labId/checkin). Three answers:
+// What the check-in page asks when someone scanned or ticked into a lab or a
+// members-only event hasn't paid their dues for the year (the server's
+// DUES_UNPAID — see src/dues.js). Up to four answers:
 //
+//   paid    they've paid their dues at the door: marked paid for the year,
+//           checked in (only when the year's dues are set)
+//   fee     they've paid the non-member price for this one: taken as income,
+//           checked in, and asked again next time (only when it's set)
 //   waive   let them in this once without paying
 //   wait    close this and leave them not checked in, to scan others while
 //           they sort it out — closing the popup any other way is the same
-//   paid    they've paid at the door: marked paid for the year, checked in
 //
-//   name, schoolYear, amount   who, and what they owe
-//   onChoose                   ('waive' | 'paid') -> resolves once they're in;
-//                              throws if the server refused
+//   name, schoolYear   who, and which year
+//   amount, price      the year's dues and the non-member price (0 = not set)
+//   onChoose           ('paid' | 'fee' | 'waive') -> resolves once they're
+//                      in; throws if the server refused
 //   onClose                    called once the popup has gone, whichever way —
 //                              after a choice, or for wait
 
@@ -24,6 +28,7 @@ const TONE = {
 	waive: 'bg-[#EBD24A] text-white',
 	wait: 'border border-black/70 text-black',
 	paid: 'bg-green text-[#295212]',
+	fee: 'bg-blue-light text-blue-med',
 }
 
 function Choice({ tone, onClick, disabled, children }) {
@@ -62,7 +67,7 @@ function Choice({ tone, onClick, disabled, children }) {
 	)
 }
 
-export default function DuesPopup({ name, schoolYear, amount, onChoose, onClose }) {
+export default function DuesPopup({ name, schoolYear, amount, price = 0, onChoose, onClose }) {
 	// which answer is on its way to the server
 	const [busy, setBusy] = useState(null)
 	const [error, setError] = useState(null)
@@ -88,12 +93,14 @@ export default function DuesPopup({ name, schoolYear, amount, onChoose, onClose 
 				<>
 					<p className={line}>
 						<span className="font-semibold text-black">{name ?? 'This member'}</span> hasn’t
-						paid their {schoolYear} dues ({money(amount)}), so they haven’t been checked in.
+						paid their {schoolYear} dues{amount > 0 ? ` (${money(amount)})` : ''}, so they
+						haven’t been checked in.
 					</p>
 					<p className={line}>
+						{amount > 0 && <><b className="text-black">paid dues</b> marks them paid for the semester.{' '}</>}
+						{price > 0 && <><b className="text-black">paid entry</b> takes the {money(price)} non-member price for this one.{' '}</>}
 						<b className="text-black">waive</b> lets them in this once.{' '}
-						<b className="text-black">wait</b> leaves them not checked in while they pay.{' '}
-						<b className="text-black">paid</b> marks their dues paid and checks them in.
+						<b className="text-black">wait</b> leaves them not checked in while they pay.
 					</p>
 
 					{error && (
@@ -111,19 +118,36 @@ export default function DuesPopup({ name, schoolYear, amount, onChoose, onClose 
 						</p>
 					)}
 
-					<div className="
-						mt-8
+					{/* the ways they can pay on top, the two that let nothing
+					    change hands underneath */}
+					{(amount > 0 || price > 0) && (
+						<div className="
+							mt-8
+							flex
+							gap-3
+						">
+							{amount > 0 && (
+								<Choice tone="paid" disabled={!!busy} onClick={() => choose('paid', dismiss)}>
+									{busy === 'paid' ? 'saving…' : `paid dues · ${money(amount)}`}
+								</Choice>
+							)}
+							{price > 0 && (
+								<Choice tone="fee" disabled={!!busy} onClick={() => choose('fee', dismiss)}>
+									{busy === 'fee' ? 'saving…' : `paid entry · ${money(price)}`}
+								</Choice>
+							)}
+						</div>
+					)}
+					<div className={`
+						${amount > 0 || price > 0 ? 'mt-3' : 'mt-8'}
 						flex
 						gap-3
-					">
+					`}>
 						<Choice tone="waive" disabled={!!busy} onClick={() => choose('waive', dismiss)}>
 							{busy === 'waive' ? 'waiving…' : 'waive'}
 						</Choice>
 						<Choice tone="wait" disabled={!!busy} onClick={() => dismiss(onClose)}>
 							wait
-						</Choice>
-						<Choice tone="paid" disabled={!!busy} onClick={() => choose('paid', dismiss)}>
-							{busy === 'paid' ? 'saving…' : 'paid'}
 						</Choice>
 					</div>
 				</>

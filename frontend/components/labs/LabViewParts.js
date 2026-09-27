@@ -3,6 +3,8 @@
 import { useEffect, useSyncExternalStore } from 'react'
 import { createPortal } from 'react-dom'
 import Link from 'next/link'
+import { useRouter } from 'next/navigation'
+import { cameFromApp } from '@/lib/history'
 import { useDismiss } from '@/lib/dismiss'
 import { longDate, prettyTime } from '@/lib/dates'
 
@@ -80,8 +82,9 @@ export function metaLine(lab) {
 // description (the rsvp button, the QR button) comes in as children and sits
 // in the text column. Below `lg` the photo goes on top.
 // `accent` is the title's colour class — salmon for a lab, and the event page
-// (which borrows this layout) passes its own.
-export function LabIntro({ lab, accent = 'text-salmon', children }) {
+// (which borrows this layout) passes its own. `aside` goes under the photo —
+// the event page's links.
+export function LabIntro({ lab, accent = 'text-salmon', aside = null, children }) {
 	return (
 		<div className="
 			flex
@@ -136,25 +139,30 @@ export function LabIntro({ lab, accent = 'text-salmon', children }) {
 			<div className="
 				w-full
 				max-w-[303px]
-				aspect-[303/210]
 				lg:w-[303px]
 				shrink-0
-				overflow-hidden
-				rounded-[10px]
-				bg-salmon-lightest
 			">
-				{lab.image && (
-					<img
-						src={lab.image}
-						alt=""
-						className="
-							w-full
-							h-full
-							object-cover
-							select-none
-						"
-					/>
-				)}
+				<div className="
+					w-full
+					aspect-[303/210]
+					overflow-hidden
+					rounded-[10px]
+					bg-salmon-lightest
+				">
+					{lab.image && (
+						<img
+							src={lab.image}
+							alt=""
+							className="
+								w-full
+								h-full
+								object-cover
+								select-none
+							"
+						/>
+					)}
+				</div>
+				{aside}
 			</div>
 		</div>
 	)
@@ -231,6 +239,55 @@ export function ButtonCaption({ children }) {
 	)
 }
 
+// ---- dues ------------------------------------------------------------------
+
+// '$5' or '$5.50' — the non-member price as the cards print it
+export function priceText(amount) {
+	return Number(amount).toLocaleString('en-US', {
+		style: 'currency',
+		currency: 'USD',
+		minimumFractionDigits: Number.isInteger(Number(amount)) ? 0 : 2,
+	})
+}
+
+// The warning a lab's or members-only event's page gives someone who hasn't
+// paid the year's dues: what it'll cost them at the door. `dues` is the API's
+// { schoolYear, amount, price } (see src/dues.js) — null when they've paid,
+// or it's open to all, and then there's nothing to say. `noun` is 'lab' or
+// 'event'.
+export function DuesNotice({ dues, noun }) {
+	if (!dues) return null
+	const { schoolYear, amount, price } = dues
+	let text
+	if (price > 0) {
+		text = `You haven't paid your ${schoolYear} dues, so this ${noun} is ${priceText(price)} for you — pay at the door`
+		text += amount > 0 ? `, or pay your ${priceText(amount)} dues to cover the whole semester.` : '.'
+	} else {
+		text = `You haven't paid your ${schoolYear} dues yet — they're ${priceText(amount)}, and you'll be asked for them at the door.`
+	}
+	return (
+		<p
+			role="note"
+			className="
+				mt-5
+				max-w-[420px]
+				rounded-[12px]
+				bg-yellow-light
+				px-4
+				py-3
+				font-vietnam
+				font-semibold
+				text-[14px]
+				leading-[1.4]
+				text-black/80
+				text-center
+			"
+		>
+			{text}
+		</p>
+	)
+}
+
 // ---- back button -----------------------------------------------------------
 
 // The design's blocky return arrow: an arrowhead pointing left off a bar that
@@ -263,8 +320,11 @@ const BACK_CLASS = `
 	active:translate-x-0
 `
 
-// Back to the labs dashboard, or wherever `href` says (the event check-in
-// page goes back to /events). Above `lg` it's pinned to the window's
+// Back to wherever you just were — the calendar, the dashboard, an event's
+// page — the way the browser's own back button would. Opened fresh (an email
+// link, a bookmark) there's nowhere in the app to go back to, so it goes to
+// `href` instead: the labs dashboard, or /events for an event's pages. See
+// lib/history.js. Above `lg` it's pinned to the window's
 // top-right corner the way the design has it — 28px down, 26px in, 32px
 // square on the 1410 frame — and portalled to <body> so neither the scroll
 // column nor its entrance animation gets to move it. Below `lg` the sticky
@@ -281,7 +341,13 @@ const SHELL_PAD = 32
 // laid to its left in both places, so it rides along with the arrow wherever
 // the arrow is pinned.
 export function BackButton({ href = '/labs', label = 'Back to labs', before = null }) {
+	const router = useRouter()
 	const zoom = useDesignZoom()
+	const back = (event) => {
+		if (!cameFromApp()) return
+		event.preventDefault()
+		router.back()
+	}
 	const mounted = useSyncExternalStore(subscribe, () => true, () => false)
 	const top = (SHELL_PAD - 4 * zoom) / zoom
 	const right = (SHELL_PAD - 6 * zoom) / zoom
@@ -299,7 +365,8 @@ export function BackButton({ href = '/labs', label = 'Back to labs', before = nu
 				{before}
 				<Link
 					href={href}
-					aria-label={label}
+					onClick={back}
+					aria-label={cameFromApp() ? 'Back' : label}
 					className={`w-8 h-8 ${BACK_CLASS}`}
 				>
 					<BackArrowIcon className="w-8 h-8" />
@@ -321,7 +388,8 @@ export function BackButton({ href = '/labs', label = 'Back to labs', before = nu
 					{before}
 					<Link
 						href={href}
-						aria-label={label}
+						onClick={back}
+						aria-label={cameFromApp() ? 'Back' : label}
 						className={`w-8 h-8 ${BACK_CLASS}`}
 					>
 						<BackArrowIcon className="w-8 h-8" />
