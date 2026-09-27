@@ -156,6 +156,7 @@ function Card({ title, children, onSubmit }) {
 	const Tag = onSubmit ? 'form' : 'div'
 	return (
 		<main className="
+			auth-page
 			flex
 			min-h-svh
 			w-full
@@ -228,7 +229,7 @@ function Pill({ type = 'button', disabled = false, onClick, children }) {
 
 export default function ResetPassword() {
 	return (
-		<Suspense fallback={<main className="min-h-svh w-full bg-[#FDF4E0]" />}>
+		<Suspense fallback={<main className="auth-page min-h-svh w-full bg-[#FDF4E0]" />}>
 			<ResetForm />
 		</Suspense>
 	)

@@ -1,7 +1,15 @@
 @import "tailwindcss";
 
+/* The page behind every page: the same cream the dashboards are laid on. On a
+   phone it's what shows past the edges of the content — Safari paints it into
+   the strip behind the status bar and into the overscroll — so anything else
+   reads as a cream box sitting on a different-coloured page.
+
+   There's no dark variant. Nothing in the app is themed for one; the template's
+   near-black background and near-white text only ever showed up as a black bar
+   around a cream page, and as text too pale to read on it. */
 :root {
-  --background: #ffffff;
+  --background: #FFFBEB;
   --foreground: #171717;
 }
 
@@ -53,12 +61,6 @@
   --font-dream: var(--font-dream);
 }
 
-@media (prefers-color-scheme: dark) {
-  :root {
-    --background: #0a0a0a;
-    --foreground: #ededed;
-  }
-}
 
 /* Page entrance.
  *
@@ -435,10 +437,9 @@
   }
 }
 
-/* The login page is cream edge to edge. The body's own colour goes near-black
-   in dark mode, and iOS Safari paints that into the strip behind its status bar
-   and into the overscroll past the bottom of the page — a black bar at both
-   ends of a cream page. */
+/* The login and reset-password pages are laid on a warmer cream than the rest
+   of the app, so the page behind them takes that one instead — otherwise the overscroll past the
+   bottom shows the app's paler cream under it. */
 html:has(.auth-page),
 html:has(.auth-page) body {
   background: #FDF4E0;
