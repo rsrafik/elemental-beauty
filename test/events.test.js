@@ -118,7 +118,7 @@ test('an event can be created for the EB board', { skip }, async () => {
     })
 })
 
-test('j-board sees j-board events but not officers ones; officers the other way round', { skip }, async () => {
+test('j-board sees j-board events but not officers ones; officers see both', { skip }, async () => {
     const jb = await person('jboard')
     const officer = await person('officer')
     const officers = await event('officers')
@@ -135,14 +135,8 @@ test('j-board sees j-board events but not officers ones; officers the other way 
     await as(officer, 'officer', async (base) => {
         const tracks = mine(await (await fetch(base)).json())
         assert.ok(tracks.includes('officers'))
-        assert.ok(!tracks.includes('jboard'))
-        assert.equal((await fetch(`${base}/${jboard}`)).status, 404)
-        const edit = await fetch(`${base}/${jboard}`, {
-            method: 'PUT',
-            headers: { 'content-type': 'application/json' },
-            body: JSON.stringify({ title: 'renamed' })
-        })
-        assert.equal(edit.status, 404)
+        assert.ok(tracks.includes('jboard'))
+        assert.equal((await fetch(`${base}/${jboard}`)).status, 200)
     })
 })
 
@@ -158,7 +152,7 @@ test('treasurer and admin see both officers and j-board events', { skip }, async
     }
 })
 
-test("an officer can't file a j-board event, nor j-board an officers one", { skip }, async () => {
+test("j-board can't file an officers event; officers and j-board can both file j-board ones", { skip }, async () => {
     const officer = await person('officer')
     const jb = await person('jboard')
     const post = (base, track) => fetch(base, {
@@ -168,7 +162,9 @@ test("an officer can't file a j-board event, nor j-board an officers one", { ski
     })
 
     await as(officer, 'officer', async (base) => {
-        assert.equal((await post(base, 'jboard')).status, 403)
+        const reply = await post(base, 'jboard')
+        assert.equal(reply.status, 201)
+        made.events.push((await reply.json()).eventId)
     })
     await as(jb, 'jboard', async (base) => {
         assert.equal((await post(base, 'officers')).status, 403)
@@ -195,5 +191,56 @@ test('"hide from events" is saved on create and edit, and must be a boolean', { 
         const edited = await send('PUT', `${base}/${created.eventId}`, { hideFromEvents: false })
         assert.equal((await edited.json()).hideFromEvents, false)
         assert.equal((await send('PUT', `${base}/${created.eventId}`, { hideFromEvents: 'yes' })).status, 400)
+    })
+})
+
+test('a j-board event an officer, treasurer or admin added is read-only to j-board', { skip }, async () => {
+    const jb = await person('jboard')
+    const put = (base, id) => fetch(`${base}/${id}`, {
+        method: 'PUT',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ title: `${tag} renamed` })
+    })
+
+    for (const role of ['officer', 'treasurer', 'admin']) {
+        const creator = await person(role)
+        const id = await as(creator, role, async (base) => {
+            const reply = await fetch(base, {
+                method: 'POST',
+                headers: { 'content-type': 'application/json' },
+                body: JSON.stringify({ title: `${tag} by ${role}`, type: 'official', date: '2030-04-01', track: 'jboard' })
+            })
+            const created = await reply.json()
+            made.events.push(created.eventId)
+            assert.equal(created.canEdit, true, `${role} can edit their own`)
+            return created.eventId
+        })
+
+        await as(jb, 'jboard', async (base) => {
+            const row = await (await fetch(`${base}/${id}`)).json()
+            assert.equal(row.canEdit, false, `${role}'s event, by id`)
+            assert.ok(row.creatorName, 'the popup has a name to show')
+            const listed = (await (await fetch(base)).json()).find((event) => event.eventId === id)
+            assert.equal(listed.canEdit, false, `${role}'s event, in the list`)
+            assert.equal((await put(base, id)).status, 403)
+            assert.equal((await fetch(`${base}/${id}`, { method: 'DELETE' })).status, 403)
+        })
+    }
+
+    // j-board's own j-board event, and one with no creator on record, stay theirs
+    const own = await as(jb, 'jboard', async (base) => {
+        const reply = await fetch(base, {
+            method: 'POST',
+            headers: { 'content-type': 'application/json' },
+            body: JSON.stringify({ title: `${tag} by jboard`, type: 'official', date: '2030-04-01', track: 'jboard' })
+        })
+        const created = await reply.json()
+        made.events.push(created.eventId)
+        return created.eventId
+    })
+    const legacy = await event('jboard')
+    await as(jb, 'jboard', async (base) => {
+        assert.equal((await put(base, own)).status, 200)
+        assert.equal((await put(base, legacy)).status, 200)
     })
 })

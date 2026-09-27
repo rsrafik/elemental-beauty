@@ -14,16 +14,52 @@ const EVENT_TRACKS = ['members', 'officers', 'open', 'online', 'board', 'jboard'
 
 // Tracks a role never sees: to them these events don't exist. A member sees
 // none of the board's — 'board' ("EB board") is everyone from officer up,
-// 'officers' is the officers', 'jboard' is j-board's. Officers and j-board
-// don't see each other's; treasurer and admin see everything. Mirrored for the
+// 'officers' is the officers', 'jboard' is j-board's. J-board doesn't see the
+// officers'; officers, treasurer and admin see everything. Mirrored for the
 // pages in frontend/lib/roles.js (hiddenTracks).
 const HIDDEN_TRACKS = {
     member: ['officers', 'board', 'jboard'],
-    officer: ['jboard'],
     jboard: ['officers'],
 }
 const hiddenTracks = (role) => HIDDEN_TRACKS[role] ?? []
 const hiddenFrom = (event, role) => hiddenTracks(role).includes(event.track)
+
+// A j-board event an officer, treasurer or admin added is theirs to change:
+// j-board can open it and read it, not edit or delete it. `creatorRole` is the
+// creator's role now, so one added by someone since made j-board unlocks.
+const LOCKING_ROLES = ['officer', 'treasurer', 'admin']
+const lockedFor = (event, role, creatorRole) =>
+    role === 'jboard' && event.track === 'jboard' && LOCKING_ROLES.includes(creatorRole)
+
+// Who added it, as the list and the event's page return it: the name for the
+// details popup, and the role that decides `canEdit`.
+const CREATOR = { select: { firstName: true, lastName: true, username: true, member: { select: { role: true } } } }
+
+// The two extras every event reply carries about its creator: their name, and
+// whether the person asking may edit it. The nested row itself is dropped.
+const RANK_OFFICER = ['officer', 'jboard', 'treasurer', 'admin']
+function withCreator({ createdBy, ...event }, role) {
+    const name = createdBy ? `${createdBy.firstName} ${createdBy.lastName}`.trim() || createdBy.username : null
+    return {
+        ...event,
+        creatorName: name,
+        canEdit: RANK_OFFICER.includes(role) && !lockedFor(event, role, createdBy?.member?.role)
+    }
+}
+
+// The 403 PUT and DELETE give j-board on a locked event (see lockedFor).
+async function refuseLocked(eventId, role, res) {
+    const event = await prisma.event.findUnique({ where: { eventId }, select: { track: true, createdBy: CREATOR } })
+    if (!event || hiddenFrom(event, role)) {
+        res.status(404).json({ message: 'Event not found' })
+        return true
+    }
+    if (lockedFor(event, role, event.createdBy?.member?.role)) {
+        res.status(403).json({ message: 'Only whoever added this event can change it' })
+        return true
+    }
+    return false
+}
 
 // 'HH:MM' — what <input type="time"> hands back, and what the calendar prints.
 const TIME = /^([01][0-9]|2[0-3]):[0-5][0-9]$/
@@ -59,6 +95,7 @@ router.get('/', async (req, res) => {
             where,
             include: {
                 category: { select: { name: true } },
+                createdBy: CREATOR,
                 // at most one row — the pair is the primary key
                 members: {
                     where: { memberId: req.userId },
@@ -72,7 +109,7 @@ router.get('/', async (req, res) => {
         // Same two extras the lab list carries: how many seats are gone, and
         // where the person asking stands on it.
         res.json(events.map(({ members, _count, ...event }) => ({
-            ...event,
+            ...withCreator(event, req.role),
             taken: _count.members,
             mine: members[0]?.attendanceStatus ?? null
         })))
@@ -89,7 +126,7 @@ router.get('/:id', async (req, res) => {
     try {
         const event = await prisma.event.findUnique({
             where: { eventId },
-            include: { category: { select: { name: true } } }
+            include: { category: { select: { name: true } }, createdBy: CREATOR }
         })
         if (!event) { return res.status(404).json({ message: 'Event not found' }) }
         // a board-only event doesn't exist as far as a member is concerned —
@@ -114,7 +151,7 @@ router.get('/:id', async (req, res) => {
         }
 
         res.json({
-            ...event,
+            ...withCreator(event, req.role),
             taken,
             mine: link?.attendanceStatus ?? null,
             confirmPending: link?.attendanceStatus === 'rsvped' && Boolean(link.confirmSentAt) && !link.confirmedAt,
@@ -176,10 +213,12 @@ router.post('/', requireRole('officer'), async (req, res) => {
                 location: location?.trim() || null,
                 image,
                 capacity,
-                hideFromEvents: hideFromEvents ?? false
-            }
+                hideFromEvents: hideFromEvents ?? false,
+                createdById: req.userId
+            },
+            include: { createdBy: CREATOR }
         })
-        res.status(201).json(event)
+        res.status(201).json(withCreator(event, req.role))
     } catch (err) {
         // categoryId naming a tag that isn't on the calendar's legend
         if (err.code === 'P2003') { return res.status(400).json({ message: 'Unknown categoryId' }) }
@@ -245,13 +284,11 @@ router.put('/:id', requireRole('officer'), async (req, res) => {
 
     try {
         // one on a track this role can't see doesn't exist for them — the
-        // same 404 GET /:id gives, so editing by id can't get round it
-        const existing = await prisma.event.findUnique({ where: { eventId }, select: { track: true } })
-        if (!existing || hiddenFrom(existing, req.role)) {
-            return res.status(404).json({ message: 'Event not found' })
-        }
-        const event = await prisma.event.update({ where: { eventId }, data })
-        res.json(event)
+        // same 404 GET /:id gives, so editing by id can't get round it — and
+        // one locked to its creator (lockedFor) is refused
+        if (await refuseLocked(eventId, req.role, res)) { return }
+        const event = await prisma.event.update({ where: { eventId }, data, include: { createdBy: CREATOR } })
+        res.json(withCreator(event, req.role))
     } catch (err) {
         if (err.code === 'P2025') { return res.status(404).json({ message: 'Event not found' }) }
         if (err.code === 'P2003') { return res.status(400).json({ message: 'Unknown categoryId' }) }
@@ -265,10 +302,7 @@ router.delete('/:id', requireRole('officer'), async (req, res) => {
     if (isNaN(eventId)) { return res.status(400).json({ message: 'Invalid event id' }) }
 
     try {
-        const existing = await prisma.event.findUnique({ where: { eventId }, select: { track: true } })
-        if (!existing || hiddenFrom(existing, req.role)) {
-            return res.status(404).json({ message: 'Event not found' })
-        }
+        if (await refuseLocked(eventId, req.role, res)) { return }
         // cascades to member_event rows per the schema
         await prisma.event.delete({ where: { eventId } })
         res.json({ message: 'Event deleted' })

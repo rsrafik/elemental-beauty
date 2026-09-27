@@ -165,6 +165,7 @@ model User {
 
   member        Member?
   announcements Announcement[]
+  eventsCreated Event[]
 
   // the roster sorts and searches on names as often as on the username
   @@index([lastName, firstName])
@@ -349,6 +350,10 @@ model Event {
   // for and whatever its tag — it still shows on the calendar. Meetings and
   // the board's tracks are kept off regardless (frontend/lib/calendar.js).
   hideFromEvents Boolean @default(false) @map("hide_from_events")
+  // Who added it. Decides one thing: a j-board event added by an officer,
+  // treasurer or admin is read-only to j-board (see eventRoutes.js). Null for
+  // events from before this was kept, and for a creator since deleted.
+  createdById Int? @map("created_by")
   // when the check-in page's "confirmation" last went out (src/offers.js)
   confirmSentAt DateTime? @map("confirm_sent_at") @db.Timestamptz()
   // the day-before reminder, same as a lab's (src/reminders.js)
@@ -356,8 +361,9 @@ model Event {
 
   // Deleting a tag off the calendar's legend leaves the events that used it
   // standing — they just stop being filed under anything.
-  category EventCategory? @relation(fields: [categoryId], references: [categoryId], onDelete: SetNull)
-  members  MemberEvent[]
+  category  EventCategory? @relation(fields: [categoryId], references: [categoryId], onDelete: SetNull)
+  createdBy User?          @relation(fields: [createdById], references: [userId], onDelete: SetNull)
+  members   MemberEvent[]
 
   @@index([date])
   @@index([categoryId])

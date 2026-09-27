@@ -29,8 +29,8 @@ import { COVER_MAX, shrinkImage } from '@/lib/images'
 
 // Who the event is for. Officers-only, EB-board and j-board events stay off the
 // member calendar, and off both events pages — they show on the officer
-// calendar only. EB board is j-board and everyone above a member; officers and
-// j-board don't see each other's (see hiddenTracks).
+// calendar only. EB board is j-board and everyone above a member; j-board
+// doesn't see the officers' (see hiddenTracks).
 const TRACKS = {
 	members: 'members',
 	officers: 'officers',

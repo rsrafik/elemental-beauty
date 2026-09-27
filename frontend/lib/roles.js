@@ -41,12 +41,11 @@ export function canSeeAnalytics(role) {
 }
 
 // Event tracks a role never sees — the page side of the rule the API enforces
-// (HIDDEN_TRACKS in src/routes/eventRoutes.js). Officers and j-board each have
-// a track the other doesn't see; treasurer and admin see all of them.
+// (HIDDEN_TRACKS in src/routes/eventRoutes.js). J-board doesn't see the
+// officers' track; officers, treasurer and admin see all of them.
 const HIDDEN_TRACKS = {
 	user: ['officers', 'board', 'jboard'],
 	member: ['officers', 'board', 'jboard'],
-	officer: ['jboard'],
 	jboard: ['officers'],
 }
 export function hiddenTracks(role) {

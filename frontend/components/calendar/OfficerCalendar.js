@@ -7,6 +7,7 @@ import DashboardShell from '@/components/dashboards/DashboardShell'
 import { eventCategories, events as eventsApi, labs as labsApi } from '@/lib/api'
 import { buildMonths, calendarOnly, categoryNameOf, typesIn } from '@/lib/calendar'
 import HideFromEventsToggle from '@/components/events/HideFromEventsToggle'
+import EventDetailsDialog from '@/components/events/EventDetailsDialog'
 import { thisMonth } from '@/lib/dates'
 import { hiddenTracks } from '@/lib/roles'
 import { useRole } from '@/lib/session'
@@ -67,8 +68,8 @@ const TRACKS = {
 
 // Officers-only, EB-board and j-board days never reach the member calendar,
 // which filters them out. This page shows the board every track it can see —
-// all of them but one for officers (no j-board) and j-board (no officers); the
-// API has already left the other's days out.
+// all of them, except the officers' for j-board, which the API has already
+// left out.
 const TRACK_KEYS = Object.keys(TRACKS)
 const tracksFor = (role) => TRACK_KEYS.filter((key) => !hiddenTracks(role).includes(key))
 
@@ -561,9 +562,10 @@ function EntryText({ entry }) {
 	)
 }
 
-// Every entry is a button into its editor: an event opens the same dialog
-// /events edits with, a lab goes to its edit page. This calendar is only ever
-// shown to officer and up, who are exactly the roles allowed to edit both.
+// Every entry is a button: an event opens the same dialog /events edits with,
+// a lab goes to its edit page. This calendar is only ever shown to officer and
+// up, who are the roles allowed to edit both — bar one case, a j-board event
+// an officer or above added, which j-board gets read-only (see openEntry).
 function Entry({ entry, onOpen }) {
 	if (entry.eventId == null && entry.labId == null) return <EntryText entry={entry} />
 	return (
@@ -1187,6 +1189,9 @@ export default function OfficerCalendar() {
 	// The event open in the editor, as /events' cards shape it — set by
 	// clicking its entry (see Entry), null when closed.
 	const [editing, setEditing] = useState(null)
+	// Or, for one that isn't this person's to change, the row open read-only
+	// (see EventDetailsDialog).
+	const [viewing, setViewing] = useState(null)
 
 	// Every lab and event, keyed by month then day. Fetched once and stepped
 	// through locally — the club's calendar is small enough that a request per
@@ -1324,7 +1329,11 @@ export default function OfficerCalendar() {
 			return
 		}
 		const row = eventRows.find((event) => event.eventId === entry.eventId)
-		if (row) setEditing(toCard(row))
+		if (!row) return
+		// the API says whether it's yours to change — a j-board event an
+		// officer or above added isn't, to j-board
+		if (row.canEdit === false) setViewing(row)
+		else setEditing(toCard(row))
 	}
 
 	// The editor's save and delete. Same body /events
@@ -1705,6 +1714,14 @@ export default function OfficerCalendar() {
 					onClose={() => setEditing(null)}
 					onSave={updateEvent}
 					onDelete={deleteEvent}
+				/>
+			)}
+
+			{viewing && (
+				<EventDetailsDialog
+					event={viewing}
+					trackLabel={TRACKS[viewing.track]?.label}
+					onClose={() => setViewing(null)}
 				/>
 			)}
 
