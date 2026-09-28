@@ -4,6 +4,7 @@ import { useEffect } from 'react'
 import { useDismiss } from '@/lib/dismiss'
 import { longDate, prettyTime } from '@/lib/dates'
 import { LinkList } from '@/components/events/EventLinks'
+import { capacityField, teamLabel } from '@/lib/calendar'
 
 // What the officer calendar opens instead of the editor when the event isn't
 // yours to change: a j-board event an officer, treasurer or admin added, seen
@@ -29,7 +30,13 @@ export default function EventDetailsDialog({ event, trackLabel, onClose }) {
 		['when', when],
 		['where', event.location],
 		['who it’s for', trackLabel],
-		['spots', event.capacity == null ? 'unlimited' : String(event.capacity)],
+		// a j-board event has a team where anything else has a seat cap, and
+		// an officers or EB board one has neither (capacityField)
+		capacityField(event.track) === 'team'
+			? ['team', event.team ? teamLabel(event.team) : 'all of j-board']
+			: capacityField(event.track) === 'spots'
+				? ['spots', event.capacity == null ? 'unlimited' : String(event.capacity)]
+				: [],
 	].filter(([, value]) => value)
 
 	return (

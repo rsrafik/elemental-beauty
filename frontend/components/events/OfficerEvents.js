@@ -6,9 +6,10 @@ import { useDismiss } from '@/lib/dismiss'
 import DashboardShell from '@/components/dashboards/DashboardShell'
 import { eventCategories, events as eventsApi } from '@/lib/api'
 import { isoDate, prettyTime } from '@/lib/dates'
-import { calendarOnly, categoryNameOf } from '@/lib/calendar'
+import { calendarOnly, capacityField, categoryNameOf } from '@/lib/calendar'
 import HideFromEventsToggle from '@/components/events/HideFromEventsToggle'
 import { LinksField, cleanLinks } from '@/components/events/EventLinks'
+import TeamField from '@/components/events/TeamField'
 import { hiddenTracks } from '@/lib/roles'
 import { useRole } from '@/lib/session'
 import { splitByDate, CompletedDivider, COMPLETED_CARD } from '@/components/CardSections'
@@ -62,6 +63,7 @@ export function toCard(event) {
 		location: event.location ?? '',
 		hideFromEvents: event.hideFromEvents ?? false,
 		links: event.links ?? [],
+		team: event.team ?? '',
 	}
 }
 
@@ -438,6 +440,7 @@ export function EventDialog({ event, categories, onClose, onSave, onDelete }) {
 		spots: event?.capacity == null ? '' : String(event.capacity),
 		location: event?.location ?? '',
 		hideFromEvents: event?.hideFromEvents ?? false,
+		team: event?.team ?? '',
 	})
 	const [image, setImage] = useState(event?.image ?? null)
 	// { title, url } rows, blank ones included while they're being filled in
@@ -473,7 +476,8 @@ export function EventDialog({ event, categories, onClose, onSave, onDelete }) {
 	}
 
 	// blank = unlimited; anything else has to be a whole number of seats
-	const spotsOk = form.spots.trim() === '' || (Number.isInteger(Number(form.spots)) && Number(form.spots) > 0)
+	// (only an event that asks for spots has them to check — see capacityField)
+	const spotsOk = capacityField(form.track) !== 'spots' || form.spots.trim() === '' || (Number.isInteger(Number(form.spots)) && Number(form.spots) > 0)
 	const ready = form.title.trim() !== '' && form.date !== '' && spotsOk
 
 	const submit = (submitted) => {
@@ -664,7 +668,8 @@ export function EventDialog({ event, categories, onClose, onSave, onDelete }) {
 						sm:grid-cols-2
 						gap-4
 					">
-						<label className="block">
+						{/* the whole row when nothing sits beside it */}
+						<label className={`block ${capacityField(form.track) === 'none' ? 'sm:col-span-2' : ''}`}>
 							<Label>location</Label>
 							<input
 								type="text"
@@ -675,21 +680,34 @@ export function EventDialog({ event, categories, onClose, onSave, onDelete }) {
 							/>
 						</label>
 
-						{/* optional: set it and rsvps stop at that many, with a
-						    waitlist after; leave it blank for no limit */}
-						<label className="block">
-							<Label>available spots</Label>
-							<input
-								type="number"
-								min="1"
-								step="1"
-								inputMode="numeric"
-								value={form.spots}
-								onChange={set('spots')}
-								placeholder="blank = unlimited"
-								className={`${FIELD} ${spotsOk ? '' : 'border-red focus:border-red'}`}
+						{/* board events take no sign-ups, so there's no cap: a
+						    j-board one asks which team it's for instead, and an
+						    officers or EB board one asks nothing (capacityField).
+						    Anything else: optional — set it and rsvps stop at that
+						    many, with a waitlist after; blank for no limit */}
+						{capacityField(form.track) === 'team' && (
+							<TeamField
+								value={form.team}
+								onChange={(team) => setForm((prev) => ({ ...prev, team }))}
+								fieldClass={FIELD}
+								Label={Label}
 							/>
-						</label>
+						)}
+						{capacityField(form.track) === 'spots' && (
+							<label className="block">
+								<Label>available spots</Label>
+								<input
+									type="number"
+									min="1"
+									step="1"
+									inputMode="numeric"
+									value={form.spots}
+									onChange={set('spots')}
+									placeholder="blank = unlimited"
+									className={`${FIELD} ${spotsOk ? '' : 'border-red focus:border-red'}`}
+								/>
+							</label>
+						)}
 					</div>
 
 					<HideFromEventsToggle
@@ -965,7 +983,9 @@ export default function OfficerEvents({ openNew = false }) {
 			track: values.track,
 			description: values.description,
 			image: values.image,
-			capacity: values.spots.trim() === '' ? null : Number(values.spots),
+			// a j-board event has a team instead of a seat cap
+			capacity: capacityField(values.track) !== 'spots' || values.spots.trim() === '' ? null : Number(values.spots),
+			team: values.track === 'jboard' ? values.team || null : null,
 			location: values.location.trim() || null,
 			hideFromEvents: values.hideFromEvents,
 			links: values.links,

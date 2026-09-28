@@ -5,9 +5,10 @@ import { useRouter } from 'next/navigation'
 import { useDismiss } from '@/lib/dismiss'
 import DashboardShell from '@/components/dashboards/DashboardShell'
 import { eventCategories, events as eventsApi, labs as labsApi } from '@/lib/api'
-import { buildMonths, calendarOnly, categoryNameOf, typesIn } from '@/lib/calendar'
+import { buildMonths, calendarOnly, capacityField, categoryNameOf, teamLabel, typesIn } from '@/lib/calendar'
 import HideFromEventsToggle from '@/components/events/HideFromEventsToggle'
 import { LinksField, cleanLinks } from '@/components/events/EventLinks'
+import TeamField from '@/components/events/TeamField'
 import { COVER_MAX, shrinkImage } from '@/lib/images'
 import EventDetailsDialog from '@/components/events/EventDetailsDialog'
 import { thisMonth } from '@/lib/dates'
@@ -556,6 +557,17 @@ function EntryText({ entry }) {
 			">
 				{entry.title}
 			</p>
+			{/* a j-board event's team, with its time and room under it */}
+			{entry.team && (
+				<p className="
+					font-vietnam
+					text-xs
+					text-black/50
+					mt-0.5
+				">
+					{teamLabel(entry.team)}
+				</p>
+			)}
 			{entry.time && (
 				<p className="
 					font-vietnam
@@ -813,6 +825,7 @@ function EventDialog({ categories, onClose, onSave }) {
 		spots: '',
 		location: '',
 		hideFromEvents: false,
+		team: '',
 	})
 	const [image, setImage] = useState(null) // a data URL
 	// { title, url } rows, blank ones included while they're being filled in
@@ -840,7 +853,8 @@ function EventDialog({ categories, onClose, onSave }) {
 	}
 
 	// blank = unlimited; anything else has to be a whole number of seats
-	const spotsOk = form.spots.trim() === '' || (Number.isInteger(Number(form.spots)) && Number(form.spots) > 0)
+	// (only an event that asks for spots has them to check — see capacityField)
+	const spotsOk = capacityField(form.track) !== 'spots' || form.spots.trim() === '' || (Number.isInteger(Number(form.spots)) && Number(form.spots) > 0)
 	const ready = form.title.trim() !== '' && form.date !== '' && spotsOk
 
 	const submit = (event) => {
@@ -1030,7 +1044,8 @@ function EventDialog({ categories, onClose, onSave }) {
 						sm:grid-cols-2
 						gap-4
 					">
-						<label className="block">
+						{/* the whole row when nothing sits beside it */}
+						<label className={`block ${capacityField(form.track) === 'none' ? 'sm:col-span-2' : ''}`}>
 							<Label>location</Label>
 							<input
 								type="text"
@@ -1041,21 +1056,34 @@ function EventDialog({ categories, onClose, onSave }) {
 							/>
 						</label>
 
-						{/* optional: set it and rsvps stop at that many, with a
-						    waitlist after; leave it blank for no limit */}
-						<label className="block">
-							<Label>available spots</Label>
-							<input
-								type="number"
-								min="1"
-								step="1"
-								inputMode="numeric"
-								value={form.spots}
-								onChange={set('spots')}
-								placeholder="blank = unlimited"
-								className={`${FIELD} ${spotsOk ? '' : 'border-red focus:border-red'}`}
+						{/* board events take no sign-ups, so there's no cap: a
+						    j-board one asks which team it's for instead, and an
+						    officers or EB board one asks nothing (capacityField).
+						    Anything else: optional — set it and rsvps stop at that
+						    many, with a waitlist after; blank for no limit */}
+						{capacityField(form.track) === 'team' && (
+							<TeamField
+								value={form.team}
+								onChange={(team) => setForm((prev) => ({ ...prev, team }))}
+								fieldClass={FIELD}
+								Label={Label}
 							/>
-						</label>
+						)}
+						{capacityField(form.track) === 'spots' && (
+							<label className="block">
+								<Label>available spots</Label>
+								<input
+									type="number"
+									min="1"
+									step="1"
+									inputMode="numeric"
+									value={form.spots}
+									onChange={set('spots')}
+									placeholder="blank = unlimited"
+									className={`${FIELD} ${spotsOk ? '' : 'border-red focus:border-red'}`}
+								/>
+							</label>
+						)}
 					</div>
 
 					<HideFromEventsToggle
@@ -1330,7 +1358,7 @@ export default function OfficerCalendar() {
 	// `type` — official or social, which is what attendance is scored on — isn't
 	// on this form, so a new event takes 'social'. Change it from /events, where
 	// the same event has a full editor.
-	const saveEvent = async ({ title, date, time, categoryId, track, description, image, spots, location, hideFromEvents, links }) => {
+	const saveEvent = async ({ title, date, time, categoryId, track, description, image, spots, location, hideFromEvents, links, team }) => {
 		setError(null)
 		try {
 			await eventsApi.create({
@@ -1341,7 +1369,9 @@ export default function OfficerCalendar() {
 				track,
 				description,
 				image,
-				capacity: spots.trim() === '' ? null : Number(spots),
+				// a j-board event has a team instead of a seat cap
+				capacity: capacityField(track) !== 'spots' || spots.trim() === '' ? null : Number(spots),
+				team: track === 'jboard' ? team || null : null,
 				location: location.trim() || null,
 				hideFromEvents,
 				links,
@@ -1385,7 +1415,8 @@ export default function OfficerCalendar() {
 				track: values.track,
 				description: values.description,
 				image: values.image,
-				capacity: values.spots.trim() === '' ? null : Number(values.spots),
+				capacity: capacityField(values.track) !== 'spots' || values.spots.trim() === '' ? null : Number(values.spots),
+				team: values.track === 'jboard' ? values.team || null : null,
 				location: values.location.trim() || null,
 				hideFromEvents: values.hideFromEvents,
 				links: values.links,

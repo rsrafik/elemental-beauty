@@ -244,3 +244,39 @@ test('a j-board event an officer, treasurer or admin added is read-only to j-boa
         assert.equal((await put(base, legacy)).status, 200)
     })
 })
+
+test('a j-board event has a team instead of a seat cap; any other event has no team', { skip }, async () => {
+    const officer = await person('officer')
+    await as(officer, 'officer', async (base) => {
+        const post = (body) => fetch(base, {
+            method: 'POST',
+            headers: { 'content-type': 'application/json' },
+            body: JSON.stringify({ title: `${tag} team`, type: 'official', date: '2030-03-01', ...body })
+        })
+        const jboard = await (await post({ track: 'jboard', team: 'social_media', capacity: 12 })).json()
+        made.events.push(jboard.eventId)
+        assert.equal(jboard.team, 'social_media')
+        assert.equal(jboard.capacity, null)
+
+        const members = await (await post({ track: 'members', team: 'formula', capacity: 12 })).json()
+        made.events.push(members.eventId)
+        assert.equal(members.team, null)
+        assert.equal(members.capacity, 12)
+
+        assert.equal((await post({ track: 'jboard', team: 'marketing' })).status, 400)
+
+        // officers and EB board events have neither
+        const board = await (await post({ track: 'board', team: 'formula', capacity: 12 })).json()
+        made.events.push(board.eventId)
+        assert.equal(board.capacity, null)
+        assert.equal(board.team, null)
+
+        // moved off j-board, it loses its team
+        const moved = await (await fetch(`${base}/${jboard.eventId}`, {
+            method: 'PUT',
+            headers: { 'content-type': 'application/json' },
+            body: JSON.stringify({ track: 'board' })
+        })).json()
+        assert.equal(moved.team, null)
+    })
+})

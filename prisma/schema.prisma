@@ -63,6 +63,19 @@ enum EventTrack {
   @@map("event_track")
 }
 
+// Which j-board team a j-board event is for (events.team). `social_media`
+// rather than 'social media' for the same reason as GrantStatus's
+// under_review; the pages write the space back in.
+enum EventTeam {
+  communication
+  secretary
+  treasury
+  formula
+  social_media
+
+  @@map("event_team")
+}
+
 enum TransactionType {
   income
   expense
@@ -347,6 +360,10 @@ model Event {
   location    String?
   image       String?
   capacity    Int? // null = unlimited seats
+  // The j-board team it's for — only on a j-board event, where the form asks
+  // for this in place of a seat cap (so a j-board event's capacity is null).
+  // Null = the whole of j-board.
+  team        EventTeam?
   // The "hide from events" switch: kept off both /events pages, whoever it's
   // for and whatever its tag — it still shows on the calendar. Meetings and
   // the board's tracks are kept off regardless (frontend/lib/calendar.js).

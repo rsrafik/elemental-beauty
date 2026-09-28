@@ -69,6 +69,8 @@ export function buildMonths(labs = [], events = []) {
 			track: event.track,
 			time: event.startTime ?? null,
 			location: event.location ?? null,
+			// a j-board event's team ('social_media'), printed under the title
+			team: event.team ?? null,
 			href: `/events/view?id=${event.eventId}`,
 		})
 	}
@@ -115,4 +117,30 @@ export function calendarOnly(track, categoryName) {
 // tag rows' ids are numbers.
 export function categoryNameOf(categories, categoryId) {
 	return categories.find((category) => String(category.categoryId) === String(categoryId))?.name
+}
+
+// The j-board teams a j-board event can be for — the event form's "team",
+// which it asks in place of available spots when the event is for j-board.
+// Mirrors EVENT_TEAMS in src/routes/eventRoutes.js.
+export const TEAMS = [
+	{ key: 'communication', label: 'communication' },
+	{ key: 'secretary', label: 'secretary' },
+	{ key: 'treasury', label: 'treasury' },
+	{ key: 'formula', label: 'formula' },
+	{ key: 'social_media', label: 'social media' },
+]
+
+// What an event form asks where "available spots" sits, by who it's for:
+//   'team'   j-board — which team it's for (TeamField)
+//   'none'   officers and EB board — meetings, nothing to cap and no team
+//   'spots'  everything else — the optional seat cap
+// Mirrors UNCAPPED_TRACKS in src/routes/eventRoutes.js.
+export function capacityField(track) {
+	if (track === 'jboard') return 'team'
+	if (track === 'officers' || track === 'board') return 'none'
+	return 'spots'
+}
+
+export function teamLabel(key) {
+	return TEAMS.find((team) => team.key === key)?.label ?? key
 }

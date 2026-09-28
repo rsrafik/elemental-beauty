@@ -13,6 +13,23 @@ const router = express.Router()
 const EVENT_TYPES = ['official', 'social']
 const EVENT_TRACKS = ['members', 'officers', 'open', 'online', 'board', 'jboard']
 
+// The j-board team a j-board event is for — what the form asks in place of a
+// seat cap there. Only a j-board event has one. '' or null = the whole of
+// j-board.
+//
+// The board's tracks take no sign-ups, so none of them has a seat cap:
+// j-board asks for a team instead, officers and EB board for nothing. The
+// routes below hold both rules. Mirrors capacityField in
+// frontend/lib/calendar.js.
+const UNCAPPED_TRACKS = ['officers', 'board', 'jboard']
+const EVENT_TEAMS = ['communication', 'secretary', 'treasury', 'formula', 'social_media']
+function readTeam(value) {
+    if (value === undefined) { return {} }
+    if (value === null || value === '') { return { team: null } }
+    if (!EVENT_TEAMS.includes(value)) { return { error: `team must be one of: ${EVENT_TEAMS.join(', ')}` } }
+    return { team: value }
+}
+
 // Tracks a role never sees: to them these events don't exist. A member sees
 // none of the board's — 'board' ("EB board") is everyone from officer up,
 // 'officers' is the officers', 'jboard' is j-board's. J-board doesn't see the
@@ -209,6 +226,10 @@ router.post('/', requireRole('officer'), async (req, res) => {
     const { title, type, track, categoryId, description, date, startTime, location, image, capacity, hideFromEvents } = req.body
     const { links, error: linksError } = readLinks(req.body.links ?? null)
     if (linksError) { return res.status(400).json({ message: linksError }) }
+    const { team, error: teamError } = readTeam(req.body.team)
+    if (teamError) { return res.status(400).json({ message: teamError }) }
+    const forJboard = track === 'jboard'
+    const uncapped = UNCAPPED_TRACKS.includes(track)
 
     if (!title || !date) {
         return res.status(400).json({ message: 'title and date are required' })
@@ -250,7 +271,9 @@ router.post('/', requireRole('officer'), async (req, res) => {
                 startTime: startTime || null,
                 location: location?.trim() || null,
                 image,
-                capacity,
+                // the board's tracks have no seat cap; j-board has a team
+                capacity: uncapped ? null : capacity,
+                team: forJboard ? team ?? null : null,
                 hideFromEvents: hideFromEvents ?? false,
                 links,
                 createdById: req.userId
@@ -303,6 +326,9 @@ router.put('/:id', requireRole('officer'), async (req, res) => {
         if (error) { return res.status(400).json({ message: error }) }
         data.links = links
     }
+    const teamRead = readTeam(req.body.team)
+    if (teamRead.error) { return res.status(400).json({ message: teamRead.error }) }
+    if (teamRead.team !== undefined) { data.team = teamRead.team }
     if (req.body.startTime !== undefined) {
         if (req.body.startTime && !TIME.test(req.body.startTime)) {
             return res.status(400).json({ message: 'startTime must be HH:MM' })
@@ -331,6 +357,11 @@ router.put('/:id', requireRole('officer'), async (req, res) => {
         // same 404 GET /:id gives, so editing by id can't get round it — and
         // one locked to its creator (lockedFor) is refused
         if (await refuseLocked(eventId, req.role, res)) { return }
+        // a team only on a j-board event, a seat cap only off one — whichever
+        // track it ends up on after this edit
+        const track = data.track ?? (await prisma.event.findUnique({ where: { eventId }, select: { track: true } })).track
+        if (UNCAPPED_TRACKS.includes(track)) { data.capacity = null }
+        if (track !== 'jboard') { data.team = null }
         const event = await prisma.event.update({ where: { eventId }, data, include: { createdBy: CREATOR } })
         res.json(withCreator(event, req.role))
     } catch (err) {
