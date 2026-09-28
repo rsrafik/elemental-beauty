@@ -5,6 +5,8 @@ import prisma from './prismaClient.js'
 // What gets written, and the `action` it's written under:
 //
 //   role_changed     an admin changed someone's role      details { from, to }
+//   team_changed     an admin moved a j-board member      details { from, to } (null = none)
+//                    onto a team (or off one)
 //   points_awarded   an officer gave points by hand       details { reason }
 //   checked_in       a check-in earned points             details { kind, id, title, by: 'qr' | 'hand' }
 //   checkin_undone   a check-in was taken back            details { kind, id, title }
@@ -25,7 +27,7 @@ import prisma from './prismaClient.js'
 // after someone is renamed or removed.
 
 export const ACTIONS = [
-    'role_changed', 'points_awarded', 'checked_in', 'checkin_undone',
+    'role_changed', 'team_changed', 'points_awarded', 'checked_in', 'checkin_undone',
     'member_added', 'member_removed', 'account_deleted', 'dues_paid', 'dues_cleared', 'dues_waived',
     'fee_paid', 'dues_reset'
 ]

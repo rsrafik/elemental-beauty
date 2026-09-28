@@ -280,3 +280,38 @@ test('a j-board event has a team instead of a seat cap; any other event has no t
         assert.equal(moved.team, null)
     })
 })
+
+test('j-board members see their own team and all-of-j-board events, not other teams', { skip }, async () => {
+    const formula = await person('jboard')
+    const noTeam = await person('jboard')
+    const officer = await person('officer')
+    await prisma.member.update({ where: { userId: formula }, data: { jboardTeam: 'formula' } })
+
+    const make = async (team) => {
+        const row = await prisma.event.create({ data: { title: `${tag} ${team ?? 'all'}`, date: new Date('2030-04-01'), track: 'jboard', team } })
+        made.events.push(row.eventId)
+        return row.eventId
+    }
+    const all = await make(null)
+    const mine = await make('formula')
+    const theirs = await make('social_media')
+    const titles = (rows) => rows.filter((row) => [all, mine, theirs].includes(row.eventId)).map((row) => row.eventId).sort()
+
+    await as(formula, 'jboard', async (base) => {
+        assert.deepEqual(titles(await (await fetch(base)).json()), [all, mine].sort())
+        assert.equal((await fetch(`${base}/${theirs}`)).status, 404)
+        assert.equal((await fetch(`${base}/${theirs}`, { method: 'DELETE' })).status, 404)
+        const other = await fetch(base, {
+            method: 'POST',
+            headers: { 'content-type': 'application/json' },
+            body: JSON.stringify({ title: `${tag} nope`, type: 'official', date: '2030-04-02', track: 'jboard', team: 'treasury' })
+        })
+        assert.equal(other.status, 403)
+    })
+    await as(noTeam, 'jboard', async (base) => {
+        assert.deepEqual(titles(await (await fetch(base)).json()), [all])
+    })
+    await as(officer, 'officer', async (base) => {
+        assert.deepEqual(titles(await (await fetch(base)).json()), [all, mine, theirs].sort())
+    })
+})

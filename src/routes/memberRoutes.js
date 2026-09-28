@@ -41,6 +41,7 @@ router.get('/', async (req, res) => {
                 role: true,
                 points: true,
                 dateJoined: true,
+                jboardTeam: true,
                 user: {
                     select: {
                         username: true,
@@ -527,6 +528,36 @@ router.delete('/:id', requireRole('officer'), async (req, res) => {
     }
 })
 
+// Admin: put a j-board member on a team (the side list by the role menu on
+// /students), or take them off one with { team: null }. Only a j-board member
+// has a team; see jboardTeam in schema.prisma.
+const TEAMS = ['communication', 'secretary', 'treasury', 'formula', 'social_media']
+router.put('/:id/team', requireRole('admin'), async (req, res) => {
+    const targetId = parseInt(req.params.id)
+    if (isNaN(targetId)) { return res.status(400).json({ message: 'Invalid member id' }) }
+    const team = req.body?.team ?? null
+    if (team !== null && !TEAMS.includes(team)) {
+        return res.status(400).json({ message: `team must be one of: ${TEAMS.join(', ')}` })
+    }
+
+    try {
+        const before = await prisma.member.findUnique({ where: { userId: targetId }, select: { role: true, jboardTeam: true } })
+        if (!before) { return res.status(404).json({ message: 'Member not found' }) }
+        if (before.role !== 'jboard') { return res.status(409).json({ message: 'Only j-board members are on a team' }) }
+        const updated = await prisma.$transaction(async (tx) => {
+            const member = await tx.member.update({ where: { userId: targetId }, data: { jboardTeam: team } })
+            if (before.jboardTeam !== team) {
+                await log({ actorId: req.userId, action: 'team_changed', targetId, details: { from: before.jboardTeam, to: team } }, tx)
+            }
+            return member
+        })
+        res.json(updated)
+    } catch (err) {
+        console.error(err.message)
+        res.sendStatus(500)
+    }
+})
+
 router.put('/:id/role', requireRole('admin'), async (req, res) => {
     const targetId = parseInt(req.params.id)
     if (isNaN(targetId)) { return res.status(400).json({ message: 'Invalid member id' }) }
@@ -562,7 +593,8 @@ router.put('/:id/role', requireRole('admin'), async (req, res) => {
 
             const member = await tx.member.update({
                 where: { userId: targetId },
-                data: { role }
+                // a j-board team goes with leaving j-board
+                data: { role, ...(role === 'jboard' ? {} : { jboardTeam: null }) }
             })
             if (before.role !== role) {
                 await log({ actorId: req.userId, action: 'role_changed', targetId, details: { from: before.role, to: role } }, tx)

@@ -114,7 +114,7 @@ router.get('/me', authMiddleware, async (req, res) => {
                 waiverName: true,
                 emailClub: true,
                 createdAt: true,
-                member: { select: { role: true, points: true, dateJoined: true } }
+                member: { select: { role: true, points: true, dateJoined: true, jboardTeam: true } }
             }
         })
         if (!user) { return res.status(404).json({ message: 'Account not found' }) }
@@ -130,7 +130,10 @@ router.get('/me', authMiddleware, async (req, res) => {
             // of an answer.
             role: member?.role ?? 'user',
             points: member?.points ?? 0,
-            dateJoined: member?.dateJoined ?? null
+            dateJoined: member?.dateJoined ?? null,
+            // j-board only: their team, which decides the j-board events
+            // they see and can file (see eventRoutes.js)
+            jboardTeam: member?.jboardTeam ?? null
         })
     } catch (err) {
         console.error(err.message)

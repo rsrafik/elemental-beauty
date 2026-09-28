@@ -40,7 +40,30 @@ const HIDDEN_TRACKS = {
     jboard: ['officers'],
 }
 const hiddenTracks = (role) => HIDDEN_TRACKS[role] ?? []
-const hiddenFrom = (event, role) => hiddenTracks(role).includes(event.track)
+
+// Inside j-board, each member sees their own team's j-board events and the
+// ones for all of j-board, never another team's — so the teams' calendars
+// stay apart. One with no team yet sees only the all-of-j-board ones.
+// Officers, treasurer and admin see every team's. `viewer` is
+// { role, team } (viewerOf); a j-board member's team is on their member row.
+async function viewerOf(req) {
+    if (req.role !== 'jboard') { return { role: req.role, team: null } }
+    const member = await prisma.member.findUnique({ where: { userId: req.userId }, select: { jboardTeam: true } })
+    return { role: req.role, team: member?.jboardTeam ?? null }
+}
+const otherTeam = (event, viewer) =>
+    viewer.role === 'jboard' && event.track === 'jboard' && event.team != null && event.team !== viewer.team
+const hiddenFrom = (event, viewer) => hiddenTracks(viewer.role).includes(event.track) || otherTeam(event, viewer)
+
+// The same rule as a query, for the list.
+function visibleWhere(viewer) {
+    const where = []
+    if (hiddenTracks(viewer.role).length) { where.push({ track: { notIn: hiddenTracks(viewer.role) } }) }
+    if (viewer.role === 'jboard') {
+        where.push({ OR: [{ track: { not: 'jboard' } }, { team: null }, ...(viewer.team ? [{ team: viewer.team }] : [])] })
+    }
+    return where
+}
 
 // A j-board event an officer, treasurer or admin added is theirs to change:
 // j-board can open it and read it, not edit or delete it. `creatorRole` is the
@@ -66,13 +89,13 @@ function withCreator({ createdBy, ...event }, role) {
 }
 
 // The 403 PUT and DELETE give j-board on a locked event (see lockedFor).
-async function refuseLocked(eventId, role, res) {
-    const event = await prisma.event.findUnique({ where: { eventId }, select: { track: true, createdBy: CREATOR } })
-    if (!event || hiddenFrom(event, role)) {
+async function refuseLocked(eventId, viewer, res) {
+    const event = await prisma.event.findUnique({ where: { eventId }, select: { track: true, team: true, createdBy: CREATOR } })
+    if (!event || hiddenFrom(event, viewer)) {
         res.status(404).json({ message: 'Event not found' })
         return true
     }
-    if (lockedFor(event, role, event.createdBy?.member?.role)) {
+    if (lockedFor(event, viewer.role, event.createdBy?.member?.role)) {
         res.status(403).json({ message: 'Only whoever added this event can change it' })
         return true
     }
@@ -135,9 +158,9 @@ router.get('/', async (req, res) => {
         }
         where.type = type
     }
-    if (hiddenTracks(req.role).length) { where.track = { notIn: hiddenTracks(req.role) } }
 
     try {
+        where.AND = visibleWhere(await viewerOf(req))
         const owe = await duesLookup(prisma, req.userId)
         const events = await prisma.event.findMany({
             where,
@@ -182,7 +205,7 @@ router.get('/:id', async (req, res) => {
         if (!event) { return res.status(404).json({ message: 'Event not found' }) }
         // a board-only event doesn't exist as far as a member is concerned —
         // 404, not 403, so the reply doesn't confirm there's something there
-        if (hiddenFrom(event, req.role)) {
+        if (hiddenFrom(event, await viewerOf(req))) {
             return res.status(404).json({ message: 'Event not found' })
         }
 
@@ -229,6 +252,12 @@ router.post('/', requireRole('officer'), async (req, res) => {
     const { team, error: teamError } = readTeam(req.body.team)
     if (teamError) { return res.status(400).json({ message: teamError }) }
     const forJboard = track === 'jboard'
+    const viewer = await viewerOf(req)
+    // j-board files for their own team or all of j-board — another team's
+    // would vanish off their calendar the moment it saved
+    if (forJboard && otherTeam({ track, team: team ?? null }, viewer)) {
+        return res.status(403).json({ message: 'You can only add j-board events for your own team' })
+    }
     const uncapped = UNCAPPED_TRACKS.includes(track)
 
     if (!title || !date) {
@@ -356,12 +385,17 @@ router.put('/:id', requireRole('officer'), async (req, res) => {
         // one on a track this role can't see doesn't exist for them — the
         // same 404 GET /:id gives, so editing by id can't get round it — and
         // one locked to its creator (lockedFor) is refused
-        if (await refuseLocked(eventId, req.role, res)) { return }
+        const viewer = await viewerOf(req)
+        if (await refuseLocked(eventId, viewer, res)) { return }
         // a team only on a j-board event, a seat cap only off one — whichever
         // track it ends up on after this edit
-        const track = data.track ?? (await prisma.event.findUnique({ where: { eventId }, select: { track: true } })).track
+        const existing = await prisma.event.findUnique({ where: { eventId }, select: { track: true, team: true } })
+        const track = data.track ?? existing.track
         if (UNCAPPED_TRACKS.includes(track)) { data.capacity = null }
         if (track !== 'jboard') { data.team = null }
+        if (otherTeam({ track, team: data.team !== undefined ? data.team : existing.team }, viewer)) {
+            return res.status(403).json({ message: 'You can only move j-board events to your own team' })
+        }
         const event = await prisma.event.update({ where: { eventId }, data, include: { createdBy: CREATOR } })
         res.json(withCreator(event, req.role))
     } catch (err) {
@@ -377,7 +411,7 @@ router.delete('/:id', requireRole('officer'), async (req, res) => {
     if (isNaN(eventId)) { return res.status(400).json({ message: 'Invalid event id' }) }
 
     try {
-        if (await refuseLocked(eventId, req.role, res)) { return }
+        if (await refuseLocked(eventId, await viewerOf(req), res)) { return }
         // cascades to member_event rows per the schema
         await prisma.event.delete({ where: { eventId } })
         res.json({ message: 'Event deleted' })
@@ -412,7 +446,7 @@ router.post('/:eventId/rsvp', async (req, res) => {
         const event = await prisma.event.findUnique({ where: { eventId } })
         // a board-only event doesn't exist for a member — the same 404
         // GET /:id gives, so signing up by id can't get round it
-        if (!event || hiddenFrom(event, req.role)) {
+        if (!event || hiddenFrom(event, await viewerOf(req))) {
             return res.status(404).json({ message: 'Event not found' })
         }
 

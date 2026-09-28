@@ -5,6 +5,7 @@ import DashboardShell from '@/components/dashboards/DashboardShell'
 import { hasRole, onLeaderboard, roleLabel } from '@/lib/roles'
 import { useRole, useSession } from '@/lib/session'
 import { members as membersApi } from '@/lib/api'
+import { TEAMS, teamLabel } from '@/lib/calendar'
 import { useDismiss } from '@/lib/dismiss'
 import AwardPointsDialog from '@/components/students/AwardPointsDialog'
 import ActivityLog from '@/components/students/ActivityLog'
@@ -88,6 +89,8 @@ function toRow(row) {
 		username: row.user?.email || row.user?.username || '',
 		handle: row.user?.username ?? '',
 		role: row.role,
+		// j-board only: the team they're on (see the role menu's side list)
+		team: row.jboardTeam ?? null,
 		points: row.points,
 		joined: String(row.user?.createdAt ?? row.dateJoined ?? '').slice(0, 10),
 		photo: row.user?.profilePicture ?? null,
@@ -386,20 +389,24 @@ function Avatar({ student }) {
 	)
 }
 
-function RoleTag({ role, title }) {
+// `team` rides on a j-board member's pill ('j-board · formula').
+function RoleTag({ role, team = null, title }) {
 	return (
 		<span title={title} className={`
 			inline-flex
 			items-center
+			gap-1
 			rounded-full
 			px-3
 			py-1
 			font-vietnam
 			font-semibold
 			text-xs
+			whitespace-nowrap
 			${ROLE_PILL[role]}
 		`}>
 			{roleLabel(role)}
+			{team && <span className="font-normal opacity-75">· {teamLabel(team)}</span>}
 		</span>
 	)
 }
@@ -411,7 +418,7 @@ function RoleTag({ role, title }) {
 // `data-role-pill` is how the open menu recognises a click on a pill and leaves
 // it to the pill's own handler — otherwise closing-on-outside-click and the
 // click itself would fight, and the pill you're already on could never close.
-function RolePill({ role, open, onOpen }) {
+function RolePill({ role, team = null, open, onOpen }) {
 	return (
 		<button
 			type="button"
@@ -419,7 +426,7 @@ function RolePill({ role, open, onOpen }) {
 			onClick={(event) => onOpen(event.currentTarget.getBoundingClientRect())}
 			aria-haspopup="listbox"
 			aria-expanded={open}
-			aria-label={`Change role, currently ${roleLabel(role)}`}
+			aria-label={`Change role, currently ${roleLabel(role)}${team ? `, ${teamLabel(team)} team` : ''}`}
 			className={`
 				group
 				inline-flex
@@ -432,6 +439,7 @@ function RolePill({ role, open, onOpen }) {
 				font-vietnam
 				font-semibold
 				text-xs
+				whitespace-nowrap
 				cursor-pointer
 				transition-all
 				duration-150
@@ -445,6 +453,7 @@ function RolePill({ role, open, onOpen }) {
 			`}
 		>
 			{roleLabel(role)}
+			{team && <span className="font-normal opacity-75">· {teamLabel(team)}</span>}
 			<ChevronIcon className={`
 				w-2.5
 				h-2.5
@@ -464,7 +473,12 @@ function RolePill({ role, open, onOpen }) {
 // horizontal scroller — and an absolutely-positioned menu would be cut off on
 // the bottom rows. The trade is that it can't follow its pill, so any scroll
 // closes it.
-function RoleMenu({ anchor, current, onPick, onClose }) {
+//
+// A j-board member gets a second list beside it: the j-board teams, which
+// decide which j-board events they see (see eventRoutes.js). Picking their
+// team again takes them off it.
+const MENU_W = 176
+function RoleMenu({ anchor, current, team, onPick, onPickTeam, onClose }) {
 	const menu = useRef(null)
 
 	useEffect(() => {
@@ -500,18 +514,30 @@ function RoleMenu({ anchor, current, onPick, onClose }) {
 	const height = options.length * 36 + 16
 	const below = anchor.bottom + 6
 	const top = below + height > window.innerHeight ? anchor.top - height - 6 : below
+	// with the team list beside it, pulled in from the right edge if it'd run off
+	const teams = current === 'jboard'
+	const width = teams ? MENU_W * 2 + 8 : MENU_W
+	const left = Math.max(8, Math.min(anchor.left, window.innerWidth - width - 8))
 
 	return (
 		<div
 			ref={menu}
-			role="listbox"
-			aria-label="Role"
-			style={{ top, left: anchor.left }}
+			style={{ top, left }}
 			className="
 				menu-open
 				fixed
 				z-50
+				flex
+				items-start
+				gap-2
+			"
+		>
+		<div
+			role="listbox"
+			aria-label="Role"
+			className="
 				w-44
+				shrink-0
 				rounded-[14px]
 				bg-white
 				p-2
@@ -546,6 +572,68 @@ function RoleMenu({ anchor, current, onPick, onClose }) {
 					{role === current && <CheckIcon className="w-3 h-3 shrink-0 text-black/40" />}
 				</button>
 			))}
+		</div>
+
+		{teams && (
+			<div
+				role="listbox"
+				aria-label="J-board team"
+				className="
+					w-44
+					shrink-0
+					rounded-[14px]
+					bg-white
+					p-2
+					shadow-[0_10px_30px_rgba(0,0,0,0.2)]
+				"
+			>
+				<p className="
+					px-2
+					pt-1
+					pb-1.5
+					font-vietnam
+					text-[11px]
+					uppercase
+					tracking-[0.12em]
+					text-black/45
+				">
+					team
+				</p>
+				{TEAMS.map((option) => (
+					<button
+						key={option.key}
+						type="button"
+						role="option"
+						aria-selected={option.key === team}
+						title={option.key === team ? 'Click again to take them off this team' : undefined}
+						onClick={() => onPickTeam(option.key === team ? null : option.key)}
+						className={`
+							flex
+							w-full
+							items-center
+							justify-between
+							gap-2
+							rounded-[8px]
+							px-2
+							py-1.5
+							font-vietnam
+							font-semibold
+							text-xs
+							text-[#6B4FBF]
+							cursor-pointer
+							transition-colors
+							duration-150
+							ease-out
+							hover:bg-cream
+							${option.key === team ? 'bg-cream' : ''}
+						`}
+					>
+						{option.label}
+						{option.key === team && <CheckIcon className="w-3 h-3 shrink-0 text-black/40" />}
+					</button>
+				))}
+			</div>
+		)}
 		</div>
 	)
 }
@@ -1458,16 +1546,22 @@ export default function OfficerStudents() {
 	//
 	// A 'user' row picking a role is a promotion: the server makes the member
 	// row, and they start on 0 points like anyone new.
+	//
+	// Made j-board, the menu stays open so their team can be picked from the
+	// list that appears beside it; any other role closes it (and leaving
+	// j-board takes the team with it, on the server too).
 	const changeRole = async (next) => {
 		const id = roleMenu.id
 		const before = students.find((student) => student.id === id)
-		setRoleMenu(null)
+		if (next !== 'jboard') setRoleMenu(null)
 		if (!before || next === before.role) return
 		setError(null)
 
 		const points = before.role === 'user' ? 0 : before.points
 		setStudents((prev) =>
-			prev.map((student) => (student.id === id ? { ...student, role: next, points } : student))
+			prev.map((student) => (student.id === id
+				? { ...student, role: next, points, team: next === 'jboard' ? student.team : null }
+				: student))
 		)
 
 		try {
@@ -1476,10 +1570,27 @@ export default function OfficerStudents() {
 			setStudents((prev) =>
 				prev.map((student) =>
 					student.id === id
-						? { ...student, role: before.role, points: before.points }
+						? { ...student, role: before.role, points: before.points, team: before.team }
 						: student
 				)
 			)
+			setError(err.message)
+		}
+	}
+
+	// A j-board member's team, from the list beside the role menu — applied
+	// first and rolled back if refused, like the role. The menu closes on it.
+	const changeTeam = async (team) => {
+		const id = roleMenu.id
+		const before = students.find((student) => student.id === id)
+		setRoleMenu(null)
+		if (!before) return
+		setError(null)
+		setStudents((prev) => prev.map((student) => (student.id === id ? { ...student, team } : student)))
+		try {
+			await membersApi.setTeam(id, team)
+		} catch (err) {
+			setStudents((prev) => prev.map((student) => (student.id === id ? { ...student, team: before.team } : student)))
 			setError(err.message)
 		}
 	}
@@ -1850,12 +1961,14 @@ export default function OfficerStudents() {
 											{isAdmin ? (
 												<RolePill
 													role={student.role}
+													team={student.team}
 													open={roleMenu?.id === student.id}
 													onOpen={openRoleMenu(student.id)}
 												/>
 											) : (
 												<RoleTag
 													role={student.role}
+													team={student.team}
 													title="only an admin can change roles"
 												/>
 											)}
@@ -2034,7 +2147,9 @@ export default function OfficerStudents() {
 				<RoleMenu
 					anchor={roleMenu.anchor}
 					current={students.find((student) => student.id === roleMenu.id)?.role}
+					team={students.find((student) => student.id === roleMenu.id)?.team ?? null}
 					onPick={changeRole}
+					onPickTeam={changeTeam}
 					onClose={() => setRoleMenu(null)}
 				/>
 			)}

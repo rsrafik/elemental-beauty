@@ -4,6 +4,7 @@ import { useEffect, useState } from 'react'
 import { Popup, PopupButton } from '@/components/labs/LabViewParts'
 import { activity as activityApi } from '@/lib/api'
 import { roleLabel } from '@/lib/roles'
+import { teamLabel } from '@/lib/calendar'
 
 // /students' "activity": who did what to whom — role changes, points given and
 // taken back, check-ins, students added and removed, dues. Newest first, a page
@@ -27,6 +28,10 @@ function sentence(entry) {
 	switch (entry.action) {
 		case 'role_changed':
 			return <>{actor} changed {target}&apos;s role from {roleLabel(d.from)} to {roleLabel(d.to)}</>
+		case 'team_changed':
+			return d.to
+				? <>{actor} put {target} on the j-board {teamLabel(d.to)} team</>
+				: <>{actor} took {target} off the j-board {teamLabel(d.from)} team</>
 		case 'points_awarded':
 			// a total typed by hand is logged as the difference, with before/after
 			if (d.reason === 'manual') {
@@ -62,6 +67,7 @@ function sentence(entry) {
 
 const DOT = {
 	role_changed: 'bg-[#6B4FBF]',
+	team_changed: 'bg-[#6B4FBF]',
 	points_awarded: 'bg-salmon',
 	checked_in: 'bg-green',
 	checkin_undone: 'bg-black/30',
