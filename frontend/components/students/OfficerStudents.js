@@ -100,6 +100,13 @@ function toRow(row) {
 const HEAD_HEIGHT = 49
 const ROW_HEIGHT = 57
 
+// Below `lg` the page isn't the window's height — it grows with what's on it
+// and scrolls — so there's no fixed space to fit rows into, and measuring the
+// sheet would only measure the rows already in it: a short last page would
+// shrink the next count, and so on down to one row. A fixed page instead.
+const WIDE = '(min-width: 1024px)'
+const NARROW_PAGE = 10
+
 // '2026-07-14' -> 'Jul 14, 2026'. Split by hand rather than through Date, which
 // reads a bare date string as UTC and can hand back the day before depending on
 // the timezone.
@@ -1305,8 +1312,9 @@ export default function OfficerStudents() {
 	const current = Math.min(page, pageCount)
 	const visible = rows.slice((current - 1) * pageSize, current * pageSize)
 
-	// The sheet is a flex child, so its height comes from the window rather than
-	// from the rows inside it — measuring it can't feed back into itself. Row
+	// The sheet is a flex child, so from `lg` up its height comes from the window
+	// rather than from the rows inside it — measuring it can't feed back into
+	// itself. Narrower than that it can, so it isn't measured (see WIDE). Row
 	// heights are read off the table and remembered, because the one row an
 	// empty table draws is the tall "nothing matched" notice and measuring that
 	// would collapse the page to a single row.
@@ -1315,6 +1323,10 @@ export default function OfficerStudents() {
 		if (!box) return
 
 		const fit = () => {
+			if (!window.matchMedia(WIDE).matches) {
+				setPageSize(NARROW_PAGE)
+				return
+			}
 			// a hidden tab or a collapsed pane measures zero, and taking that at
 			// face value would drop the page to one row and leave it there until
 			// something resized. Better to keep the last real count.
