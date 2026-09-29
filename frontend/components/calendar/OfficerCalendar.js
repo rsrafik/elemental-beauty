@@ -30,9 +30,12 @@ import { EventDialog as EditEventDialog, toCard } from '@/components/events/Offi
 
 // Height of the sheet, in px: a six-week grid plus its weekday header. Both
 // columns are held to it, so a five-week month leaves empty space under the
-// last row instead of dragging the title and the legends up with it. It's a
-// floor rather than a fixed height here, because a day can hold more than one
-// thing once officers start adding to it.
+// last row instead of dragging the title and the legends up with it.
+//
+// On a wide screen it's a ceiling, and the row is never taller than the
+// window either: a day can hold several things, and a month that outgrows it
+// scrolls inside the grid's own column while the left one — month, add
+// button, legends — stays where it is.
 const SHEET_H = 815
 
 const WEEKDAYS = ['sun', 'mon', 'tue', 'wed', 'thu', 'fri', 'sat']
@@ -1525,13 +1528,20 @@ export default function OfficerCalendar() {
 			flex
 			flex-col
 		">
-			{/* SHEET_H holds the height of the row, so neither column is at the mercy
-			    of how many week rows the month happens to have. items-stretch then
-			    hands that same height to both, which is what lets the title sit on
-			    the top edge and the legends on the bottom one. */}
+			{/* On a wide screen the row fills the window's height up to SHEET_H
+			    (and sits in the middle of any left over), so neither column is at
+			    the mercy of how many week rows or entries the month has.
+			    items-stretch hands that height to both, which is what lets the
+			    title sit on the top edge and the legends on the bottom one — and
+			    the grid's column scrolls within it. min-h-0 lets it be shorter
+			    than its contents; on a window too short for the left column
+			    itself, that overflow is what the page still scrolls. */}
 			<div
 				className="
 					xl:my-auto
+					xl:flex-1
+					xl:min-h-0
+					xl:max-h-[var(--sheet-h)]
 					flex
 					flex-col
 					xl:flex-row
@@ -1539,9 +1549,6 @@ export default function OfficerCalendar() {
 					gap-8
 					xl:gap-8
 					2xl:gap-12
-					xl:min-h-[var(--sheet-h)]
-					pr-0
-					xl:pr-2
 				"
 				style={{ '--sheet-h': `${SHEET_H}px` }}
 			>
@@ -1776,11 +1783,15 @@ export default function OfficerCalendar() {
 					</div>
 				</div>
 
-				{/* right column: the month grid */}
+				{/* right column: the month grid — its own scroller on a wide
+				    screen, with a little room on the right for the scrollbar */}
 				<div className="
 					calendar-grid
 					flex-1
 					min-w-0
+					xl:min-h-0
+					xl:overflow-y-auto
+					xl:pr-2
 				">
 					<div className="
 						grid
