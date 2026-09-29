@@ -452,8 +452,8 @@ function LabCard({ title, lines, image, icon, action, availability, price, onOpe
 					justify-between
 					gap-2
 				">
-					{/* truncate, so a long one-word name gives way to the count
-					    instead of running underneath it */}
+					{/* wraps onto more lines; min-w-0 and break-words, so a long
+					    one-word name breaks instead of running under the count */}
 					<p className="
 						font-vietnam
 						font-semibold
@@ -461,7 +461,7 @@ function LabCard({ title, lines, image, icon, action, availability, price, onOpe
 						text-[17px]
 						leading-tight
 						min-w-0
-						truncate
+						break-words
 					">
 						{title}
 					</p>

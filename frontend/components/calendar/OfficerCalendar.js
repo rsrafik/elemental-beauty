@@ -5,7 +5,7 @@ import { useRouter } from 'next/navigation'
 import { useDismiss } from '@/lib/dismiss'
 import DashboardShell from '@/components/dashboards/DashboardShell'
 import { eventCategories, events as eventsApi, labs as labsApi } from '@/lib/api'
-import { buildMonths, calendarOnly, capacityField, categoryNameOf, teamLabel, typesIn } from '@/lib/calendar'
+import { buildMonths, calendarOnly, capacityField, categoryNameOf, dayBadge, teamLabel, typesIn } from '@/lib/calendar'
 import HideFromEventsToggle from '@/components/events/HideFromEventsToggle'
 import { LinksField, cleanLinks } from '@/components/events/EventLinks'
 import TeamField from '@/components/events/TeamField'
@@ -64,13 +64,17 @@ function categoriesFrom(categories) {
 // `hollow` is the same colour as an outline, for a key pill switched off: the
 // ring is inset so the pill keeps its size, and the text takes the colour (a
 // darker shade of it for yellow and green, which don't read on cream).
+//
+// `fill` is the pill's colour as a value and `dark` marks the ones with black
+// text — for the split badge of a day shared by several tracks (dayBadge in
+// lib/calendar), which is painted with a gradient rather than a class.
 const TRACKS = {
-	members: { label: 'members', pill: 'bg-orange text-white', hollow: 'ring-orange text-orange' },
-	officers: { label: 'officers', pill: 'bg-yellow text-black', hollow: 'ring-yellow text-yellow-dark' },
-	open: { label: 'open to all', pill: 'bg-green text-black', hollow: 'ring-green text-green-dark' },
-	online: { label: 'online', pill: 'bg-blue text-white', hollow: 'ring-blue text-blue' },
-	board: { label: 'EB board', pill: 'bg-[#6B4FBF] text-white', hollow: 'ring-[#6B4FBF] text-[#6B4FBF]' },
-	jboard: { label: 'j-board', pill: 'bg-[#D6488F] text-white', hollow: 'ring-[#D6488F] text-[#D6488F]' },
+	members: { label: 'members', pill: 'bg-orange text-white', hollow: 'ring-orange text-orange', fill: 'var(--color-orange)' },
+	officers: { label: 'officers', pill: 'bg-yellow text-black', hollow: 'ring-yellow text-yellow-dark', fill: 'var(--color-yellow)', dark: true },
+	open: { label: 'open to all', pill: 'bg-green text-black', hollow: 'ring-green text-green-dark', fill: 'var(--color-green)', dark: true },
+	online: { label: 'online', pill: 'bg-blue text-white', hollow: 'ring-blue text-blue', fill: 'var(--color-blue)' },
+	board: { label: 'EB board', pill: 'bg-[#6B4FBF] text-white', hollow: 'ring-[#6B4FBF] text-[#6B4FBF]', fill: '#6B4FBF' },
+	jboard: { label: 'j-board', pill: 'bg-[#D6488F] text-white', hollow: 'ring-[#D6488F] text-[#D6488F]', fill: '#D6488F' },
 }
 
 // Officers-only, EB-board and j-board days never reach the member calendar,
@@ -627,13 +631,13 @@ function isToday(view, number) {
 
 // One square of the grid. Out-of-month days keep their number but lose the
 // badge, which is what makes the month itself read as a block. The badge takes
-// its colour from the first thing on the day.
+// its colour from what's on the day — split between the tracks when there are
+// several (dayBadge).
 // `wave` is the cell's row plus its column, handed to the entrance animation as
 // --wave: every cell on the same diagonal arrives together and each diagonal
 // follows the one before it, so the month washes in from the top-left corner.
 function Day({ number, inMonth, entries: dayEntries, wave = 0, today = false, onOpen }) {
-	const first = dayEntries[0]
-	const badge = first ? TRACKS[first.track].pill : 'bg-black text-cream'
+	const badge = dayBadge(dayEntries, TRACKS)
 	return (
 		<div
 			style={{ '--wave': wave }}
@@ -653,24 +657,27 @@ function Day({ number, inMonth, entries: dayEntries, wave = 0, today = false, on
 				md:pr-2
 			"
 		>
-			<span className={`
-				w-7
-				h-7
-				flex
-				items-center
-				justify-center
-				rounded-full
-				font-vietnam
-				font-semibold
-				text-xs
-				transition-transform
-				duration-200
-				ease-out
-				${inMonth
-					? `${badge} group-hover:scale-110`
-					: 'text-black/40'}
-				${today ? 'calendar-today' : ''}
-			`}>
+			<span
+				style={inMonth ? badge.style : undefined}
+				className={`
+					w-7
+					h-7
+					flex
+					items-center
+					justify-center
+					rounded-full
+					font-vietnam
+					font-semibold
+					text-xs
+					transition-transform
+					duration-200
+					ease-out
+					${inMonth
+						? `${badge.className} group-hover:scale-110`
+						: 'text-black/40'}
+					${today ? 'calendar-today' : ''}
+				`}
+			>
 				{number}
 			</span>
 
@@ -725,8 +732,9 @@ function Agenda({ days, onOpen }) {
 				flex-col
 				gap-3
 			">
-				{days.map(({ number, entries: dayEntries }) =>
-					dayEntries.map((entry, i) => (
+				{days.map(({ number, entries: dayEntries }) => {
+					const badge = dayBadge(dayEntries, TRACKS)
+					return dayEntries.map((entry, i) => (
 						<li
 							key={`${number}-${i}`}
 							className="
@@ -738,19 +746,22 @@ function Agenda({ days, onOpen }) {
 							{/* the number only rides the first row of a day that holds
 							    several, so a day reads as one block rather than repeating
 							    itself down the list */}
-							<span className={`
-								w-7
-								h-7
-								shrink-0
-								flex
-								items-center
-								justify-center
-								rounded-full
-								font-vietnam
-								font-semibold
-								text-xs
-								${i === 0 ? TRACKS[entry.track].pill : 'opacity-0'}
-							`}>
+							<span
+								style={i === 0 ? badge.style : undefined}
+								className={`
+									w-7
+									h-7
+									shrink-0
+									flex
+									items-center
+									justify-center
+									rounded-full
+									font-vietnam
+									font-semibold
+									text-xs
+									${i === 0 ? badge.className : 'opacity-0'}
+								`}
+							>
 								{number}
 							</span>
 							<div className="
@@ -761,7 +772,7 @@ function Agenda({ days, onOpen }) {
 							</div>
 						</li>
 					))
-				)}
+				})}
 			</ul>
 		</div>
 	)

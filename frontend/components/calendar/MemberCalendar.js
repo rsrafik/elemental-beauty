@@ -4,7 +4,7 @@ import { useEffect, useState } from 'react'
 import Link from 'next/link'
 import DashboardShell from '@/components/dashboards/DashboardShell'
 import { eventCategories, events as eventsApi, labs as labsApi } from '@/lib/api'
-import { buildMonths, typesIn } from '@/lib/calendar'
+import { buildMonths, dayBadge, typesIn } from '@/lib/calendar'
 import { thisMonth } from '@/lib/dates'
 import { hiddenTracks } from '@/lib/roles'
 
@@ -49,13 +49,17 @@ const TYPES = [
 // `hollow` is the same colour as an outline, for a key pill switched off: the
 // ring is inset so the pill keeps its size, and the text takes the colour (a
 // darker shade of it for yellow and green, which don't read on cream).
+//
+// `fill` is the pill's colour as a value and `dark` marks the ones with black
+// text — for the split badge of a day shared by several tracks (dayBadge in
+// lib/calendar), which is painted with a gradient rather than a class.
 const TRACKS = {
-	members: { label: 'members', pill: 'bg-orange text-white', hollow: 'ring-orange text-orange' },
-	officers: { label: 'officers', pill: 'bg-yellow text-black', hollow: 'ring-yellow text-yellow-dark' },
-	open: { label: 'open to all', pill: 'bg-green text-black', hollow: 'ring-green text-green-dark' },
-	online: { label: 'online', pill: 'bg-blue text-white', hollow: 'ring-blue text-blue' },
-	board: { label: 'EB board', pill: 'bg-[#6B4FBF] text-white', hollow: 'ring-[#6B4FBF] text-[#6B4FBF]' },
-	jboard: { label: 'j-board', pill: 'bg-[#D6488F] text-white', hollow: 'ring-[#D6488F] text-[#D6488F]' },
+	members: { label: 'members', pill: 'bg-orange text-white', hollow: 'ring-orange text-orange', fill: 'var(--color-orange)' },
+	officers: { label: 'officers', pill: 'bg-yellow text-black', hollow: 'ring-yellow text-yellow-dark', fill: 'var(--color-yellow)', dark: true },
+	open: { label: 'open to all', pill: 'bg-green text-black', hollow: 'ring-green text-green-dark', fill: 'var(--color-green)', dark: true },
+	online: { label: 'online', pill: 'bg-blue text-white', hollow: 'ring-blue text-blue', fill: 'var(--color-blue)' },
+	board: { label: 'EB board', pill: 'bg-[#6B4FBF] text-white', hollow: 'ring-[#6B4FBF] text-[#6B4FBF]', fill: '#6B4FBF' },
+	jboard: { label: 'j-board', pill: 'bg-[#D6488F] text-white', hollow: 'ring-[#D6488F] text-[#D6488F]', fill: '#D6488F' },
 }
 
 // Officer-only, EB-board and j-board days aren't a member's business: they're
@@ -199,13 +203,16 @@ function isToday(view, number) {
 }
 
 // One square of the grid. Out-of-month days keep their number but lose the
-// badge, which is what makes the month itself read as a block.
+// badge, which is what makes the month itself read as a block. The badge is
+// coloured by everything showing on the day, not just the entry written
+// under it — split between the tracks when there are several (dayBadge).
 //
 // `wave` is the cell's row plus its column, handed to the entrance animation as
 // --wave: every cell on the same diagonal arrives together and each diagonal
 // follows the one before it, so the month washes in from the top-left corner.
-function Day({ number, inMonth, entry, wave = 0, today = false }) {
-	const badge = entry ? TRACKS[entry.track].pill : 'bg-black text-cream'
+function Day({ number, inMonth, entries: dayEntries = [], wave = 0, today = false }) {
+	const entry = dayEntries[0] ?? null
+	const badge = dayBadge(dayEntries, TRACKS)
 	return (
 		<div
 			style={{ '--wave': wave }}
@@ -225,24 +232,27 @@ function Day({ number, inMonth, entry, wave = 0, today = false }) {
 				md:pr-2
 			"
 		>
-			<span className={`
-				w-7
-				h-7
-				flex
-				items-center
-				justify-center
-				rounded-full
-				font-vietnam
-				font-semibold
-				text-xs
-				transition-transform
-				duration-200
-				ease-out
-				${inMonth
-					? `${badge} group-hover:scale-110`
-					: 'text-black/40'}
-				${today ? 'calendar-today' : ''}
-			`}>
+			<span
+				style={inMonth ? badge.style : undefined}
+				className={`
+					w-7
+					h-7
+					flex
+					items-center
+					justify-center
+					rounded-full
+					font-vietnam
+					font-semibold
+					text-xs
+					transition-transform
+					duration-200
+					ease-out
+					${inMonth
+						? `${badge.className} group-hover:scale-110`
+						: 'text-black/40'}
+					${today ? 'calendar-today' : ''}
+				`}
+			>
 				{number}
 			</span>
 
@@ -336,7 +346,10 @@ function Agenda({ days }) {
 				flex-col
 				gap-3
 			">
-				{days.map(({ number, entry }) => (
+				{days.map(({ number, entries: dayEntries }) => {
+					const entry = dayEntries[0]
+					const badge = dayBadge(dayEntries, TRACKS)
+					return (
 					<li
 						key={number}
 						className="
@@ -345,19 +358,22 @@ function Agenda({ days }) {
 							gap-3
 						"
 					>
-						<span className={`
-							w-7
-							h-7
-							shrink-0
-							flex
-							items-center
-							justify-center
-							rounded-full
-							font-vietnam
-							font-semibold
-							text-xs
-							${TRACKS[entry.track].pill}
-						`}>
+						<span
+							style={badge.style}
+							className={`
+								w-7
+								h-7
+								shrink-0
+								flex
+								items-center
+								justify-center
+								rounded-full
+								font-vietnam
+								font-semibold
+								text-xs
+								${badge.className}
+							`}
+						>
 							{number}
 						</span>
 						<div className="min-w-0">
@@ -373,7 +389,8 @@ function Agenda({ days }) {
 							<EntryTitle entry={entry} />
 						</div>
 					</li>
-				))}
+					)
+				})}
 			</ul>
 		</div>
 	)
@@ -437,22 +454,22 @@ export default function MemberCalendar() {
 	// With tags picked, a day shows the first thing on it that has one of them
 	// — so a filtered-for workshop still shows on a day a GBM happens to start
 	// earlier — and a day with none of them reads as empty.
-	const visible = (day) => {
-		const first = (day ?? []).find((entry) =>
-			VISIBLE_TRACKS.includes(entry.track) &&
-			!offTracks.includes(entry.track) &&
-			(picked.length === 0 || picked.includes(entry.type))
-		)
-		return first ?? null
-	}
+	//
+	// `visible` is every entry that passes, in order: the first is the one
+	// written out, and all of them colour the badge.
+	const visible = (day) => (day ?? []).filter((entry) =>
+		VISIBLE_TRACKS.includes(entry.track) &&
+		!offTracks.includes(entry.track) &&
+		(picked.length === 0 || picked.includes(entry.type))
+	)
 
 	// The same days the grid shows a badge for, in date order — what the narrow
 	// layout lists under the month.
 	const agendaDays = Object.keys(monthEntries)
 		.map(Number)
 		.sort((a, b) => a - b)
-		.map((number) => ({ number, entry: visible(monthEntries[number]) }))
-		.filter(({ entry }) => entry)
+		.map((number) => ({ number, entries: visible(monthEntries[number]) }))
+		.filter(({ entries }) => entries.length)
 
 	return (
 		// my-auto rather than justify-center: it centers the sheet in the page but
@@ -759,7 +776,7 @@ export default function MemberCalendar() {
 									number={day.number}
 									inMonth={day.inMonth}
 									today={day.inMonth && isToday(view, day.number)}
-									entry={day.inMonth ? visible(monthEntries[day.number]) : null}
+									entries={day.inMonth ? visible(monthEntries[day.number]) : []}
 								/>
 							))}
 						</div>

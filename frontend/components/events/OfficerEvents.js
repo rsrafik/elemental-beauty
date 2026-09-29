@@ -198,7 +198,7 @@ function EventCard({ title, date, time, location, image, onOpen, onEdit, done = 
 						text-black
 						text-[17px]
 						leading-tight
-						truncate
+						break-words
 					">
 						{title}
 					</p>

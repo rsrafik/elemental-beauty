@@ -144,3 +144,23 @@ export function capacityField(track) {
 export function teamLabel(key) {
 	return TEAMS.find((team) => team.key === key)?.label ?? key
 }
+
+// A day's number badge on either calendar, as { className, style }. `tracks`
+// is the page's own track map ({ pill, fill, dark } per track). One track on
+// the day: that track's pill. Several: the circle cut into equal slices, one
+// per track in the order they fall on the day. The number stays black only if
+// every slice takes black text; otherwise it's white, with a faint shadow so
+// it still reads across a yellow or green slice.
+export function dayBadge(entries, tracks) {
+	const onDay = [...new Set(entries.map((entry) => entry.track))].filter((track) => tracks[track])
+	if (onDay.length === 0) return { className: 'bg-black text-cream' }
+	if (onDay.length === 1) return { className: tracks[onDay[0]].pill }
+	const slice = 100 / onDay.length
+	const stops = onDay.map((track, i) => `${tracks[track].fill} ${i * slice}% ${(i + 1) * slice}%`)
+	return {
+		className: onDay.every((track) => tracks[track].dark)
+			? 'text-black'
+			: 'text-white [text-shadow:0_0_3px_rgba(0,0,0,0.45)]',
+		style: { background: `conic-gradient(${stops.join(', ')})` },
+	}
+}

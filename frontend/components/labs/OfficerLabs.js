@@ -333,7 +333,7 @@ function LabCard({ lab, onOpen, menu, onMenu, action = null, done = false }) {
 						text-black
 						text-[17px]
 						leading-tight
-						truncate
+						break-words
 					">
 						{title}
 					</p>
