@@ -13,7 +13,7 @@ function EditRoute() {
 	return (
 		<Gate
 			require="officer"
-			fallback={<NoAccess message="Only officers can edit labs." />}
+			fallback={<NoAccess message="Only e-board can edit labs." />}
 			render={() => <LabAccessGuard id={id}><LabEditor id={id} /></LabAccessGuard>}
 		/>
 	)

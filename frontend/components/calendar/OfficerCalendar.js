@@ -71,7 +71,7 @@ function categoriesFrom(categories) {
 // lib/calendar), which is painted with a gradient rather than a class.
 const TRACKS = {
 	members: { label: 'members', pill: 'bg-orange text-white', hollow: 'ring-orange text-orange', fill: 'var(--color-orange)' },
-	officers: { label: 'officers', pill: 'bg-yellow text-black', hollow: 'ring-yellow text-yellow-dark', fill: 'var(--color-yellow)', dark: true },
+	officers: { label: 'e-board', pill: 'bg-yellow text-black', hollow: 'ring-yellow text-yellow-dark', fill: 'var(--color-yellow)', dark: true },
 	open: { label: 'open to all', pill: 'bg-green text-black', hollow: 'ring-green text-green-dark', fill: 'var(--color-green)', dark: true },
 	online: { label: 'online', pill: 'bg-blue text-white', hollow: 'ring-blue text-blue', fill: 'var(--color-blue)' },
 	board: { label: 'EB board', pill: 'bg-[#6B4FBF] text-white', hollow: 'ring-[#6B4FBF] text-[#6B4FBF]', fill: '#6B4FBF' },

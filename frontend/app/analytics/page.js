@@ -16,7 +16,7 @@ export default function Analytics() {
 			fallback={<NoAccess />}
 			render={(user) =>
 				!canSeeAnalytics(user.role)
-					? <NoAccess message="Analytics is for officers and the treasurer." />
+					? <NoAccess message="Analytics is for e-board and the treasurer." />
 					: isTreasurer(user.role) ? <TreasurerAnalytics /> : <OfficerAnalytics />
 			}
 		/>

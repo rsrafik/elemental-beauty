@@ -13,7 +13,7 @@ function QuizRoute() {
 	return (
 		<Gate
 			require="officer"
-			fallback={<NoAccess message="Only officers can edit lab quizzes." />}
+			fallback={<NoAccess message="Only e-board can edit lab quizzes." />}
 			render={() => <LabAccessGuard id={id}><QuizEditor id={id} /></LabAccessGuard>}
 		/>
 	)

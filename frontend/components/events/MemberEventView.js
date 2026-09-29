@@ -135,7 +135,7 @@ export default function MemberEventView() {
 				button = <ShowQrButton onClick={() => setShowQr(true)} />
 				caption = 'it’s on! show your QR code at the door to check in'
 			} else if (waitlisted) {
-				caption = 'it’s started — if there’s room, an officer can let you in at the door'
+				caption = 'it’s started — if there’s room, an e-board member can let you in at the door'
 			} else {
 				caption = 'this event has already started'
 			}
@@ -260,7 +260,7 @@ export default function MemberEventView() {
 			{body}
 			{showQr && (
 				<QrPopup
-					note="Show this to an officer at the door to check in."
+					note="Show this to an e-board member at the door to check in."
 					onClose={() => setShowQr(false)}
 				/>
 			)}

@@ -842,7 +842,7 @@ function HistoryDialog({ which, history, error, onClose }) {
 			<>
 				<p className={hint}>
 					Where your {history.points} {history.points === 1 ? 'point' : 'points'} came from: 8 for a lab, 5 for
-					an official event, 3 for a social one, plus anything an officer gave you.
+					an official event, 3 for a social one, plus anything e-board gave you.
 				</p>
 				{earned.length === 0 && history.earlier === 0
 					? <p className={hint}>No points yet — check into a lab or event to start.</p>
@@ -1323,7 +1323,7 @@ function EmailPrefsCard({ user, onSaved, className = '' }) {
 			">
 				<Toggle
 					label="club-wide emails"
-					hint="News and updates officers send to every member."
+					hint="News and updates e-board sends to every member."
 					checked={prefs.emailClub}
 					busy={busy === 'emailClub'}
 					onChange={flip('emailClub')}

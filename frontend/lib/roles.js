@@ -71,8 +71,11 @@ export function tracksChangedFrom(role, offTracks) {
 
 // How a role is written on the page — its name, except j-board, which the
 // database has to spell without the hyphen.
+// What a role is called on the page. 'officer' is the e-board — the stored
+// name stays 'officer' (the database, the API and the code all use it).
+const ROLE_LABELS = { officer: 'e-board', jboard: 'j-board' }
 export function roleLabel(role) {
-	return role === 'jboard' ? 'j-board' : role
+	return ROLE_LABELS[role] ?? role
 }
 
 // Labs. Officers, the treasurer and admin run them outright: add them, edit

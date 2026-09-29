@@ -56,7 +56,7 @@ export function ShowQrButton({ onClick }) {
 	)
 }
 
-const LAB_NOTE = 'Show this to an officer at the door to check in. The quiz opens here as soon as you’re scanned.'
+const LAB_NOTE = 'Show this to an e-board member at the door to check in. The quiz opens here as soon as you’re scanned.'
 
 export function QrPopup({ onClose, note = LAB_NOTE }) {
 	const qr = usePassQr(true)

@@ -72,8 +72,8 @@ export async function sendReminders(now = new Date()) {
                         lines: [
                             `Just a reminder — you’re signed up for ${row.title} on ${when}${row.location ? ` in ${row.location}` : ''}.`,
                             kindName === 'lab'
-                                ? 'Bring your Elementist pass: an officer scans its QR code to check you in, and checking in is what opens the lab’s quiz.'
-                                : 'Bring your Elementist pass — an officer scans its QR code to check you in.'
+                                ? 'Bring your Elementist pass: an e-board member scans its QR code to check you in, and checking in is what opens the lab’s quiz.'
+                                : 'Bring your Elementist pass — an e-board member scans its QR code to check you in.'
                         ],
                         button: { label: `View the ${kind.noun}`, url: `${APP_URL}${kind.page(parentId)}` },
                         after: ['Can’t make it any more? Cancel your RSVP on the site so your spot can go to someone on the waitlist.'],

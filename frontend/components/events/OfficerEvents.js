@@ -36,7 +36,7 @@ import { COVER_MAX, shrinkImage } from '@/lib/images'
 // doesn't see the officers' (see hiddenTracks).
 const TRACKS = {
 	members: 'members',
-	officers: 'officers',
+	officers: 'e-board',
 	open: 'open to all',
 	online: 'online',
 	board: 'EB board',

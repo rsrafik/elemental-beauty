@@ -33,7 +33,7 @@ function requireLabEditor(param) {
     return async (req, res, next) => {
         try {
             if (await mayEditLab(req, parseInt(req.params[param]))) { return next() }
-            res.status(403).json({ message: 'J-board can only edit a lab an officer has opened to them' })
+            res.status(403).json({ message: 'J-board can only edit a lab e-board has opened to them' })
         } catch (err) {
             next(err)
         }
@@ -43,7 +43,7 @@ function requireLabEditor(param) {
 // adding, deleting, and the switch itself
 function requireLabStaff(req, res, next) {
     if (LAB_STAFF.includes(req.role)) { return next() }
-    res.status(403).json({ message: 'Only officers, the treasurer and admins can do that' })
+    res.status(403).json({ message: 'Only e-board, the treasurer and admins can do that' })
 }
 
 // Preview fields — what a member sees BEFORE passing the quiz

@@ -7,7 +7,7 @@ import DashboardShell from '@/components/dashboards/DashboardShell'
 // middleware has to reject the underlying requests too, otherwise hiding the
 // page just hides the button.
 
-export default function NoAccess({ message = 'This page is officers only.' }) {
+export default function NoAccess({ message = 'This page is e-board only.' }) {
 	return (
 		<DashboardShell className="
 			flex
