@@ -5,8 +5,13 @@ import { useRouter } from 'next/navigation'
 import { useDismiss } from '@/lib/dismiss'
 import DashboardShell from '@/components/dashboards/DashboardShell'
 import { labs as labsApi } from '@/lib/api'
-import { isoDate, prettyTime } from '@/lib/dates'
+import { isoDate, prettyTime, today } from '@/lib/dates'
 import { splitByDate, CompletedDivider, COMPLETED_CARD } from '@/components/CardSections'
+import { ClosedTag, RsvpButton } from '@/components/labs/MemberLabs'
+import { QrPopup } from '@/components/labs/MemberLabQuiz'
+import { LeaveClosedLabPopup } from '@/components/labs/LabViewParts'
+import { canEditLab, canManageLabs } from '@/lib/roles'
+import { useSession } from '@/lib/session'
 
 // /labs for officer / treasurer / admin: every lab on one sheet.
 //
@@ -14,6 +19,16 @@ import { splitByDate, CompletedDivider, COMPLETED_CARD } from '@/components/Card
 // the bottom-right swapped for a dots menu. Clicking the card opens the lab's
 // check-in page; the dots offer its two editors (the lab, and its quiz) and
 // delete. The + in the header opens the lab editor on a new lab.
+//
+// j-board gets this page too, with two differences. Officers and up decide,
+// lab by lab, whether j-board can edit it (the "allow j-board to edit" switch
+// in its dots menu): with it on, j-board gets the dots with the two editors;
+// with it off, no dots — the card still opens the check-in page. J-board never
+// gets the + or "delete lab". And j-board signs up for and attends
+// labs like a member — formula included — so every one of them gets the rsvp
+// button on a lab still to come, and "my QR" on one they hold a spot for: the
+// check-in code a member shows at the door, for another officer to scan
+// (j-board's dashboard has no Elementist pass to show it from).
 
 // ---- data ------------------------------------------------------------------
 
@@ -31,6 +46,14 @@ function toCard(lab) {
 		description: lab.description ?? '',
 		published: lab.published !== false,
 		hasDraft: Boolean(lab.hasDraft),
+		// the dots menu's two switches: whether j-board may edit it, and
+		// whether it's taking sign-ups
+		jboardCanEdit: lab.jboardCanEdit === true,
+		acceptingRsvps: lab.acceptingRsvps !== false,
+		// j-board's rsvp: where they stand, and whether it's full
+		mine: lab.mine ?? null,
+		taken: lab.taken ?? 0,
+		capacity: lab.capacity ?? null,
 	}
 }
 
@@ -103,7 +126,58 @@ const MENU_ITEM = `
 
 // The dots' menu, over the bottom of the photo so the name stays readable. Closes on a click
 // anywhere else or Escape.
-function CardMenu({ title, onQuiz, onEdit, onDelete, onClose }) {
+// One of the menu's switches: the whole row is the control, the switch is
+// drawn at its end.
+function MenuSwitch({ label, on, tint, onClick }) {
+	return (
+		<button
+			type="button"
+			role="menuitemcheckbox"
+			aria-checked={on}
+			onClick={onClick}
+			className={`
+				${MENU_ITEM}
+				flex
+				items-center
+				justify-between
+				gap-2
+				text-black
+				hover:bg-cream
+			`}
+		>
+			<span className="leading-tight">{label}</span>
+			<span className={`
+				relative
+				w-8
+				h-[18px]
+				shrink-0
+				rounded-full
+				transition-colors
+				duration-200
+				${on ? tint : 'bg-black/20'}
+			`}>
+				<span className={`
+					absolute
+					top-[2px]
+					left-[2px]
+					w-[14px]
+					h-[14px]
+					rounded-full
+					bg-white
+					shadow-[0_1px_2px_rgba(0,0,0,0.3)]
+					transition-transform
+					duration-200
+					${on ? 'translate-x-[14px]' : ''}
+				`} />
+			</span>
+		</button>
+	)
+}
+
+// `onDelete`, `onJboard` and `onRsvps` are left off for j-board: deleting a
+// lab and its two switches are for officers and up. `jboard` and `rsvps` are
+// whether each switch is on — j-board may edit it, and it's taking sign-ups.
+function CardMenu({ title, onQuiz, onEdit, onDelete, jboard = false, onJboard, rsvps = true, onRsvps, onClose }) {
 	const ref = useRef(null)
 
 	useEffect(() => {
@@ -149,14 +223,20 @@ function CardMenu({ title, onQuiz, onEdit, onDelete, onClose }) {
 			<button type="button" role="menuitem" onClick={onEdit} className={`${MENU_ITEM} text-black hover:bg-cream`}>
 				edit lab
 			</button>
-			<div className="
-				my-1
-				h-px
-				bg-black/10
-			" />
-			<button type="button" role="menuitem" onClick={onDelete} className={`${MENU_ITEM} text-red hover:bg-red/10`}>
-				delete lab
-			</button>
+			{onJboard && <MenuSwitch label="allow j-board to edit" on={jboard} tint="bg-[#D6488F]" onClick={onJboard} />}
+			{onRsvps && <MenuSwitch label="accepting rsvps" on={rsvps} tint="bg-green-dark" onClick={onRsvps} />}
+			{onDelete && (
+				<>
+					<div className="
+						my-1
+						h-px
+						bg-black/10
+					" />
+					<button type="button" role="menuitem" onClick={onDelete} className={`${MENU_ITEM} text-red hover:bg-red/10`}>
+						delete lab
+					</button>
+				</>
+			)}
 		</div>
 	)
 }
@@ -186,7 +266,9 @@ function DraftTag({ published, hasDraft }) {
 }
 
 // Drafts — labs members can't see yet — are light purple instead of white.
-function LabCard({ lab, onOpen, menu, onMenu, done = false }) {
+// `onMenu` null leaves the dots off (someone who can't edit labs); `action` is
+// j-board's rsvp button, on its own row under the date.
+function LabCard({ lab, onOpen, menu, onMenu, action = null, done = false }) {
 	const { title, date, time, location, image } = lab
 	return (
 		<div
@@ -274,7 +356,7 @@ function LabCard({ lab, onOpen, menu, onMenu, done = false }) {
 					</div>
 				</div>
 
-				<button
+				{onMenu && <button
 					type="button"
 					onClick={(event) => {
 						event.stopPropagation()
@@ -300,8 +382,18 @@ function LabCard({ lab, onOpen, menu, onMenu, done = false }) {
 					"
 				>
 					<DotsIcon className="w-4 h-4" />
-				</button>
+				</button>}
 			</div>
+
+			{action && (
+				<div className="
+					mt-3
+					flex
+					justify-center
+				">
+					{action}
+				</div>
+			)}
 
 			{menu}
 		</div>
@@ -453,7 +545,18 @@ const GRID = `
 
 export default function OfficerLabs({ openNew = false }) {
 	const router = useRouter()
+	const { user } = useSession()
+	// adding and deleting labs, and j-board's switch on each
+	const manages = canManageLabs(user)
+	const signsUp = user?.role === 'jboard'
 	const [labs, setLabs] = useState([])
+	// labs with an rsvp on its way, so a double click can't send two
+	const [rsvping, setRsvping] = useState(() => new Set())
+	// j-board's check-in code, up for an officer to scan
+	const [showQr, setShowQr] = useState(false)
+	// the lab being left while it isn't taking sign-ups, held while that's
+	// asked about
+	const [leavingClosed, setLeavingClosed] = useState(null)
 	const [error, setError] = useState(null)
 	// the card whose dots menu is open, and the one being asked about deleting
 	const [menuFor, setMenuFor] = useState(null)
@@ -462,8 +565,8 @@ export default function OfficerLabs({ openNew = false }) {
 	// The dashboard's "New Lab" button still arrives as /labs?new — the form
 	// is its own page now, so pass it on there.
 	useEffect(() => {
-		if (openNew) router.replace('/labs/edit')
-	}, [openNew, router])
+		if (openNew && manages) router.replace('/labs/edit')
+	}, [openNew, manages, router])
 
 	useEffect(() => {
 		let live = true
@@ -473,6 +576,139 @@ export default function OfficerLabs({ openNew = false }) {
 			.catch((err) => live && setError(err.message))
 		return () => { live = false }
 	}, [])
+
+	// j-board's rsvp: signing up, leaving (a seat or the waitlist), or taking
+	// an offered spot — the same calls a member's card makes — then the list
+	// is re-read for where they've landed and the seat count.
+	//
+	// Leaving a lab that isn't taking sign-ups can't be undone, so that asks
+	// first (LeaveClosedLabPopup) and comes back here with `confirmed`.
+	const toggleRsvp = async (lab, confirmed = false) => {
+		if (rsvping.has(lab.id)) return
+		const leaving = lab.mine === 'rsvped' || lab.mine === 'waitlisted'
+		if (leaving && !lab.acceptingRsvps && !confirmed) {
+			setLeavingClosed(lab)
+			return
+		}
+		setRsvping((prev) => new Set(prev).add(lab.id))
+		setError(null)
+		try {
+			if (lab.mine === 'rsvped' || lab.mine === 'waitlisted') await labsApi.unrsvp(lab.id)
+			else await labsApi.rsvp(lab.id)
+			setLabs((await labsApi.list()).map(toCard))
+		} catch (err) {
+			setError(err.message)
+		} finally {
+			setRsvping((prev) => {
+				const next = new Set(prev)
+				next.delete(lab.id)
+				return next
+			})
+		}
+	}
+
+	// j-board's row under a card: the rsvp button on a published lab that
+	// hasn't reached its day, and "my QR" on one they hold a spot for, from
+	// sign-up through the lab's own day (on the day it's the only button —
+	// sign-ups are the door's business by then)
+	const rsvpFor = (lab) => {
+		if (!signsUp || !lab.published || lab.date < today()) return null
+		const upcoming = lab.date > today()
+		const holding = lab.mine === 'rsvped' || lab.mine === 'offered'
+		if (!upcoming && !holding && lab.mine !== 'attended') return null
+		// not taking sign-ups: only someone already on it keeps a button
+		const closed = !lab.acceptingRsvps && !lab.mine
+		return (
+			<div className="
+				flex
+				flex-wrap
+				items-center
+				justify-center
+				gap-2
+			">
+				{closed && <ClosedTag />}
+				{(upcoming || lab.mine === 'attended') && !closed && (
+					<RsvpButton
+						going={lab.mine === 'rsvped' || lab.mine === 'waitlisted'}
+						waitlist={lab.mine === 'waitlisted' || (lab.mine !== 'rsvped' && lab.capacity != null && lab.taken >= lab.capacity)}
+						offered={lab.mine === 'offered'}
+						attended={lab.mine === 'attended'}
+						onClick={() => toggleRsvp(lab)}
+					/>
+				)}
+				{holding && (
+					<button
+						type="button"
+						onClick={(event) => {
+							// the card underneath opens the check-in page
+							event.stopPropagation()
+							setShowQr(true)
+						}}
+						className="
+							rounded-full
+							border
+							border-black/25
+							px-4
+							py-1.5
+							font-vietnam
+							font-semibold
+							text-sm
+							text-[#FF7C45]
+							cursor-pointer
+							transition-all
+							duration-200
+							ease-out
+							hover:-translate-y-0.5
+							hover:border-black/60
+							active:translate-y-0
+						"
+					>
+						my QR
+					</button>
+				)}
+			</div>
+		)
+	}
+
+	// The menu's switches. Flipped on the card first and put back if the API
+	// refuses — the menu stays open, so the switch visibly answers the click.
+	// `field` is the card's flag, `call` the API's setter for it.
+	const toggle = (field, call) => async (lab) => {
+		const value = !lab[field]
+		const flip = (to) => setLabs((prev) => prev.map((row) => (row.id === lab.id ? { ...row, [field]: to } : row)))
+		flip(value)
+		setError(null)
+		try {
+			await call(lab.id, value)
+		} catch (err) {
+			flip(!value)
+			setError(err.message)
+		}
+	}
+	const toggleJboard = toggle('jboardCanEdit', labsApi.setJboardAccess)
+	const toggleRsvps = toggle('acceptingRsvps', labsApi.setAcceptingRsvps)
+
+	// the dots: everything for officers and up; for j-board, only on a lab
+	// that's been opened to them, and only its two editors
+	const cardMenu = (lab) => canEditLab(user, lab) ? {
+		onMenu: () => setMenuFor((open) => (open === lab.id ? null : lab.id)),
+		menu: menuFor === lab.id && (
+			<CardMenu
+				title={lab.title}
+				onClose={closeMenu}
+				onQuiz={() => router.push(`/labs/quiz?id=${lab.id}`)}
+				onEdit={() => router.push(`/labs/edit?id=${lab.id}`)}
+				onDelete={manages ? () => {
+					setMenuFor(null)
+					setDeleting(lab)
+				} : null}
+				jboard={lab.jboardCanEdit}
+				onJboard={manages ? () => toggleJboard(lab) : null}
+				rsvps={lab.acceptingRsvps}
+				onRsvps={manages ? () => toggleRsvps(lab) : null}
+			/>
+		),
+	} : { onMenu: null, menu: null }
 
 	// The API goes first rather than the card: deleting takes every sign-up
 	// and quiz result with it, so a row vanishing from the sheet and then
@@ -529,7 +765,7 @@ export default function OfficerLabs({ openNew = false }) {
 						{error}
 					</span>
 				)}
-				<button
+				{manages && <button
 					type="button"
 					onClick={() => router.push('/labs/edit')}
 					aria-label="New lab"
@@ -560,7 +796,7 @@ export default function OfficerLabs({ openNew = false }) {
 						ease-out
 						group-hover:drop-shadow-[-2px_2px_1px_rgba(0,0,0,0.5)]
 					" />
-				</button>
+				</button>}
 			</div>
 
 			<div className={GRID}>
@@ -569,19 +805,8 @@ export default function OfficerLabs({ openNew = false }) {
 						key={lab.id}
 						lab={lab}
 						onOpen={() => router.push(`/labs/view?id=${lab.id}`)}
-						onMenu={() => setMenuFor((open) => (open === lab.id ? null : lab.id))}
-						menu={menuFor === lab.id && (
-							<CardMenu
-								title={lab.title}
-								onClose={closeMenu}
-								onQuiz={() => router.push(`/labs/quiz?id=${lab.id}`)}
-								onEdit={() => router.push(`/labs/edit?id=${lab.id}`)}
-								onDelete={() => {
-									setMenuFor(null)
-									setDeleting(lab)
-								}}
-							/>
-						)}
+						{...cardMenu(lab)}
+						action={rsvpFor(lab)}
 					/>
 				))}
 			</div>
@@ -596,23 +821,30 @@ export default function OfficerLabs({ openNew = false }) {
 								done
 								lab={lab}
 								onOpen={() => router.push(`/labs/view?id=${lab.id}`)}
-								onMenu={() => setMenuFor((open) => (open === lab.id ? null : lab.id))}
-								menu={menuFor === lab.id && (
-									<CardMenu
-										title={lab.title}
-										onClose={closeMenu}
-										onQuiz={() => router.push(`/labs/quiz?id=${lab.id}`)}
-										onEdit={() => router.push(`/labs/edit?id=${lab.id}`)}
-										onDelete={() => {
-											setMenuFor(null)
-											setDeleting(lab)
-										}}
-									/>
-								)}
+								{...cardMenu(lab)}
 							/>
 						))}
 					</div>
 				</>
+			)}
+
+			{leavingClosed && (
+				<LeaveClosedLabPopup
+					title={leavingClosed.title}
+					mine={leavingClosed.mine}
+					onConfirm={() => {
+						setLeavingClosed(null)
+						toggleRsvp(leavingClosed, true)
+					}}
+					onClose={() => setLeavingClosed(null)}
+				/>
+			)}
+
+			{showQr && (
+				<QrPopup
+					note="Show this to another officer at the door to check you in."
+					onClose={() => setShowQr(false)}
+				/>
 			)}
 
 			{deleting && (

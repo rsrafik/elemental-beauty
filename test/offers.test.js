@@ -236,3 +236,121 @@ test('the day-before reminder goes out once, and only inside the last 24 hours',
     const again = await prisma.lab.findUnique({ where: { labId: soon }, select: { reminderSentAt: true } })
     assert.equal(again.reminderSentAt.getTime(), a.reminderSentAt.getTime(), 'and not a second time')
 })
+
+test('j-board edits a lab only once it is opened to them, never adds or deletes one, and can rsvp', { skip }, async () => {
+    const jboard = await member()
+    await prisma.member.update({ where: { userId: jboard }, data: { role: 'jboard' } })
+    const id = await lab()
+
+    const app = express()
+    app.use(express.json())
+    app.use((req, res, next) => { req.userId = Number(req.get('x-user')); req.role = req.get('x-role'); next() })
+    app.use('/labs', labRoutes)
+    const server = app.listen(0)
+    const base = `http://localhost:${server.address().port}/labs`
+    const as = (who, role, path, method, body) => fetch(`${base}${path}`, {
+        method,
+        headers: { 'x-user': String(who), 'x-role': role, 'content-type': 'application/json' },
+        body: body && JSON.stringify(body)
+    })
+    try {
+        assert.equal((await as(jboard, 'jboard', `/${id}`, 'PUT', { title: `${tag} renamed` })).status, 403)
+        assert.equal((await as(jboard, 'jboard', `/${id}/quiz/edit`, 'GET')).status, 403)
+        // j-board can't open it to themselves
+        assert.equal((await as(jboard, 'jboard', `/${id}/jboard-access`, 'PUT', { allowed: true })).status, 403)
+
+        assert.equal((await as(jboard, 'officer', `/${id}/jboard-access`, 'PUT', { allowed: true })).status, 200)
+        assert.equal((await as(jboard, 'jboard', `/${id}`, 'PUT', { title: `${tag} renamed` })).status, 200)
+        assert.equal((await as(jboard, 'jboard', `/${id}/quiz/edit`, 'GET')).status, 200)
+        assert.equal((await as(jboard, 'jboard', `/${id}`, 'DELETE')).status, 403)
+        assert.equal((await as(jboard, 'jboard', '', 'POST', { title: `${tag} new`, published: false })).status, 403)
+
+        assert.equal((await as(jboard, 'jboard', `/${id}/rsvp`, 'POST')).status, 201)
+        assert.equal(await statusOf(id, jboard), 'rsvped')
+    } finally {
+        server.close()
+    }
+})
+
+test("a j-board member signed up for a lab can't run its attendance", { skip }, async () => {
+    const attendee = await member()
+    const staff = await member()
+    for (const who of [attendee, staff]) {
+        await prisma.member.update({ where: { userId: who }, data: { role: 'jboard' } })
+    }
+    const id = await lab()
+    // opened to j-board: signing up doesn't take editing away, only the door
+    await prisma.lab.update({ where: { labId: id }, data: { jboardCanEdit: true } })
+    await join(id, attendee)
+
+    const app = express()
+    app.use(express.json())
+    app.use((req, res, next) => { req.userId = Number(req.get('x-user')); req.role = 'jboard'; next() })
+    app.use('/labs', labRoutes)
+    const server = app.listen(0)
+    const base = `http://localhost:${server.address().port}/labs/${id}`
+    const as = (who, path, method = 'GET', body) => fetch(`${base}${path}`, {
+        method,
+        headers: { 'x-user': String(who), 'content-type': 'application/json' },
+        body: body && JSON.stringify(body)
+    })
+    try {
+        assert.equal((await as(attendee, '/roster')).status, 403)
+        assert.equal((await as(attendee, '/attendance')).status, 403)
+        assert.equal((await as(attendee, '/roster', 'POST', { action: 'checkin', memberId: attendee })).status, 403)
+        assert.equal((await as(attendee, '/checkin', 'POST', { qrToken: 'x' })).status, 403)
+        assert.equal((await as(attendee, '', 'PUT', { title: `${tag} renamed` })).status, 200)
+        assert.equal(await statusOf(id, attendee), 'rsvped')
+
+        // another j-board member, not signed up, runs the door as before
+        assert.equal((await as(staff, '/roster')).status, 200)
+        // (a dues prompt first if this year's dues are set — waived here)
+        const tick = await as(staff, '/roster', 'POST', { action: 'checkin', memberId: attendee })
+        if (tick.status === 202) {
+            assert.equal((await as(staff, '/roster', 'POST', { action: 'checkin', memberId: attendee, dues: 'waive' })).status, 200)
+        } else {
+            assert.equal(tick.status, 200)
+        }
+        assert.equal(await statusOf(id, attendee), 'attended')
+    } finally {
+        server.close()
+    }
+})
+
+test('a lab not taking sign-ups refuses new RSVPs but lets anyone on it cancel or take an offer', { skip }, async () => {
+    const newcomer = await member()
+    const going = await member()
+    const offered = await member()
+    const id = await lab()
+    await join(id, going)
+    await join(id, offered, 'offered')
+
+    const app = express()
+    app.use(express.json())
+    app.use((req, res, next) => { req.userId = Number(req.get('x-user')); req.role = req.get('x-role') ?? 'member'; next() })
+    app.use('/labs', labRoutes)
+    const server = app.listen(0)
+    const base = `http://localhost:${server.address().port}/labs/${id}`
+    const as = (who, path, method, role, body) => fetch(`${base}${path}`, {
+        method,
+        headers: { 'x-user': String(who), ...(role ? { 'x-role': role } : {}), 'content-type': 'application/json' },
+        body: body && JSON.stringify(body)
+    })
+    try {
+        // only officers and up flip it
+        assert.equal((await as(going, '/rsvps', 'PUT', 'jboard', { open: false })).status, 403)
+        assert.equal((await as(going, '/rsvps', 'PUT', 'officer', { open: false })).status, 200)
+
+        assert.equal((await as(newcomer, '/rsvp', 'POST')).status, 409)
+        assert.equal(await statusOf(id, newcomer), null)
+        assert.equal((await as(offered, '/rsvp', 'POST')).status, 201)
+        assert.equal(await statusOf(id, offered), 'rsvped')
+        assert.equal((await as(going, '/rsvp', 'DELETE')).status, 200)
+        assert.equal(await statusOf(id, going), null)
+
+        assert.equal((await as(going, '/rsvps', 'PUT', 'admin', { open: true })).status, 200)
+        assert.equal((await as(newcomer, '/rsvp', 'POST')).status, 201)
+    } finally {
+        server.close()
+    }
+})

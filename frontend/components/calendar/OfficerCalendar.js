@@ -12,8 +12,8 @@ import TeamField from '@/components/events/TeamField'
 import { COVER_MAX, shrinkImage } from '@/lib/images'
 import EventDetailsDialog from '@/components/events/EventDetailsDialog'
 import { thisMonth } from '@/lib/dates'
-import { defaultOffTracks, hiddenTracks, tracksChangedFrom } from '@/lib/roles'
-import { useRole } from '@/lib/session'
+import { canEditLab, defaultOffTracks, hiddenTracks, tracksChangedFrom } from '@/lib/roles'
+import { useRole, useSession } from '@/lib/session'
 import { EventDialog as EditEventDialog, toCard } from '@/components/events/OfficerEvents'
 
 // /calendar for officer / treasurer / admin: the member month view, plus the
@@ -1235,6 +1235,7 @@ function EventDialog({ categories, onClose, onSave }) {
 
 export default function OfficerCalendar() {
 	const role = useRole()
+	const { user } = useSession()
 	const router = useRouter()
 	// Which month is on screen. Stepping goes through Date so December rolls
 	// into January of the next year on its own.
@@ -1262,6 +1263,9 @@ export default function OfficerCalendar() {
 	// The rows behind them, for the editor: an entry only carries what the
 	// cell prints, and the form wants the whole event.
 	const [eventRows, setEventRows] = useState([])
+	// the lab rows, by id — whether one's open to j-board decides where
+	// clicking it goes (see openEntry)
+	const [labRows, setLabRows] = useState(() => new Map())
 
 	// The tag list, as rows in event_categories. `types` is what the legend
 	// draws (names, including 'Lab' and anything an event still carries whose
@@ -1283,6 +1287,7 @@ export default function OfficerCalendar() {
 				const built = buildMonths(labs.filter((lab) => lab.published !== false), events)
 				setMonths(built)
 				setEventRows(events)
+				setLabRows(new Map(labs.map((lab) => [lab.labId, lab])))
 				setCategories(tags)
 				setTypes(typesIn(built, tags))
 				return true
@@ -1387,10 +1392,12 @@ export default function OfficerCalendar() {
 	}
 
 	// A lab has a whole page of an editor (lessons, quiz, PDFs), so it goes
-	// there; an event opens the dialog in place.
+	// there — or, for j-board on a lab not opened to them, to its check-in
+	// page; an event opens the dialog in place.
 	const openEntry = (entry) => {
 		if (entry.labId != null) {
-			router.push(`/labs/edit?id=${entry.labId}`)
+			const edits = canEditLab(user, labRows.get(entry.labId))
+			router.push(edits ? `/labs/edit?id=${entry.labId}` : `/labs/view?id=${entry.labId}`)
 			return
 		}
 		const row = eventRows.find((event) => event.eventId === entry.eventId)

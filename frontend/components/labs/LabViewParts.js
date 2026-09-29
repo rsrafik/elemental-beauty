@@ -517,8 +517,9 @@ export function Popup({ title, label, onClose, children }) {
 }
 
 // The pill buttons along the bottom of a popup, matching the ones on the
-// officer dialogs.
-export function PopupButton({ onClick, primary = false, children }) {
+// officer dialogs. `danger` is the red one, for something that can't be taken
+// back.
+export function PopupButton({ onClick, primary = false, danger = false, children }) {
 	return (
 		<button
 			type="button"
@@ -539,12 +540,54 @@ export function PopupButton({ onClick, primary = false, children }) {
 				hover:shadow-black/10
 				active:translate-y-0
 				active:shadow-none
-				${primary
-					? 'bg-green text-[#295212] hover:brightness-95'
-					: 'border border-black/70 text-black'}
+				${danger
+					? 'bg-red text-white hover:brightness-95'
+					: primary
+						? 'bg-green text-[#295212] hover:brightness-95'
+						: 'border border-black/70 text-black'}
 			`}
 		>
 			{children}
 		</button>
+	)
+}
+
+// Asked before someone leaves a lab that isn't taking sign-ups (its "accepting
+// rsvps" switch is off): once they're off it, there's no signing back up. The
+// lab card, the lab's page and j-board's card all ask it — see their rsvp
+// toggles. `mine` is where they stand: 'rsvped', 'waitlisted' or 'offered'.
+const GIVING_UP = {
+	rsvped: 'your spot',
+	waitlisted: 'your place on the waitlist',
+	offered: 'the spot you were offered',
+}
+
+export function LeaveClosedLabPopup({ title, mine, onConfirm, onClose }) {
+	const what = GIVING_UP[mine] ?? 'your spot'
+	return (
+		<Popup title="are you sure?" onClose={onClose}>
+			{(dismiss) => (
+				<>
+					<p className="
+						mt-3
+						font-vietnam
+						text-sm
+						text-black/70
+					">
+						Sign-ups for <span className="font-semibold text-black">{title}</span> are closed.
+						{` If you give up ${what} now, you won’t be able to sign up again — this can’t be undone.`}
+					</p>
+					<div className="
+						mt-8
+						flex
+						justify-end
+						gap-3
+					">
+						<PopupButton onClick={() => dismiss(onClose)}>keep it</PopupButton>
+						<PopupButton danger onClick={() => dismiss(onConfirm)}>give it up</PopupButton>
+					</div>
+				</>
+			)}
+		</Popup>
 	)
 }

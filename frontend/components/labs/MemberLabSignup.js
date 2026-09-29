@@ -2,7 +2,7 @@
 
 import { useState } from 'react'
 import { labs as labsApi } from '@/lib/api'
-import { LabIntro, ChunkyButton, ButtonCaption, DuesNotice } from '@/components/labs/LabViewParts'
+import { LabIntro, ChunkyButton, ButtonCaption, DuesNotice, LeaveClosedLabPopup } from '@/components/labs/LabViewParts'
 
 // Before the lab: one button that is the whole of your relationship with it.
 //
@@ -15,6 +15,8 @@ import { LabIntro, ChunkyButton, ButtonCaption, DuesNotice } from '@/components/
 //   asked to confirm  signed up, and the officers have asked everyone to
 //                   confirm (the check-in page's "confirmation"): green
 //                   CONFIRM MY SPOT until you do
+//   sign-ups closed  not signed up, and the lab isn't taking sign-ups (its
+//                   "accepting rsvps" switch): no button, just saying so
 //
 // Whether a sign-up lands a seat or a waitlist place is the server's call — the
 // button flips straight to "registered" and then `onChange` re-reads the lab,
@@ -91,11 +93,20 @@ export default function MemberLabSignup({ lab, ended, onChange }) {
 		}
 	}
 
-	const toggle = async () => {
+	// the leave-a-closed-lab warning, while it's up
+	const [askingLeave, setAskingLeave] = useState(false)
+
+	// Leaving a lab that isn't taking sign-ups can't be undone, so that asks
+	// first (LeaveClosedLabPopup) and comes back here with `confirmed`.
+	const toggle = async (confirmed = false) => {
 		if (busy) return
+		const leaving = going || waitlisted || offered
+		if (leaving && !lab.acceptingRsvps && confirmed !== true) {
+			setAskingLeave(true)
+			return
+		}
 		setBusy(true)
 		setError(null)
-		const leaving = going || waitlisted || offered
 		setPending(leaving ? 'none' : 'rsvped')
 		try {
 			if (leaving) await labsApi.unrsvp(lab.labId)
@@ -174,6 +185,9 @@ export default function MemberLabSignup({ lab, ended, onChange }) {
 				click again to unwaitlist
 			</>
 		)
+	} else if (!lab.acceptingRsvps) {
+		// the officers have switched sign-ups off (the lab's dots menu)
+		caption = 'this lab isn’t taking sign-ups right now'
 	} else {
 		button = <ChunkyButton tone="red" onClick={toggle}>SIGN UP</ChunkyButton>
 		if (unlimited) caption = null
@@ -224,6 +238,18 @@ export default function MemberLabSignup({ lab, ended, onChange }) {
 					</p>
 				)}
 			</div>
+
+			{askingLeave && (
+				<LeaveClosedLabPopup
+					title={lab.title}
+					mine={mine}
+					onConfirm={() => {
+						setAskingLeave(false)
+						toggle(true)
+					}}
+					onClose={() => setAskingLeave(false)}
+				/>
+			)}
 		</LabIntro>
 	)
 }

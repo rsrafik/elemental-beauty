@@ -3,7 +3,7 @@ import jwt from 'jsonwebtoken'
 import prisma from '../prismaClient.js'
 import requireRole from '../middleware/requireRole.js'
 import { POINTS } from '../points.js'
-import { mountRoster } from './roster.js'
+import { mountRoster, requireNotAttendee } from './roster.js'
 import { acceptOffer, confirmSpot, expireOffers, lockParent, offerNext, startsAt } from '../offers.js'
 import { log } from '../activity.js'
 import { DUES_ANSWERS, duesAnswerProblem, duesLookup, duesOwed, duesUnpaid, settleDues } from '../dues.js'
@@ -11,10 +11,47 @@ import { DUES_ANSWERS, duesAnswerProblem, duesLookup, duesOwed, duesUnpaid, sett
 const router = express.Router()
 const RANK_OFFICER = ['officer', 'jboard', 'treasurer', 'admin']
 
+// Who may write a lab — its details, lesson, quiz and publishing: officers,
+// the treasurer and admins, always; j-board only on a lab one of those has
+// switched `jboardCanEdit` on for (the "allow j-board to edit" switch in the
+// lab's dots menu). Adding a lab, deleting one and flipping that switch stay
+// with officers and up. Everyone else in j-board runs a lab's door like any
+// officer and signs up for it like a member. Mirrors canEditLab in
+// frontend/lib/roles.js.
+const LAB_STAFF = ['officer', 'treasurer', 'admin']
+
+async function mayEditLab(req, labId) {
+    if (LAB_STAFF.includes(req.role)) { return true }
+    if (req.role !== 'jboard' || isNaN(labId)) { return false }
+    const lab = await prisma.lab.findUnique({ where: { labId }, select: { jboardCanEdit: true } })
+    return lab?.jboardCanEdit === true
+}
+
+// the lab's id is in `param` ('id' or 'labId')
+function requireLabEditor(param) {
+    return async (req, res, next) => {
+        try {
+            if (await mayEditLab(req, parseInt(req.params[param]))) { return next() }
+            res.status(403).json({ message: 'J-board can only edit a lab an officer has opened to them' })
+        } catch (err) {
+            next(err)
+        }
+    }
+}
+
+// adding, deleting, and the switch itself
+function requireLabStaff(req, res, next) {
+    if (LAB_STAFF.includes(req.role)) { return next() }
+    res.status(403).json({ message: 'Only officers, the treasurer and admins can do that' })
+}
+
 // Preview fields — what a member sees BEFORE passing the quiz
 const PREVIEW_SELECT = {
     labId: true, title: true, date: true, startTime: true, location: true,
-    description: true, image: true, capacity: true, published: true
+    description: true, image: true, capacity: true, published: true,
+    // whether it's taking sign-ups — the card and page leave the rsvp
+    // button off when it isn't
+    acceptingRsvps: true
 }
 
 // 'HH:MM' — what <input type="time"> hands back, same rule as events.
@@ -57,10 +94,14 @@ router.get('/', async (req, res) => {
     const where = {}
     if (when === 'upcoming') { where.date = { gte: new Date() } }
     if (when === 'past') { where.date = { lt: new Date() } }
-    // a lab that's only ever been saved as a draft doesn't exist for members
-    if (!RANK_OFFICER.includes(req.role)) { where.published = true }
 
     try {
+        // a lab that's only ever been saved as a draft doesn't exist for
+        // anyone who can't edit it: j-board sees one only once it's been
+        // opened to them, members never
+        const staff = LAB_STAFF.includes(req.role)
+        if (req.role === 'jboard') { where.OR = [{ published: true }, { jboardCanEdit: true }] }
+        else if (!staff) { where.published = true }
         const owe = await duesLookup(prisma, req.userId)
         const labs = await prisma.lab.findMany({
             where,
@@ -72,7 +113,7 @@ router.get('/', async (req, res) => {
                     select: { attendanceStatus: true, quizPassed: true }
                 },
                 _count: { select: { members: { where: TAKEN } } },
-                ...(RANK_OFFICER.includes(req.role) ? { draft: true } : {})
+                ...(RANK_OFFICER.includes(req.role) ? { draft: true, jboardCanEdit: true } : {})
             },
             orderBy: { date: when === 'past' ? 'desc' : 'asc' }
         })
@@ -80,7 +121,8 @@ router.get('/', async (req, res) => {
         res.json(labs.map(({ members, _count, draft, ...lab }) => ({
             ...lab,
             // officers: whether there are unpublished edits waiting on it
-            hasDraft: draft != null,
+            // (j-board only hears about it on a lab they can edit)
+            hasDraft: draft != null && (staff || lab.jboardCanEdit === true),
             // the true total, this person included — the card doesn't have to
             // add itself back in
             taken: _count.members,
@@ -226,7 +268,7 @@ router.get('/:id/lesson', async (req, res) => {
 // parsing to pull in for one file. Capped well above any lesson handout.
 const LESSON_LIMIT = '25mb'
 
-router.put('/:id/lesson', requireRole('officer'), express.raw({ type: 'application/pdf', limit: LESSON_LIMIT }), async (req, res) => {
+router.put('/:id/lesson', requireRole('officer'), requireLabEditor('id'), express.raw({ type: 'application/pdf', limit: LESSON_LIMIT }), async (req, res) => {
     const labId = parseInt(req.params.id)
     if (isNaN(labId)) { return res.status(400).json({ message: 'Invalid lab id' }) }
 
@@ -255,7 +297,7 @@ router.put('/:id/lesson', requireRole('officer'), express.raw({ type: 'applicati
     }
 })
 
-router.delete('/:id/lesson', requireRole('officer'), async (req, res) => {
+router.delete('/:id/lesson', requireRole('officer'), requireLabEditor('id'), async (req, res) => {
     const labId = parseInt(req.params.id)
     if (isNaN(labId)) { return res.status(400).json({ message: 'Invalid lab id' }) }
 
@@ -343,7 +385,7 @@ router.get('/:id/prelab', async (req, res) => {
     }
 })
 
-router.put('/:id/prelab', requireRole('officer'), express.raw({ type: 'application/pdf', limit: LESSON_LIMIT }), async (req, res) => {
+router.put('/:id/prelab', requireRole('officer'), requireNotAttendee(), express.raw({ type: 'application/pdf', limit: LESSON_LIMIT }), async (req, res) => {
     const labId = parseInt(req.params.id)
     if (isNaN(labId)) { return res.status(400).json({ message: 'Invalid lab id' }) }
     const bytes = req.body
@@ -363,7 +405,7 @@ router.put('/:id/prelab', requireRole('officer'), express.raw({ type: 'applicati
     }
 })
 
-router.delete('/:id/prelab', requireRole('officer'), async (req, res) => {
+router.delete('/:id/prelab', requireRole('officer'), requireNotAttendee(), async (req, res) => {
     const labId = parseInt(req.params.id)
     if (isNaN(labId)) { return res.status(400).json({ message: 'Invalid lab id' }) }
     try {
@@ -390,7 +432,39 @@ router.post('/:labId/confirm', async (req, res) => {
     }
 })
 
-router.post('/', requireRole('officer'), async (req, res) => {
+// The lab's "accepting rsvps" switch, from its dots menu: { open }. Off stops
+// new sign-ups only (see POST /:labId/rsvp). Officers, the treasurer, admins.
+router.put('/:id/rsvps', requireRole('officer'), requireLabStaff, async (req, res) => {
+    const labId = parseInt(req.params.id)
+    if (isNaN(labId)) { return res.status(400).json({ message: 'Invalid lab id' }) }
+    if (typeof req.body?.open !== 'boolean') { return res.status(400).json({ message: 'open must be true or false' }) }
+    try {
+        const lab = await prisma.lab.update({ where: { labId }, data: { acceptingRsvps: req.body.open }, select: { labId: true, acceptingRsvps: true } })
+        res.json(lab)
+    } catch (err) {
+        if (err.code === 'P2025') { return res.status(404).json({ message: 'Lab not found' }) }
+        console.error(err.message)
+        res.sendStatus(500)
+    }
+})
+
+// The lab's "allow j-board to edit" switch, from its dots menu: { allowed }.
+// Officers, the treasurer and admins only.
+router.put('/:id/jboard-access', requireRole('officer'), requireLabStaff, async (req, res) => {
+    const labId = parseInt(req.params.id)
+    if (isNaN(labId)) { return res.status(400).json({ message: 'Invalid lab id' }) }
+    if (typeof req.body?.allowed !== 'boolean') { return res.status(400).json({ message: 'allowed must be true or false' }) }
+    try {
+        const lab = await prisma.lab.update({ where: { labId }, data: { jboardCanEdit: req.body.allowed }, select: { labId: true, jboardCanEdit: true } })
+        res.json(lab)
+    } catch (err) {
+        if (err.code === 'P2025') { return res.status(404).json({ message: 'Lab not found' }) }
+        console.error(err.message)
+        res.sendStatus(500)
+    }
+})
+
+router.post('/', requireRole('officer'), requireLabStaff, async (req, res) => {
     const publishing = req.body.published !== false
     if (!req.body.title) {
         return res.status(400).json({ message: 'title is required' })
@@ -422,7 +496,7 @@ router.post('/', requireRole('officer'), async (req, res) => {
 //                      are parked in `draft` and the live lab is untouched.
 //   discardDraft       throws the parked edits away
 //   neither            a plain edit, as before
-router.put('/:id', requireRole('officer'), async (req, res) => {
+router.put('/:id', requireRole('officer'), requireLabEditor('id'), async (req, res) => {
     const labId = parseInt(req.params.id)
     if (isNaN(labId)) { return res.status(400).json({ message: 'Invalid lab id' }) }
 
@@ -472,7 +546,7 @@ router.put('/:id', requireRole('officer'), async (req, res) => {
     }
 })
 
-router.delete('/:id', requireRole('officer'), async (req, res) => {
+router.delete('/:id', requireRole('officer'), requireLabStaff, async (req, res) => {
     const labId = parseInt(req.params.id)
     if (isNaN(labId)) { return res.status(400).json({ message: 'Invalid lab id' }) }
 
@@ -487,7 +561,7 @@ router.delete('/:id', requireRole('officer'), async (req, res) => {
     }
 })
 
-router.post('/:labId/lessons', requireRole('officer'), async (req, res) => {
+router.post('/:labId/lessons', requireRole('officer'), requireLabEditor('labId'), async (req, res) => {
     const labId = parseInt(req.params.labId)
     if (isNaN(labId)) { return res.status(400).json({ message: 'Invalid lab id' }) }
 
@@ -509,7 +583,7 @@ router.post('/:labId/lessons', requireRole('officer'), async (req, res) => {
 // Create a quiz question WITH its options in one transaction — the deferred
 // DB trigger checks "at least one correct option" at COMMIT, so these inserts
 // must land together or not at all.
-router.post('/:labId/quiz', requireRole('officer'), async (req, res) => {
+router.post('/:labId/quiz', requireRole('officer'), requireLabEditor('labId'), async (req, res) => {
     const labId = parseInt(req.params.labId)
     if (isNaN(labId)) { return res.status(400).json({ message: 'Invalid lab id' }) }
 
@@ -549,7 +623,7 @@ router.post('/:labId/quiz', requireRole('officer'), async (req, res) => {
 // The quiz editor's view of the quiz: every question with its answer key,
 // plus the unpublished draft if there is one (which is what the editor opens
 // on, since it's the newer of the two).
-router.get('/:labId/quiz/edit', requireRole('officer'), async (req, res) => {
+router.get('/:labId/quiz/edit', requireRole('officer'), requireLabEditor('labId'), async (req, res) => {
     const labId = parseInt(req.params.labId)
     if (isNaN(labId)) { return res.status(400).json({ message: 'Invalid lab id' }) }
 
@@ -593,7 +667,7 @@ router.get('/:labId/quiz/edit', requireRole('officer'), async (req, res) => {
 // has to be a quiz someone can take: every question worded, at least two
 // answers, and exactly one of them right (members pick one answer each, and
 // grading wants the picks to match the key exactly).
-router.put('/:labId/quiz', requireRole('officer'), async (req, res) => {
+router.put('/:labId/quiz', requireRole('officer'), requireLabEditor('labId'), async (req, res) => {
     const labId = parseInt(req.params.labId)
     if (isNaN(labId)) { return res.status(400).json({ message: 'Invalid lab id' }) }
 
@@ -648,7 +722,7 @@ router.put('/:labId/quiz', requireRole('officer'), async (req, res) => {
 })
 
 // Discard: throw away the quiz's unpublished draft.
-router.delete('/:labId/quiz/draft', requireRole('officer'), async (req, res) => {
+router.delete('/:labId/quiz/draft', requireRole('officer'), requireLabEditor('labId'), async (req, res) => {
     const labId = parseInt(req.params.labId)
     if (isNaN(labId)) { return res.status(400).json({ message: 'Invalid lab id' }) }
     try {
@@ -693,6 +767,11 @@ router.post('/:labId/rsvp', async (req, res) => {
         const start = startsAt(lab)
         if (start && start.getTime() <= Date.now() && existing?.attendanceStatus !== 'offered') {
             return res.status(409).json({ message: 'This lab has already started' })
+        }
+        // not taking sign-ups: nobody new gets on — though anyone already on
+        // it is answered below as usual, and an offer can still be taken
+        if (!lab.acceptingRsvps && !existing) {
+            return res.status(409).json({ message: 'This lab isn’t taking sign-ups right now' })
         }
         if (existing) {
             // pressing the button while holding an offer accepts it
@@ -804,7 +883,7 @@ router.delete('/:labId/rsvp', async (req, res) => {
 // checked in.
 //
 // Body: { qrToken, dues? }
-router.post('/:labId/checkin', requireRole('officer'), async (req, res) => {
+router.post('/:labId/checkin', requireRole('officer'), requireNotAttendee('labId'), async (req, res) => {
     const labId = parseInt(req.params.labId)
     if (isNaN(labId)) { return res.status(400).json({ message: 'Invalid lab id' }) }
 

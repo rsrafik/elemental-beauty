@@ -75,6 +75,22 @@ export function roleLabel(role) {
 	return role === 'jboard' ? 'j-board' : role
 }
 
+// Labs. Officers, the treasurer and admin run them outright: add them, edit
+// them, delete them, and switch j-board's access on each ("allow j-board to
+// edit" in its dots menu). J-board edits a lab — details, lesson, quiz — only
+// once that's on for it, and never adds, deletes or flips the switch.
+// Otherwise j-board opens a lab's check-in page and signs up like a member.
+// Mirrors mayEditLab in src/routes/labRoutes.js, which is the one that counts.
+export function canManageLabs(user) {
+	return hasRole('officer', user?.role) && user.role !== 'jboard'
+}
+
+// `lab` is a row off the API (it carries jboardCanEdit for staff)
+export function canEditLab(user, lab) {
+	if (canManageLabs(user)) return true
+	return user?.role === 'jboard' && lab?.jboardCanEdit === true
+}
+
 // The one case that isn't a rank check: the treasurer's own version of
 // analytics. Admin gets it too since admin outranks treasurer — swap to
 // `role === 'treasurer'` if it should be treasurer and nobody else.

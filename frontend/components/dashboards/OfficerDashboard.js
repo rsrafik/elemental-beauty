@@ -3,12 +3,12 @@
 import { useEffect, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import Sidebar from '@/components/dashboards/Sidebar'
-import { useRole, useSignOut } from '@/lib/session'
+import { useRole, useSession, useSignOut } from '@/lib/session'
 import { navFor, showInstagramFor } from '@/lib/nav'
 import { announcements as announcementsApi, events as eventsApi, labs as labsApi, members } from '@/lib/api'
 import EmailAllPopup from '@/components/EmailAllPopup'
 import { isoDate, shortDate, today } from '@/lib/dates'
-import { onLeaderboard } from '@/lib/roles'
+import { canManageLabs, onLeaderboard } from '@/lib/roles'
 
 // Shown to officer / treasurer / admin.
 // Sidebar + a 2x2 grid (quick actions / upcoming / announcement / leaderboard)
@@ -94,6 +94,8 @@ function LeaderRow({ place, name }) {
 
 export default function OfficerDashboard() {
 	const role = useRole()
+	// adding labs is for officers and up, not j-board (canManageLabs)
+	const labEditor = canManageLabs(useSession().user)
 	const signOut = useSignOut()
 	const router = useRouter()
 
@@ -366,9 +368,13 @@ export default function OfficerDashboard() {
 					">
 						New Event
 					</button>
+					{/* greyed out rather than gone for j-board, so the buttons
+					    keep their places */}
 					<button
 						type="button"
 						onClick={() => router.push('/labs?new=1')}
+						disabled={!labEditor}
+						title={labEditor ? undefined : 'Only officers, the treasurer and admins add labs'}
 						className="
 						w-full
 						rounded-full
@@ -385,6 +391,11 @@ export default function OfficerDashboard() {
 						hover:-translate-y-0.5
 						hover:shadow-[inset_0px_0px_0px_rgba(0,0,0,0.5)]
 						active:brightness-105
+						disabled:bg-black/10
+						disabled:text-black/40
+						disabled:cursor-not-allowed
+						disabled:hover:translate-y-0
+						disabled:hover:shadow-[inset_-5px_-5px_2px_rgba(0,0,0,0.5)]
 					">
 						New Lab
 					</button>

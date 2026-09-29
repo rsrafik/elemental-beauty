@@ -4,6 +4,7 @@ import { Suspense } from 'react'
 import { useSearchParams } from 'next/navigation'
 import { Gate } from '@/lib/session'
 import NoAccess from '@/components/NoAccess'
+import LabAccessGuard from '@/components/labs/LabAccessGuard'
 import QuizEditor from '@/components/labs/QuizEditor'
 
 // /labs/quiz?id=N — the lab's quiz editor. Officers only.
@@ -13,7 +14,7 @@ function QuizRoute() {
 		<Gate
 			require="officer"
 			fallback={<NoAccess message="Only officers can edit lab quizzes." />}
-			render={() => <QuizEditor id={id} />}
+			render={() => <LabAccessGuard id={id}><QuizEditor id={id} /></LabAccessGuard>}
 		/>
 	)
 }

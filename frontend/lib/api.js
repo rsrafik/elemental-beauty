@@ -326,6 +326,11 @@ export const labs = {
 	// the check-in page's attendance spreadsheet
 	exportAttendance: (id) => download(`/labs/${id}/attendance`, 'attendance.csv'),
 
+	// Officers, the treasurer, admin: the lab's "allow j-board to edit" switch
+	setJboardAccess: (id, allowed) => api(`/labs/${id}/jboard-access`, { method: 'PUT', body: { allowed } }),
+	// ...and its "accepting rsvps" switch: off stops new sign-ups only
+	setAcceptingRsvps: (id, open) => api(`/labs/${id}/rsvps`, { method: 'PUT', body: { open } }),
+
 	// Officers: the prelab handout, same shape as the lesson below. Anyone
 	// holding a spot can open it too (prelabUrl).
 	uploadPrelab: (id, file) => uploadPdf(`/api/labs/${id}/prelab`, file),

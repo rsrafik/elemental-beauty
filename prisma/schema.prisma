@@ -283,6 +283,14 @@ model Lab {
   // [{ question, options: [{ answerText, isCorrect }] }]. Members only ever
   // see the published lab_quiz_questions.
   quizDraft     Json?   @map("quiz_draft")
+  // Whether j-board may edit it (details, lesson, quiz — not delete it).
+  // Switched from the lab's dots menu by an officer, the treasurer or an
+  // admin; off by default (see labRoutes.js).
+  jboardCanEdit Boolean @default(false) @map("jboard_can_edit")
+  // Whether it's taking sign-ups. Off, members still see it but get no rsvp
+  // button and new RSVPs are refused; anyone already on it can still cancel
+  // or take an offered spot. Switched from the dots menu, like the one above.
+  acceptingRsvps Boolean @default(true) @map("accepting_rsvps")
 
   lessons       LabLesson[]
   quizQuestions LabQuizQuestion[]

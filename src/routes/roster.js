@@ -40,6 +40,11 @@ import { DUES_ANSWERS, asksDues, duesAnswerProblem, duesOwed, duesUnpaid, settle
 //
 // The QR scan is still POST /:id/checkin on each router — this is everything
 // an officer does by hand.
+//
+// A j-board member signed up for a lab (any row on it — signed up, waitlisted,
+// offered, checked in) is one of its attendees, not one of its staff: none of
+// this is theirs for that lab, so they can't check themselves in or see who
+// else came. Their own page for it is the member's (see requireNotAttendee).
 
 // seats spoken for — an open offer holds one
 const TAKEN = { attendanceStatus: { in: ['rsvped', 'attended', 'offered'] } }
@@ -65,13 +70,36 @@ const USER_SELECT = {
 //   compound  the junction's composite key name
 //   points    parent row -> points one attendance is worth
 //   label     'Lab' / 'Event', for messages
+// Refuses a j-board member who's signed up for the lab at `req.params[param]`
+// — see the note above. Labs only: j-board's event sign-ups don't stop them
+// running an event's door.
+export function requireNotAttendee(param = 'id') {
+    return async (req, res, next) => {
+        if (req.role !== 'jboard') { return next() }
+        const labId = parseInt(req.params[param])
+        if (isNaN(labId)) { return next() }
+        try {
+            const row = await prisma.memberLab.findUnique({
+                where: { memberId_labId: { memberId: req.userId, labId } },
+                select: { attendanceStatus: true }
+            })
+            if (row) { return res.status(403).json({ message: 'You’re signed up for this lab, so its attendance isn’t yours to run' }) }
+            next()
+        } catch (err) {
+            next(err)
+        }
+    }
+}
+
 export function mountRoster(router, kind) {
     const { kindName, parentName, linkName, key, compound, points, label } = kind
     const parent = prisma[parentName]
     const link = prisma[linkName]
     const where = (parentId, memberId) => ({ [compound]: { memberId, [key]: parentId } })
+    // a lab's attendees don't run its roster (requireNotAttendee)
+    const staffOnly = kindName === 'lab' ? [requireRole('officer'), requireNotAttendee()] : [requireRole('officer')]
 
-    router.get('/:id/roster', requireRole('officer'), async (req, res) => {
+    router.get('/:id/roster', ...staffOnly, async (req, res) => {
         const parentId = parseInt(req.params.id)
         if (isNaN(parentId)) { return res.status(400).json({ message: `Invalid ${label.toLowerCase()} id` }) }
 
@@ -113,7 +141,7 @@ export function mountRoster(router, kind) {
     // Everyone with a row, as a spreadsheet: one line each, names first.
     // Unlike the roster above, every address is included — this is the
     // officers' own record of who came, not a mailing list.
-    router.get('/:id/attendance', requireRole('officer'), async (req, res) => {
+    router.get('/:id/attendance', ...staffOnly, async (req, res) => {
         const parentId = parseInt(req.params.id)
         if (isNaN(parentId)) { return res.status(400).json({ message: `Invalid ${label.toLowerCase()} id` }) }
 
@@ -163,7 +191,7 @@ export function mountRoster(router, kind) {
         }
     })
 
-    router.post('/:id/email-all', requireRole('officer'), async (req, res) => {
+    router.post('/:id/email-all', ...staffOnly, async (req, res) => {
         const parentId = parseInt(req.params.id)
         if (isNaN(parentId)) { return res.status(400).json({ message: `Invalid ${label.toLowerCase()} id` }) }
         const { subject, message, error } = readMessage(req.body)
@@ -195,7 +223,7 @@ export function mountRoster(router, kind) {
         }
     })
 
-    router.post('/:id/confirm-all', requireRole('officer'), async (req, res) => {
+    router.post('/:id/confirm-all', ...staffOnly, async (req, res) => {
         const parentId = parseInt(req.params.id)
         if (isNaN(parentId)) { return res.status(400).json({ message: `Invalid ${label.toLowerCase()} id` }) }
         try {
@@ -212,7 +240,7 @@ export function mountRoster(router, kind) {
         }
     })
 
-    router.post('/:id/roster', requireRole('officer'), async (req, res) => {
+    router.post('/:id/roster', ...staffOnly, async (req, res) => {
         const parentId = parseInt(req.params.id)
         if (isNaN(parentId)) { return res.status(400).json({ message: `Invalid ${label.toLowerCase()} id` }) }
 

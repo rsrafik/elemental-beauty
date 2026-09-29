@@ -5,7 +5,7 @@ import { useRouter } from 'next/navigation'
 import DashboardShell from '@/components/dashboards/DashboardShell'
 import { labs as labsApi } from '@/lib/api'
 import { isoDate, longDate, prettyTime, today } from '@/lib/dates'
-import { priceText } from '@/components/labs/LabViewParts'
+import { LeaveClosedLabPopup, priceText } from '@/components/labs/LabViewParts'
 
 // /labs for a user or member: browse upcoming labs, RSVP, look back at the
 // ones they've attended.
@@ -168,7 +168,32 @@ const currentIcons = {
 // of offering a toggle the API would refuse. Everything else is a real control.
 // `offered` is a spot come free off the waitlist and held for you — the
 // button accepts it (see src/offers.js).
-function RsvpButton({ going, waitlist, attended, offered = false, onClick }) {
+// What a card has in the rsvp button's place when the lab isn't taking
+// sign-ups (the "accepting rsvps" switch in its officers' menu) and you're not
+// already on it.
+export function ClosedTag() {
+	return (
+		<span className="
+			flex
+			items-center
+			justify-center
+			min-w-[110px]
+			rounded-full
+			px-4
+			py-1.5
+			font-vietnam
+			font-semibold
+			text-sm
+			bg-black/[0.06]
+			text-black/45
+			select-none
+		">
+			sign-ups closed
+		</span>
+	)
+}
+
+export function RsvpButton({ going, waitlist, attended, offered = false, onClick }) {
 	if (attended) {
 		return (
 			<span
@@ -282,6 +307,8 @@ function toCard(lab) {
 		taken: lab.taken,
 		capacity: lab.capacity,
 		mine: lab.mine,
+		// off: no rsvp button unless you're already on it
+		acceptingRsvps: lab.acceptingRsvps !== false,
 		// what it'll cost at the door, when they haven't paid dues (0 = nothing
 		// to show — see src/dues.js)
 		price: lab.dues?.price ?? 0,
@@ -658,6 +685,9 @@ export default function MemberLabs() {
 	// What the API refused the last change with. A revert on its own looks like
 	// the click missed; the reason is the only thing that makes it make sense.
 	const [error, setError] = useState(null)
+	// the lab being left while it isn't taking sign-ups, held while that's
+	// asked about
+	const [leavingClosed, setLeavingClosed] = useState(null)
 
 	useEffect(() => {
 		let live = true
@@ -678,12 +708,19 @@ export default function MemberLabs() {
 	// Whether the seat taken is a real one or a waitlist place is the server's
 	// call, not this page's: `code` in the reply says which. A waitlist place is
 	// not a seat, so it neither moves the counter nor puts the lab in "current".
-	const toggleRsvp = async (lab) => {
+	//
+	// Leaving a lab that isn't taking sign-ups can't be undone, so that asks
+	// first (LeaveClosedLabPopup) and comes back here with `confirmed`.
+	const toggleRsvp = async (lab, confirmed = false) => {
 		if (busy.has(lab.id)) return
+		const leaving = lab.going || lab.waitlisted
+		if (leaving && !lab.acceptingRsvps && !confirmed) {
+			setLeavingClosed(lab)
+			return
+		}
 		setBusy((prev) => new Set(prev).add(lab.id))
 		setError(null)
 
-		const leaving = lab.going || lab.waitlisted
 		const patch = (changes) =>
 			setRows((prev) =>
 				prev.map((row) => (row.id === lab.id ? { ...row, ...changes } : row))
@@ -864,13 +901,17 @@ export default function MemberLabs() {
 						<LabGrid
 							items={upcomingRows}
 							renderAction={(lab) => (
-								<RsvpButton
-									going={lab.going || lab.waitlisted}
-									waitlist={lab.waitlist}
-									offered={lab.offered}
-									attended={lab.attended}
-									onClick={() => toggleRsvp(lab)}
-								/>
+								// not taking sign-ups: only someone already on it
+								// keeps a button, to cancel or take an offer
+								!lab.acceptingRsvps && !lab.mine
+									? <ClosedTag />
+									: <RsvpButton
+										going={lab.going || lab.waitlisted}
+										waitlist={lab.waitlist}
+										offered={lab.offered}
+										attended={lab.attended}
+										onClick={() => toggleRsvp(lab)}
+									/>
 							)}
 						/>
 					</div>
@@ -925,6 +966,18 @@ export default function MemberLabs() {
 					</div>
 				</section>
 			</div>
+
+			{leavingClosed && (
+				<LeaveClosedLabPopup
+					title={leavingClosed.title}
+					mine={leavingClosed.mine}
+					onConfirm={() => {
+						setLeavingClosed(null)
+						toggleRsvp(leavingClosed, true)
+					}}
+					onClose={() => setLeavingClosed(null)}
+				/>
+			)}
 		</DashboardShell>
 	)
 }
