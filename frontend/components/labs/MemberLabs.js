@@ -4,7 +4,7 @@ import { useEffect, useMemo, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import DashboardShell from '@/components/dashboards/DashboardShell'
 import { labs as labsApi } from '@/lib/api'
-import { isoDate, longDate, prettyTime, today } from '@/lib/dates'
+import { isoDate, longDate, prettyTimeRange, today } from '@/lib/dates'
 import { LeaveClosedLabPopup, priceText } from '@/components/labs/LabViewParts'
 
 // /labs for a user or member: browse upcoming labs, RSVP, look back at the
@@ -302,6 +302,7 @@ function toCard(lab) {
 		// the card formats it for display
 		date: isoDate(lab.date),
 		time: lab.startTime ?? '',
+		endTime: lab.endTime ?? '',
 		location: lab.location ?? '',
 		image: lab.image,
 		taken: lab.taken,
@@ -582,7 +583,7 @@ function LabGrid({ items, icons, renderAction }) {
 						title={lab.title}
 						/* the row carries 'YYYY-MM-DD' so it can be compared
 						   against today; the card is where it becomes prose */
-						lines={[longDate(lab.date), prettyTime(lab.time), lab.location].filter(Boolean)}
+						lines={[longDate(lab.date), prettyTimeRange(lab.time, lab.endTime), lab.location].filter(Boolean)}
 						image={lab.image}
 						icon={icons?.[lab.status]}
 						action={renderAction?.(lab)}

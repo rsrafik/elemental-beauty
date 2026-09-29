@@ -162,7 +162,8 @@ async function main() {
             // today
             { title: 'First Meeting', type: 'official', track: 'members', categoryId: tag('GBM'), date: day(0), startTime: '17:00', capacity: null },
             { title: 'Vendor Booth', type: 'social', track: 'open', categoryId: tag('Pop-Up'), date: day(5), startTime: '11:00', capacity: 20 },
-            { title: 'Skincare 101', type: 'official', track: 'online', categoryId: tag('Workshop'), date: day(9), startTime: '19:00', capacity: null },
+            // online, so it's held at a link: the calendar gives it a "join" pill
+            { title: 'Skincare 101', type: 'official', track: 'online', categoryId: tag('Workshop'), date: day(9), startTime: '19:00', capacity: null, meetingUrl: 'https://zoom.us/j/1234567890' },
             { title: 'Fall Formal', type: 'social', track: 'members', categoryId: tag('Social'), date: day(12), startTime: '20:00', capacity: 20 },
             { title: 'Volunteer Day', type: 'official', track: 'open', categoryId: tag('Volunteering'), date: day(19), startTime: '09:00', capacity: 20 },
             { title: 'Bake Sale', type: 'social', track: 'open', categoryId: tag('Fundraiser'), date: day(26), startTime: '12:00', capacity: 15 },

@@ -2,7 +2,7 @@
 
 import { useEffect } from 'react'
 import { useDismiss } from '@/lib/dismiss'
-import { longDate, prettyTime } from '@/lib/dates'
+import { longDate, prettyTimeRange } from '@/lib/dates'
 import { LinkList } from '@/components/events/EventLinks'
 import { capacityField, teamLabel } from '@/lib/calendar'
 
@@ -25,7 +25,7 @@ export default function EventDetailsDialog({ event, trackLabel, onClose }) {
 		return () => window.removeEventListener('keydown', onKey)
 	})
 
-	const when = [longDate(event.date), prettyTime(event.startTime)].filter(Boolean).join(' · ')
+	const when = [longDate(event.date), prettyTimeRange(event.startTime, event.endTime)].filter(Boolean).join(' · ')
 	const rows = [
 		['when', when],
 		['where', event.location],

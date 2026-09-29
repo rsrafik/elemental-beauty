@@ -5,11 +5,12 @@ import { useRouter } from 'next/navigation'
 import { useDismiss } from '@/lib/dismiss'
 import DashboardShell from '@/components/dashboards/DashboardShell'
 import { eventCategories, events as eventsApi } from '@/lib/api'
-import { isoDate, prettyTime } from '@/lib/dates'
-import { calendarOnly, capacityField, categoryNameOf } from '@/lib/calendar'
+import { isoDate, prettyTimeRange } from '@/lib/dates'
+import { calendarOnly, capacityField, categoryNameOf, hasMeetingLink } from '@/lib/calendar'
 import HideFromEventsToggle from '@/components/events/HideFromEventsToggle'
 import { LinksField, cleanLinks } from '@/components/events/EventLinks'
 import TeamField from '@/components/events/TeamField'
+import { MeetingLinkField } from '@/components/events/MeetingLink'
 import { hiddenTracks } from '@/lib/roles'
 import { useRole } from '@/lib/session'
 import { splitByDate, CompletedDivider, COMPLETED_CARD } from '@/components/CardSections'
@@ -54,6 +55,7 @@ export function toCard(event) {
 		title: event.title,
 		date: isoDate(event.date),
 		time: event.startTime ?? '',
+		endTime: event.endTime ?? '',
 		categoryId: event.categoryId ?? null,
 		track: event.track,
 		type: event.type,
@@ -64,6 +66,7 @@ export function toCard(event) {
 		hideFromEvents: event.hideFromEvents ?? false,
 		links: event.links ?? [],
 		team: event.team ?? '',
+		meetingUrl: event.meetingUrl ?? '',
 	}
 }
 
@@ -135,7 +138,7 @@ function CloseIcon({ className = '' }) {
 
 // The member card with one substitution: the corner holds a control instead of
 // a status icon.
-function EventCard({ title, date, time, location, image, onOpen, onEdit, done = false }) {
+function EventCard({ title, date, time, endTime, location, image, onOpen, onEdit, done = false }) {
 	return (
 		<div
 			role="link"
@@ -204,7 +207,7 @@ function EventCard({ title, date, time, location, image, onOpen, onEdit, done = 
 					</p>
 					{/* date, time and room, a row each — whichever it has */}
 					<div className="mt-1">
-						{[prettyDate(date), prettyTime(time), location].filter(Boolean).map((line) => (
+						{[prettyDate(date), prettyTimeRange(time, endTime), location].filter(Boolean).map((line) => (
 							<p
 								key={line}
 								className="
@@ -434,6 +437,7 @@ export function EventDialog({ event, categories, onClose, onSave, onDelete }) {
 		title: event?.title ?? '',
 		date: event?.date ?? '',
 		time: event?.time ?? '',
+		endTime: event?.endTime ?? '',
 		categoryId: event?.categoryId ?? categories[0]?.categoryId ?? '',
 		track: event?.track ?? 'members',
 		description: event?.description ?? '',
@@ -441,6 +445,7 @@ export function EventDialog({ event, categories, onClose, onSave, onDelete }) {
 		location: event?.location ?? '',
 		hideFromEvents: event?.hideFromEvents ?? false,
 		team: event?.team ?? '',
+		meetingUrl: event?.meetingUrl ?? '',
 	})
 	const [image, setImage] = useState(event?.image ?? null)
 	// { title, url } rows, blank ones included while they're being filled in
@@ -478,7 +483,9 @@ export function EventDialog({ event, categories, onClose, onSave, onDelete }) {
 	// blank = unlimited; anything else has to be a whole number of seats
 	// (only an event that asks for spots has them to check — see capacityField)
 	const spotsOk = capacityField(form.track) !== 'spots' || form.spots.trim() === '' || (Number.isInteger(Number(form.spots)) && Number(form.spots) > 0)
-	const ready = form.title.trim() !== '' && form.date !== '' && spotsOk
+	// blank, or after the start (the API holds it to the same)
+	const endOk = form.endTime === '' || (form.time !== '' && form.endTime > form.time)
+	const ready = form.title.trim() !== '' && form.date !== '' && spotsOk && endOk
 
 	const submit = (submitted) => {
 		submitted.preventDefault()
@@ -612,15 +619,34 @@ export function EventDialog({ event, categories, onClose, onSave, onDelete }) {
 								className={FIELD}
 							/>
 						</label>
-						<label className="block">
-							<Label>time</Label>
-							<input
-								type="time"
-								value={form.time}
-								onChange={set('time')}
-								className={FIELD}
-							/>
-						</label>
+						{/* start and end side by side in the date's neighbour — the end
+						    is optional, and has to come after the start */}
+						<div className="
+							grid
+							grid-cols-2
+							gap-2
+						">
+							<label className="block">
+								<Label>time</Label>
+								<input
+									type="time"
+									value={form.time}
+									onChange={set('time')}
+									className={FIELD}
+								/>
+							</label>
+							<label className="block">
+								<Label>ends</Label>
+								<input
+									type="time"
+									value={form.endTime}
+									onChange={set('endTime')}
+									disabled={!form.time}
+									title={form.time ? undefined : 'Set a start time first'}
+									className={`${FIELD} ${endOk ? '' : 'border-red focus:border-red'} disabled:opacity-50`}
+								/>
+							</label>
+						</div>
 					</div>
 
 					<div className="
@@ -709,6 +735,17 @@ export function EventDialog({ event, categories, onClose, onSave, onDelete }) {
 							</label>
 						)}
 					</div>
+
+					{/* where it's held, for an online event or a meeting — the
+					    calendar gives it a "join" button (hasMeetingLink) */}
+					{hasMeetingLink(form.track) && (
+						<MeetingLinkField
+							value={form.meetingUrl}
+							onChange={(meetingUrl) => setForm((prev) => ({ ...prev, meetingUrl }))}
+							fieldClass={FIELD}
+							Label={Label}
+						/>
+					)}
 
 					<HideFromEventsToggle
 						checked={form.hideFromEvents}
@@ -979,6 +1016,7 @@ export default function OfficerEvents({ openNew = false }) {
 			title: values.title,
 			date: values.date,
 			startTime: values.time || null,
+			endTime: values.time ? values.endTime || null : null,
 			categoryId: values.categoryId === '' ? null : Number(values.categoryId),
 			track: values.track,
 			description: values.description,
@@ -989,6 +1027,8 @@ export default function OfficerEvents({ openNew = false }) {
 			location: values.location.trim() || null,
 			hideFromEvents: values.hideFromEvents,
 			links: values.links,
+			// the link only where the form asks for one
+			meetingUrl: hasMeetingLink(values.track) ? values.meetingUrl.trim() || null : null,
 		}
 
 		setError(null)
@@ -1092,6 +1132,7 @@ export default function OfficerEvents({ openNew = false }) {
 						title={row.title}
 						date={row.date}
 						time={row.time}
+						endTime={row.endTime}
 						location={row.location}
 						image={row.image}
 						onOpen={() => router.push(`/events/view?id=${row.id}`)}
@@ -1111,6 +1152,7 @@ export default function OfficerEvents({ openNew = false }) {
 								title={row.title}
 								date={row.date}
 								time={row.time}
+								endTime={row.endTime}
 								location={row.location}
 								image={row.image}
 								onOpen={() => router.push(`/events/view?id=${row.id}`)}

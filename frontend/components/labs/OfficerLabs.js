@@ -5,7 +5,7 @@ import { useRouter } from 'next/navigation'
 import { useDismiss } from '@/lib/dismiss'
 import DashboardShell from '@/components/dashboards/DashboardShell'
 import { labs as labsApi } from '@/lib/api'
-import { isoDate, prettyTime, today } from '@/lib/dates'
+import { isoDate, prettyTimeRange, today } from '@/lib/dates'
 import { splitByDate, CompletedDivider, COMPLETED_CARD } from '@/components/CardSections'
 import { ClosedTag, RsvpButton } from '@/components/labs/MemberLabs'
 import { QrPopup } from '@/components/labs/MemberLabQuiz'
@@ -41,6 +41,7 @@ function toCard(lab) {
 		title: lab.title,
 		date: isoDate(lab.date),
 		time: lab.startTime ?? '',
+		endTime: lab.endTime ?? '',
 		location: lab.location ?? '',
 		image: lab.image,
 		description: lab.description ?? '',
@@ -269,7 +270,7 @@ function DraftTag({ published, hasDraft }) {
 // `onMenu` null leaves the dots off (someone who can't edit labs); `action` is
 // j-board's rsvp button, on its own row under the date.
 function LabCard({ lab, onOpen, menu, onMenu, action = null, done = false }) {
-	const { title, date, time, location, image } = lab
+	const { title, date, time, endTime, location, image } = lab
 	return (
 		<div
 			role="link"
@@ -339,7 +340,7 @@ function LabCard({ lab, onOpen, menu, onMenu, action = null, done = false }) {
 					</p>
 					{/* date, time and room, a row each — whichever it has */}
 					<div className="mt-1">
-						{[prettyDate(date), prettyTime(time), location].filter(Boolean).map((line) => (
+						{[prettyDate(date), prettyTimeRange(time, endTime), location].filter(Boolean).map((line) => (
 							<p
 								key={line}
 								className="

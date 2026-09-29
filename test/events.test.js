@@ -342,3 +342,56 @@ test('a j-board member on several teams sees each of their events', { skip }, as
         made.events.push((await filed.json()).eventId)
     })
 })
+
+test('online and board events keep a meeting link; members and open ones drop it', { skip }, async () => {
+    const officer = await person('officer')
+    await as(officer, 'officer', async (base) => {
+        const send = (path, method, body) => fetch(`${base}${path}`, {
+            method,
+            headers: { 'content-type': 'application/json' },
+            body: JSON.stringify(body)
+        })
+        const created = await (await send('', 'POST', { title: `${tag} online`, type: 'official', date: '2030-05-01', track: 'online', meetingUrl: 'zoom.us/j/123' })).json()
+        made.events.push(created.eventId)
+        assert.equal(created.meetingUrl, 'https://zoom.us/j/123')
+
+        // not online: a link sent anyway isn't kept
+        const inPerson = await (await send('', 'POST', { title: `${tag} in person`, type: 'official', date: '2030-05-01', track: 'members', meetingUrl: 'https://zoom.us/j/9' })).json()
+        made.events.push(inPerson.eventId)
+        assert.equal(inPerson.meetingUrl, null)
+
+        assert.equal((await send(`/${created.eventId}`, 'PUT', { meetingUrl: 'ftp://nope' })).status, 400)
+        // a meeting track keeps it
+        const board = await (await send('', 'POST', { title: `${tag} board sync`, type: 'official', date: '2030-05-01', track: 'board', meetingUrl: 'meet.google.com/x' })).json()
+        made.events.push(board.eventId)
+        assert.equal(board.meetingUrl, 'https://meet.google.com/x')
+        const toOfficers = await (await send(`/${created.eventId}`, 'PUT', { track: 'officers' })).json()
+        assert.equal(toOfficers.meetingUrl, 'https://zoom.us/j/123')
+
+        const moved = await (await send(`/${created.eventId}`, 'PUT', { track: 'members' })).json()
+        assert.equal(moved.meetingUrl, null)
+    })
+})
+
+test('an event takes an end time after its start, and loses it with the start', { skip }, async () => {
+    const officer = await person('officer')
+    await as(officer, 'officer', async (base) => {
+        const send = (path, method, body) => fetch(`${base}${path}`, {
+            method,
+            headers: { 'content-type': 'application/json' },
+            body: JSON.stringify(body)
+        })
+        const base_ = { title: `${tag} timed`, type: 'official', date: '2030-06-01', track: 'members' }
+        assert.equal((await send('', 'POST', { ...base_, startTime: '18:00', endTime: '17:00' })).status, 400)
+        assert.equal((await send('', 'POST', { ...base_, endTime: '17:00' })).status, 400)
+
+        const created = await (await send('', 'POST', { ...base_, startTime: '18:00', endTime: '19:30' })).json()
+        made.events.push(created.eventId)
+        assert.equal(created.endTime, '19:30')
+
+        // a start moved past the end takes the end with it; one cleared too
+        assert.equal((await (await send(`/${created.eventId}`, 'PUT', { startTime: '20:00' })).json()).endTime, null)
+        await send(`/${created.eventId}`, 'PUT', { endTime: '21:00' })
+        assert.equal((await (await send(`/${created.eventId}`, 'PUT', { startTime: null })).json()).endTime, null)
+    })
+})

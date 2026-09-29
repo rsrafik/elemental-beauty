@@ -5,6 +5,7 @@ import Link from 'next/link'
 import DashboardShell from '@/components/dashboards/DashboardShell'
 import { eventCategories, events as eventsApi, labs as labsApi } from '@/lib/api'
 import { buildMonths, dayBadge, typesIn } from '@/lib/calendar'
+import { JoinMeetingButton } from '@/components/events/MeetingLink'
 import { thisMonth } from '@/lib/dates'
 import { hiddenTracks } from '@/lib/roles'
 
@@ -276,6 +277,7 @@ function Day({ number, inMonth, entries: dayEntries = [], wave = 0, today = fals
 						{entry.type}
 					</p>
 					<EntryTitle entry={entry} />
+					<JoinMeetingButton url={entry.meetingUrl} tone={TRACKS[entry.track]?.pill} className="mt-1.5" />
 				</div>
 			)}
 		</div>
@@ -387,6 +389,7 @@ function Agenda({ days }) {
 								{entry.type}
 							</p>
 							<EntryTitle entry={entry} />
+							<JoinMeetingButton url={entry.meetingUrl} tone={TRACKS[entry.track]?.pill} className="mt-1.5" />
 						</div>
 					</li>
 					)

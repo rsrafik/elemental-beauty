@@ -225,14 +225,14 @@ router.get('/me/history', async (req, res) => {
                 select: {
                     attendanceStatus: true,
                     quizPassed: true,
-                    lab: { select: { labId: true, title: true, date: true, startTime: true, location: true } }
+                    lab: { select: { labId: true, title: true, date: true, startTime: true, endTime: true, location: true } }
                 }
             }),
             prisma.memberEvent.findMany({
                 where: { memberId: req.userId },
                 select: {
                     attendanceStatus: true,
-                    event: { select: { eventId: true, title: true, date: true, startTime: true, location: true, type: true } }
+                    event: { select: { eventId: true, title: true, date: true, startTime: true, endTime: true, location: true, type: true } }
                 }
             }),
             prisma.activityLog.findMany({

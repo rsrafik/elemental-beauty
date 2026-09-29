@@ -60,6 +60,18 @@ export function prettyTime(value) {
 	return `${twelve}:${String(minute).padStart(2, '0')} ${suffix}`
 }
 
+// A start and an end, '18:00' + '19:00' -> '6:00-7:00 PM': the half of the
+// day said once when both share it, and on each side when they don't
+// ('11:00 AM-1:00 PM'). No end is just the start, as prettyTime; no start is
+// nothing.
+export function prettyTimeRange(start, end) {
+	const from = prettyTime(start)
+	const to = prettyTime(end)
+	if (!from || !to) return from
+	const [fromClock, fromHalf] = from.split(' ')
+	return fromHalf === to.split(' ')[1] ? `${fromClock}-${to}` : `${from}-${to}`
+}
+
 // Which panel a row belongs in. 'current' is everything up to and including
 // today, 'upcoming' is after it — the two panels the labs and events pages
 // stack on top of each other.

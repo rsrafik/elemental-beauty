@@ -109,6 +109,7 @@ function toForm(lab) {
 	const date = source.date ? isoDate(source.date) : ''
 	return {
 		when: date ? `${date}T${source.startTime || '00:00'}` : '',
+		ends: source.endTime ?? '',
 		location: source.location ?? '',
 		seats: source.capacity == null ? '' : String(source.capacity),
 		title: source.title ?? '',
@@ -123,6 +124,7 @@ function toForm(lab) {
 function blankForm() {
 	return {
 		when: '',
+		ends: '',
 		location: '',
 		seats: '',
 		title: '',
@@ -153,6 +155,8 @@ function toBody(form) {
 		// a draft can be saved without one, and clearing it clears it
 		date: date || null,
 		startTime: time && time !== '00:00' ? time : null,
+		// only alongside a start time (missingFor holds it after the start)
+		endTime: time && time !== '00:00' && form.ends ? form.ends : null,
 		location: form.location.trim(),
 		capacity: form.seats.trim() === '' ? null : Number(form.seats),
 		description: form.description.trim(),
@@ -171,6 +175,9 @@ function missingFor(form, hasLesson, publishing) {
 	if (form.seats.trim() !== '' && !(Number.isInteger(Number(form.seats)) && Number(form.seats) > 0)) {
 		missing.add('seats')
 	}
+	// an end time needs a start time to come after
+	const start = form.when.split('T')[1]
+	if (form.ends && !(start && start !== '00:00' && form.ends > start)) missing.add('ends')
 	if (!publishing) return missing
 	if (!form.when) missing.add('when')
 	if (!form.location.trim()) missing.add('location')
@@ -491,6 +498,7 @@ function previewLab(form, { id, lesson, lab }) {
 		image: body.image,
 		date: body.date,
 		startTime: body.startTime,
+		endTime: body.endTime,
 		location: body.location,
 		ingredients: body.ingredients,
 		equipment: body.equipment,
@@ -585,9 +593,11 @@ export default function LabEditor({ id }) {
 		if (gaps.size) {
 			setStatus({
 				error: true,
-				text: publishing
-					? 'Fill in everything marked * to publish'
-					: 'A draft needs at least a title',
+				text: gaps.size === 1 && gaps.has('ends')
+					? 'The end time has to be after the start time'
+					: publishing
+						? 'Fill in everything marked * to publish'
+						: 'A draft needs at least a title',
 			})
 			return
 		}
@@ -767,6 +777,23 @@ export default function LabEditor({ id }) {
 									px-[6px]
 									text-[13px]
 									${form.when ? '' : 'text-black/40'}
+								`}
+							/>
+						</InlineField>
+
+						{/* optional; the lab's pages print it as a range with the
+						    start ('5:00-7:00PM') */}
+						<InlineField id="lab-ends" label="ends" className="mt-[15.2px]">
+							<input
+								type="time"
+								{...field('ends')}
+								aria-invalid={flagged.has('ends')}
+								className={`
+									${fieldClass('orange', flagged.has('ends'))}
+									h-[27.3px]
+									px-[6px]
+									text-[13px]
+									${form.ends ? '' : 'text-black/40'}
 								`}
 							/>
 						</InlineField>

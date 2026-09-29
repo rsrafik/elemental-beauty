@@ -6,6 +6,7 @@ import { eventPoints } from '../points.js'
 import { mountRoster } from './roster.js'
 import { acceptOffer, confirmSpot, expireOffers, lockParent, offerNext, startsAt } from '../offers.js'
 import { log } from '../activity.js'
+import { readEndTime } from '../clubTime.js'
 import { DUES_ANSWERS, asksDues, duesAnswerProblem, duesLookup, duesOwed, duesUnpaid, settleDues } from '../dues.js'
 
 const router = express.Router()
@@ -105,9 +106,35 @@ async function refuseLocked(eventId, viewer, res) {
 // 'HH:MM' — what <input type="time"> hands back, and what the calendar prints.
 const TIME = /^([01][0-9]|2[0-3]):[0-5][0-9]$/
 
+// One web address as typed: an http(s) one, with https:// put on the front of
+// one typed without a scheme ('zoom.us/j/…'). Returns { url } or { error }.
+function readUrl(typed) {
+    let url = typed
+    if (!/^[a-z][a-z0-9+.-]*:/i.test(url)) { url = `https://${url}` }
+    let parsed
+    try { parsed = new URL(url) } catch { return { error: `${url} isn't a web address` } }
+    if (!['http:', 'https:'].includes(parsed.protocol)) { return { error: 'links must be http or https addresses' } }
+    return { url: parsed.href }
+}
+
+// The tracks whose events can be held at a link: online ones, and the
+// meetings — officers, EB board, j-board. Mirrors hasMeetingLink in
+// frontend/lib/calendar.js.
+const MEETING_TRACKS = ['online', 'officers', 'board', 'jboard']
+
+// An event's meeting link (meetingUrl): undefined when not sent, null
+// for none (blank clears it), otherwise the address. Returns { meetingUrl }
+// or { error }.
+function readMeetingUrl(value) {
+    if (value === undefined) { return { meetingUrl: undefined } }
+    const typed = String(value ?? '').trim()
+    if (!typed) { return { meetingUrl: null } }
+    const { url, error } = readUrl(typed)
+    return error ? { error: `meeting link: ${error}` } : { meetingUrl: url }
+}
+
 // The links an event's page lists under its photo: [{ title, url }], each an
-// http(s) address — one typed without a scheme ('linkedin.com/in/…') gets
-// https:// put on the front. A link with no title shows its address instead;
+// http(s) address (readUrl). A link with no title shows its address instead;
 // a row with no address at all is dropped, so an empty box left on the form
 // doesn't save. Returns { links } (null for none) or { error }.
 const MAX_LINKS = 20
@@ -117,13 +144,11 @@ function readLinks(value) {
     const links = []
     for (const entry of value) {
         const title = String(entry?.title ?? '').trim().slice(0, 100)
-        let url = String(entry?.url ?? '').trim()
-        if (!url) { continue }
-        if (!/^[a-z][a-z0-9+.-]*:/i.test(url)) { url = `https://${url}` }
-        let parsed
-        try { parsed = new URL(url) } catch { return { error: `${url} isn't a web address` } }
-        if (!['http:', 'https:'].includes(parsed.protocol)) { return { error: 'links must be http or https addresses' } }
-        links.push({ title, url: parsed.href })
+        const typed = String(entry?.url ?? '').trim()
+        if (!typed) { continue }
+        const { url, error } = readUrl(typed)
+        if (error) { return { error } }
+        links.push({ title, url })
     }
     if (links.length > MAX_LINKS) { return { error: `at most ${MAX_LINKS} links` } }
     return { links: links.length ? links : null }
@@ -251,6 +276,8 @@ router.post('/', requireRole('officer'), async (req, res) => {
     if (linksError) { return res.status(400).json({ message: linksError }) }
     const { team, error: teamError } = readTeam(req.body.team)
     if (teamError) { return res.status(400).json({ message: teamError }) }
+    const { meetingUrl, error: meetingError } = readMeetingUrl(req.body.meetingUrl)
+    if (meetingError) { return res.status(400).json({ message: meetingError }) }
     const forJboard = track === 'jboard'
     const viewer = await viewerOf(req)
     // j-board files for their own team or all of j-board — another team's
@@ -284,6 +311,8 @@ router.post('/', requireRole('officer'), async (req, res) => {
     if (startTime !== undefined && startTime !== null && startTime !== '' && !TIME.test(startTime)) {
         return res.status(400).json({ message: 'startTime must be HH:MM' })
     }
+    const { endTime, error: endError } = readEndTime(req.body.endTime ?? null, startTime || null)
+    if (endError) { return res.status(400).json({ message: endError }) }
     if (capacity !== undefined && capacity !== null && (!Number.isInteger(capacity) || capacity < 1)) {
         return res.status(400).json({ message: 'capacity must be a positive integer (or omitted for unlimited)' })
     }
@@ -298,11 +327,14 @@ router.post('/', requireRole('officer'), async (req, res) => {
                 description,
                 date: eventDate,
                 startTime: startTime || null,
+                endTime,
                 location: location?.trim() || null,
                 image,
                 // the board's tracks have no seat cap; j-board has a team
                 capacity: uncapped ? null : capacity,
                 team: forJboard ? team ?? null : null,
+                // a meeting link only where one's asked for (MEETING_TRACKS)
+                meetingUrl: MEETING_TRACKS.includes(track) ? meetingUrl ?? null : null,
                 hideFromEvents: hideFromEvents ?? false,
                 links,
                 createdById: req.userId
@@ -358,6 +390,9 @@ router.put('/:id', requireRole('officer'), async (req, res) => {
     const teamRead = readTeam(req.body.team)
     if (teamRead.error) { return res.status(400).json({ message: teamRead.error }) }
     if (teamRead.team !== undefined) { data.team = teamRead.team }
+    const meetingRead = readMeetingUrl(req.body.meetingUrl)
+    if (meetingRead.error) { return res.status(400).json({ message: meetingRead.error }) }
+    if (meetingRead.meetingUrl !== undefined) { data.meetingUrl = meetingRead.meetingUrl }
     if (req.body.startTime !== undefined) {
         if (req.body.startTime && !TIME.test(req.body.startTime)) {
             return res.status(400).json({ message: 'startTime must be HH:MM' })
@@ -380,6 +415,9 @@ router.put('/:id', requireRole('officer'), async (req, res) => {
 
     // moved to another day or time: the day-before reminder is owed again
     if (data.date !== undefined || data.startTime !== undefined) { data.reminderSentAt = null }
+    if (req.body.endTime !== undefined && req.body.endTime !== null && req.body.endTime !== '' && !TIME.test(req.body.endTime)) {
+        return res.status(400).json({ message: 'endTime must be HH:MM' })
+    }
 
     try {
         // one on a track this role can't see doesn't exist for them — the
@@ -387,12 +425,25 @@ router.put('/:id', requireRole('officer'), async (req, res) => {
         // one locked to its creator (lockedFor) is refused
         const viewer = await viewerOf(req)
         if (await refuseLocked(eventId, viewer, res)) { return }
-        // a team only on a j-board event, a seat cap only off one — whichever
-        // track it ends up on after this edit
-        const existing = await prisma.event.findUnique({ where: { eventId }, select: { track: true, team: true } })
+        // a team only on a j-board event, a seat cap only off one, a meeting
+        // link only on a MEETING_TRACKS one — whichever track it ends up on after
+        // this edit
+        const existing = await prisma.event.findUnique({ where: { eventId }, select: { track: true, team: true, startTime: true, endTime: true } })
         const track = data.track ?? existing.track
         if (UNCAPPED_TRACKS.includes(track)) { data.capacity = null }
         if (track !== 'jboard') { data.team = null }
+        if (!MEETING_TRACKS.includes(track)) { data.meetingUrl = null }
+        // the end time against the start it'll have after this edit: one
+        // sent is checked; one left alone goes if the start went, or moved
+        // past it
+        const startAfter = data.startTime !== undefined ? data.startTime : existing.startTime
+        if (req.body.endTime !== undefined) {
+            const { endTime, error } = readEndTime(req.body.endTime, startAfter)
+            if (error) { return res.status(400).json({ message: error }) }
+            data.endTime = endTime
+        } else if (existing.endTime && (!startAfter || existing.endTime <= startAfter)) {
+            data.endTime = null
+        }
         if (otherTeam({ track, team: data.team !== undefined ? data.team : existing.team }, viewer)) {
             return res.status(403).json({ message: 'You can only move j-board events to your own team' })
         }

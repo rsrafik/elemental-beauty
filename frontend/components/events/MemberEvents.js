@@ -4,7 +4,7 @@ import { useEffect, useMemo, useState } from 'react'
 import Link from 'next/link'
 import DashboardShell from '@/components/dashboards/DashboardShell'
 import { events as eventsApi } from '@/lib/api'
-import { isoDate, longDate, prettyTime, today } from '@/lib/dates'
+import { isoDate, longDate, prettyTimeRange, today } from '@/lib/dates'
 import { priceText } from '@/components/labs/LabViewParts'
 import { calendarOnly } from '@/lib/calendar'
 
@@ -184,6 +184,7 @@ function toCard(event) {
 		// time rides along separately and the card joins them for display
 		date: isoDate(event.date),
 		time: event.startTime ?? '',
+		endTime: event.endTime ?? '',
 		location: event.location ?? '',
 		image: event.image,
 		taken: event.taken,
@@ -439,7 +440,7 @@ function EventGrid({ items, renderAction }) {
 						title={event.title}
 						/* the row carries 'YYYY-MM-DD' so the date can be compared
 						   against today; the card is where it becomes prose */
-						lines={[longDate(event.date), prettyTime(event.time), event.location].filter(Boolean)}
+						lines={[longDate(event.date), prettyTimeRange(event.time, event.endTime), event.location].filter(Boolean)}
 						image={event.image}
 						href={`/events/view?id=${event.id}`}
 						action={renderAction?.(event)}

@@ -6,6 +6,7 @@ import { POINTS } from '../points.js'
 import { mountRoster, requireNotAttendee } from './roster.js'
 import { acceptOffer, confirmSpot, expireOffers, lockParent, offerNext, startsAt } from '../offers.js'
 import { log } from '../activity.js'
+import { readEndTime } from '../clubTime.js'
 import { DUES_ANSWERS, duesAnswerProblem, duesLookup, duesOwed, duesUnpaid, settleDues } from '../dues.js'
 
 const router = express.Router()
@@ -47,7 +48,7 @@ function requireLabStaff(req, res, next) {
 
 // Preview fields — what a member sees BEFORE passing the quiz
 const PREVIEW_SELECT = {
-    labId: true, title: true, date: true, startTime: true, location: true,
+    labId: true, title: true, date: true, startTime: true, endTime: true, location: true,
     description: true, image: true, capacity: true, published: true,
     // whether it's taking sign-ups — the card and page leave the rsvp
     // button off when it isn't
@@ -329,6 +330,15 @@ function labData(body) {
         if (body.startTime && !TIME.test(body.startTime)) { return { error: 'startTime must be HH:MM' } }
         data.startTime = body.startTime || null
     }
+    // checked against the start when the body carries one (the edit page
+    // always sends both); a start cleared takes the end with it
+    if (body.endTime !== undefined) {
+        const { endTime, error } = readEndTime(body.endTime, body.startTime === undefined ? undefined : body.startTime || null)
+        if (error) { return { error } }
+        data.endTime = endTime
+    } else if (body.startTime !== undefined && !body.startTime) {
+        data.endTime = null
+    }
     // null clears it, which only a draft can get away with
     if (body.date !== undefined) {
         if (body.date === null || body.date === '') {
@@ -526,7 +536,7 @@ router.put('/:id', requireRole('officer'), requireLabEditor('id'), async (req, r
             update = current.published
                 // stored as the body was sent, so the editor can load it back
                 ? { draft: Object.fromEntries(
-                    [...TEXT_FIELDS, 'startTime', 'date', 'capacity']
+                    [...TEXT_FIELDS, 'startTime', 'endTime', 'date', 'capacity']
                         .filter((field) => req.body[field] !== undefined)
                         .map((field) => [field, req.body[field]])
                 ) }

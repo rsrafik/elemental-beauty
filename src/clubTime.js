@@ -62,3 +62,16 @@ export function startsAt(row) {
 export function clubFormat(at, options) {
     return at.toLocaleString('en-US', { timeZone: CLUB_TZ, ...options })
 }
+
+// A lab's or event's end time as sent, against the start time it'll have:
+// blank or null clears it; otherwise 'HH:MM', and — when `start` is known —
+// only with a start time, and after it. `start` undefined skips that half
+// (a partial save that didn't send the start). Returns { endTime } or { error }.
+const HHMM = /^([01][0-9]|2[0-3]):[0-5][0-9]$/
+export function readEndTime(end, start) {
+    if (end === null || end === '') { return { endTime: null } }
+    if (typeof end !== 'string' || !HHMM.test(end)) { return { error: 'endTime must be HH:MM' } }
+    if (start !== undefined && !start) { return { error: 'an end time needs a start time' } }
+    if (start && end <= start) { return { error: 'the end time has to be after the start time' } }
+    return { endTime: end }
+}

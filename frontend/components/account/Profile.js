@@ -7,7 +7,7 @@ import { Popup, PopupButton } from '@/components/labs/LabViewParts'
 import { hasRole, onLeaderboard, roleLabel } from '@/lib/roles'
 import { useRole, useSession, useSignOut } from '@/lib/session'
 import { members as membersApi, auth } from '@/lib/api'
-import { longDate, prettyTime } from '@/lib/dates'
+import { longDate, prettyTimeRange } from '@/lib/dates'
 import { useDismiss } from '@/lib/dismiss'
 import { AVATAR_MAX, shrinkImage } from '@/lib/images'
 
@@ -745,9 +745,9 @@ const AWARD_REASON = {
 	manual: 'points adjusted',
 }
 
-// 'october 10, 2026 · 5:00 PM'
+// 'october 10, 2026 · 5:00-7:00 PM'
 function whenLine(row) {
-	return [row.date ? longDate(row.date).toLowerCase() : 'no date yet', prettyTime(row.startTime)].filter(Boolean).join(' · ')
+	return [row.date ? longDate(row.date).toLowerCase() : 'no date yet', prettyTimeRange(row.startTime, row.endTime)].filter(Boolean).join(' · ')
 }
 
 function HistoryRow({ href, title, sub, right }) {

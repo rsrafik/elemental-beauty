@@ -243,6 +243,9 @@ model Lab {
   // when the lab has started and check-in (the QR) takes over from the RSVP.
   // Null means the lab counts as started from the beginning of its day.
   startTime    String?  @map("start_time") @db.VarChar(5)
+  // When it finishes, 'HH:MM' — optional, only with a start time, and after
+  // it. Pages print the two as a range ('6:00-7:00pm').
+  endTime      String?  @map("end_time") @db.VarChar(5)
   // The room, as printed on the header line ('WTHR 200').
   location     String?
   // null = unlimited seats, same as events.capacity — the edit page's
@@ -368,6 +371,9 @@ model Event {
   // what the calendar prints. Null for something with no clock time on it —
   // a deadline, say. A CHECK constraint holds the format (see migrations).
   startTime   String?    @map("start_time") @db.VarChar(5)
+  // When it finishes, 'HH:MM' — optional, only with a start time, and after
+  // it. Pages print the two as a range ('6:00-7:00pm').
+  endTime     String?    @map("end_time") @db.VarChar(5)
   // The room, as on a lab ('WTHR 200'). Optional — plenty of events are
   // online or somewhere that isn't a room.
   location    String?
@@ -384,6 +390,10 @@ model Event {
   // Titled links the event's page lists under its photo — a guest speaker's
   // LinkedIn, a sign-up sheet: [{ title, url }, ...]. Null or [] = none.
   links          Json?
+  // Where it's held, as a link — a Zoom or Meet address. The calendar gives
+  // it a "join" button. Only kept on an online, officers, EB board or j-board
+  // event (MEETING_TRACKS in eventRoutes.js).
+  meetingUrl     String?  @map("meeting_url")
   // Who added it. Decides one thing: a j-board event added by an officer,
   // treasurer or admin is read-only to j-board (see eventRoutes.js). Null for
   // events from before this was kept, and for a creator since deleted.

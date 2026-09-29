@@ -68,9 +68,12 @@ export function buildMonths(labs = [], events = []) {
 			title: event.title,
 			track: event.track,
 			time: event.startTime ?? null,
+			endTime: event.endTime ?? null,
 			location: event.location ?? null,
 			// a j-board event's team ('social_media'), printed under the title
 			team: event.team ?? null,
+			// where it's held, for the "join" pill (hasMeetingLink)
+			meetingUrl: hasMeetingLink(event.track) ? event.meetingUrl ?? null : null,
 			href: `/events/view?id=${event.eventId}`,
 		})
 	}
@@ -139,6 +142,13 @@ export function capacityField(track) {
 	if (track === 'jboard') return 'team'
 	if (track === 'officers' || track === 'board') return 'none'
 	return 'spots'
+}
+
+// Whether an event form asks for a meeting link (the "join" pill's): online
+// events, and the meetings — officers, EB board, j-board. Mirrors
+// MEETING_TRACKS in src/routes/eventRoutes.js.
+export function hasMeetingLink(track) {
+	return ['online', 'officers', 'board', 'jboard'].includes(track)
 }
 
 export function teamLabel(key) {

@@ -5,13 +5,14 @@ import { useRouter } from 'next/navigation'
 import { useDismiss } from '@/lib/dismiss'
 import DashboardShell from '@/components/dashboards/DashboardShell'
 import { eventCategories, events as eventsApi, labs as labsApi } from '@/lib/api'
-import { buildMonths, calendarOnly, capacityField, categoryNameOf, dayBadge, teamLabel, typesIn } from '@/lib/calendar'
+import { buildMonths, calendarOnly, capacityField, categoryNameOf, dayBadge, hasMeetingLink, teamLabel, typesIn } from '@/lib/calendar'
 import HideFromEventsToggle from '@/components/events/HideFromEventsToggle'
 import { LinksField, cleanLinks } from '@/components/events/EventLinks'
 import TeamField from '@/components/events/TeamField'
+import { JoinMeetingButton, MeetingLinkField } from '@/components/events/MeetingLink'
 import { COVER_MAX, shrinkImage } from '@/lib/images'
 import EventDetailsDialog from '@/components/events/EventDetailsDialog'
-import { thisMonth } from '@/lib/dates'
+import { prettyTimeRange, thisMonth } from '@/lib/dates'
 import { canEditLab, defaultOffTracks, hiddenTracks, tracksChangedFrom } from '@/lib/roles'
 import { useRole, useSession } from '@/lib/session'
 import { EventDialog as EditEventDialog, toCard } from '@/components/events/OfficerEvents'
@@ -135,14 +136,8 @@ function splitDateInput(value) {
 	return { key: `${year}-${String(month).padStart(2, '0')}`, day, year, month }
 }
 
-// '13:30' -> '1:30pm'
-function prettyTime(value) {
-	if (!value) return null
-	const [hours, minutes] = value.split(':').map(Number)
-	const suffix = hours < 12 ? 'am' : 'pm'
-	const hour = hours % 12 === 0 ? 12 : hours % 12
-	return `${hour}:${String(minutes).padStart(2, '0')}${suffix}`
-}
+// '13:30' -> '1:30pm', and with an end '1:30-3:00pm' (or '11:00am-1:00pm')
+const prettyTimes = (start, end) => prettyTimeRange(start, end).replace(/ /g, '').toLowerCase()
 
 // A day holds one entry or several; read it as a list either way.
 function listFor(map, day) {
@@ -579,7 +574,7 @@ function EntryText({ entry }) {
 					text-black/50
 					mt-0.5
 				">
-					{prettyTime(entry.time)}
+					{prettyTimes(entry.time, entry.endTime)}
 				</p>
 			)}
 			{entry.location && (
@@ -600,7 +595,20 @@ function EntryText({ entry }) {
 // a lab goes to its edit page. This calendar is only ever shown to officer and
 // up, who are the roles allowed to edit both — bar one case, a j-board event
 // an officer or above added, which j-board gets read-only (see openEntry).
+//
+// An event with a meeting link gets the "join" pill under it, in its track's
+// colour — beside the button rather than in it, since a link can't sit in a
+// button.
 function Entry({ entry, onOpen }) {
+	return (
+		<>
+			<EntryBody entry={entry} onOpen={onOpen} />
+			<JoinMeetingButton url={entry.meetingUrl} tone={TRACKS[entry.track]?.pill} className="mt-1.5" />
+		</>
+	)
+}
+
+function EntryBody({ entry, onOpen }) {
 	if (entry.eventId == null && entry.labId == null) return <EntryText entry={entry} />
 	return (
 		<button
@@ -830,6 +838,7 @@ function EventDialog({ categories, onClose, onSave }) {
 		title: '',
 		date: '',
 		time: '',
+		endTime: '',
 		categoryId: categories[0]?.categoryId ?? '',
 		track: 'members',
 		description: '',
@@ -837,6 +846,7 @@ function EventDialog({ categories, onClose, onSave }) {
 		location: '',
 		hideFromEvents: false,
 		team: '',
+		meetingUrl: '',
 	})
 	const [image, setImage] = useState(null) // a data URL
 	// { title, url } rows, blank ones included while they're being filled in
@@ -866,7 +876,9 @@ function EventDialog({ categories, onClose, onSave }) {
 	// blank = unlimited; anything else has to be a whole number of seats
 	// (only an event that asks for spots has them to check — see capacityField)
 	const spotsOk = capacityField(form.track) !== 'spots' || form.spots.trim() === '' || (Number.isInteger(Number(form.spots)) && Number(form.spots) > 0)
-	const ready = form.title.trim() !== '' && form.date !== '' && spotsOk
+	// blank, or after the start (the API holds it to the same)
+	const endOk = form.endTime === '' || (form.time !== '' && form.endTime > form.time)
+	const ready = form.title.trim() !== '' && form.date !== '' && spotsOk && endOk
 
 	const submit = (event) => {
 		event.preventDefault()
@@ -999,15 +1011,34 @@ function EventDialog({ categories, onClose, onSave }) {
 								className={FIELD}
 							/>
 						</label>
-						<label className="block">
-							<Label>time</Label>
-							<input
-								type="time"
-								value={form.time}
-								onChange={set('time')}
-								className={FIELD}
-							/>
-						</label>
+						{/* start and end side by side in the date's neighbour — the end
+						    is optional, and has to come after the start */}
+						<div className="
+							grid
+							grid-cols-2
+							gap-2
+						">
+							<label className="block">
+								<Label>time</Label>
+								<input
+									type="time"
+									value={form.time}
+									onChange={set('time')}
+									className={FIELD}
+								/>
+							</label>
+							<label className="block">
+								<Label>ends</Label>
+								<input
+									type="time"
+									value={form.endTime}
+									onChange={set('endTime')}
+									disabled={!form.time}
+									title={form.time ? undefined : 'Set a start time first'}
+									className={`${FIELD} ${endOk ? '' : 'border-red focus:border-red'} disabled:opacity-50`}
+								/>
+							</label>
+						</div>
 					</div>
 
 					<div className="
@@ -1096,6 +1127,17 @@ function EventDialog({ categories, onClose, onSave }) {
 							</label>
 						)}
 					</div>
+
+					{/* where it's held, for an online event or a meeting — the
+					    calendar gives it a "join" button (hasMeetingLink) */}
+					{hasMeetingLink(form.track) && (
+						<MeetingLinkField
+							value={form.meetingUrl}
+							onChange={(meetingUrl) => setForm((prev) => ({ ...prev, meetingUrl }))}
+							fieldClass={FIELD}
+							Label={Label}
+						/>
+					)}
 
 					<HideFromEventsToggle
 						checked={form.hideFromEvents}
@@ -1374,13 +1416,14 @@ export default function OfficerCalendar() {
 	// `type` — official or social, which is what attendance is scored on — isn't
 	// on this form, so a new event takes 'social'. Change it from /events, where
 	// the same event has a full editor.
-	const saveEvent = async ({ title, date, time, categoryId, track, description, image, spots, location, hideFromEvents, links, team }) => {
+	const saveEvent = async ({ title, date, time, endTime, categoryId, track, description, image, spots, location, hideFromEvents, links, team, meetingUrl }) => {
 		setError(null)
 		try {
 			await eventsApi.create({
 				title,
 				date,
 				startTime: time || null,
+				endTime: time ? endTime || null : null,
 				categoryId: categoryId === '' ? null : Number(categoryId),
 				track,
 				description,
@@ -1391,6 +1434,8 @@ export default function OfficerCalendar() {
 				location: location.trim() || null,
 				hideFromEvents,
 				links,
+				// the link only where the form asks for one
+				meetingUrl: hasMeetingLink(track) ? meetingUrl.trim() || null : null,
 				type: 'social',
 			})
 			await load()
@@ -1429,6 +1474,7 @@ export default function OfficerCalendar() {
 				title: values.title,
 				date: values.date,
 				startTime: values.time || null,
+				endTime: values.time ? values.endTime || null : null,
 				categoryId: values.categoryId === '' ? null : Number(values.categoryId),
 				track: values.track,
 				description: values.description,
@@ -1438,6 +1484,7 @@ export default function OfficerCalendar() {
 				location: values.location.trim() || null,
 				hideFromEvents: values.hideFromEvents,
 				links: values.links,
+				meetingUrl: hasMeetingLink(values.track) ? values.meetingUrl.trim() || null : null,
 			})
 			await load()
 		} catch (err) {

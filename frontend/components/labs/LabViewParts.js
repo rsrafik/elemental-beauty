@@ -6,7 +6,7 @@ import Link from 'next/link'
 import { useRouter } from 'next/navigation'
 import { cameFromApp } from '@/lib/history'
 import { useDismiss } from '@/lib/dismiss'
-import { longDate, prettyTime } from '@/lib/dates'
+import { longDate, prettyTimeRange } from '@/lib/dates'
 
 // The pieces every stage of the member lab view is built from: the scaling
 // frame, the header (meta line, title, description, photo), the big shadowed
@@ -65,12 +65,12 @@ export function Scaled({ className = '', children }) {
 
 // ---- header ----------------------------------------------------------------
 
-// 'october 10, 2026 • 5:00PM • WTHR 200'. A lab with no time or no room just
+// 'october 10, 2026 • 5:00-7:00PM • WTHR 200'. A lab with no time or no room just
 // drops that part rather than printing an empty slot between two bullets.
 export function metaLine(lab) {
 	return [
 		longDate(lab.date).toLowerCase(),
-		prettyTime(lab.startTime).replace(' ', ''),
+		prettyTimeRange(lab.startTime, lab.endTime).replace(/ /g, ''),
 		lab.location,
 	]
 		.filter(Boolean)

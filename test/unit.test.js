@@ -1,7 +1,7 @@
 // Pure functions — no database. Run with `npm test`.
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
-import { clubInstant, clubToday, clubFormat, dateColumn, startsAt } from '../src/clubTime.js'
+import { clubInstant, clubToday, clubFormat, dateColumn, readEndTime, startsAt } from '../src/clubTime.js'
 import { csvCell } from '../src/csv.js'
 import { hashPassword, needsRehash, passwordProblem, checkPassword } from '../src/passwords.js'
 import { wantsEmail } from '../src/emailPrefs.js'
@@ -11,6 +11,18 @@ import { schoolYearOf } from '../src/dues.js'
 import { wipeProblem } from '../scripts/localDatabase.js'
 
 // ---- the club's clock ------------------------------------------------------
+
+test('an end time is HH:MM, needs a start, and comes after it', () => {
+    assert.deepEqual(readEndTime('19:00', '18:00'), { endTime: '19:00' })
+    assert.deepEqual(readEndTime('', '18:00'), { endTime: null })
+    assert.deepEqual(readEndTime(null, null), { endTime: null })
+    assert.match(readEndTime('7pm', '18:00').error, /HH:MM/)
+    assert.match(readEndTime('19:00', null).error, /needs a start/)
+    assert.match(readEndTime('18:00', '18:00').error, /after the start/)
+    assert.match(readEndTime('17:00', '18:00').error, /after the start/)
+    // start not sent on a partial save: the format is still checked
+    assert.deepEqual(readEndTime('19:00', undefined), { endTime: '19:00' })
+})
 
 test('a wall-clock time in Indiana is the right instant, in and out of daylight saving', () => {
     // EDT is UTC-4
