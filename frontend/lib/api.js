@@ -182,7 +182,7 @@ export const members = {
 	remove: (id) => api(`/members/${id}`, { method: 'DELETE' }),
 	setRole: (id, role) => api(`/members/${id}/role`, { method: 'PUT', body: { role } }),
 	// a j-board member's team ('formula'), or null to take them off one
-	setTeam: (id, team) => api(`/members/${id}/team`, { method: 'PUT', body: { team } }),
+	setTeams: (id, teams) => api(`/members/${id}/teams`, { method: 'PUT', body: { teams } }),
 	// action: instagram_repost | instagram_follow | discord_join — the server
 	// decides what each is worth (src/points.js)
 	awardPoints: (id, action) => api(`/members/${id}/points`, { method: 'POST', body: { action } }),

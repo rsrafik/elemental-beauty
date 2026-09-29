@@ -28,10 +28,23 @@ function sentence(entry) {
 	switch (entry.action) {
 		case 'role_changed':
 			return <>{actor} changed {target}&apos;s role from {roleLabel(d.from)} to {roleLabel(d.to)}</>
-		case 'team_changed':
-			return d.to
-				? <>{actor} put {target} on the j-board {teamLabel(d.to)} team</>
-				: <>{actor} took {target} off the j-board {teamLabel(d.from)} team</>
+		case 'team_changed': {
+			// lists now; an older entry holds one team or null
+			const list = (value) => (Array.isArray(value) ? value : value ? [value] : [])
+			const from = list(d.from)
+			const to = list(d.to)
+			const added = to.filter((team) => !from.includes(team))
+			const removed = from.filter((team) => !to.includes(team))
+			if (added.length === 1 && removed.length === 0) {
+				return <>{actor} put {target} on the j-board {teamLabel(added[0])} team</>
+			}
+			if (removed.length === 1 && added.length === 0) {
+				return <>{actor} took {target} off the j-board {teamLabel(removed[0])} team</>
+			}
+			return to.length
+				? <>{actor} put {target} on the j-board {to.map(teamLabel).join(', ')} teams</>
+				: <>{actor} took {target} off every j-board team</>
+		}
 		case 'points_awarded':
 			// a total typed by hand is logged as the difference, with before/after
 			if (d.reason === 'manual') {

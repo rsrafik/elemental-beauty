@@ -285,7 +285,7 @@ test('j-board members see their own team and all-of-j-board events, not other te
     const formula = await person('jboard')
     const noTeam = await person('jboard')
     const officer = await person('officer')
-    await prisma.member.update({ where: { userId: formula }, data: { jboardTeam: 'formula' } })
+    await prisma.member.update({ where: { userId: formula }, data: { jboardTeams: ['formula'] } })
 
     const make = async (team) => {
         const row = await prisma.event.create({ data: { title: `${tag} ${team ?? 'all'}`, date: new Date('2030-04-01'), track: 'jboard', team } })
@@ -313,5 +313,32 @@ test('j-board members see their own team and all-of-j-board events, not other te
     })
     await as(officer, 'officer', async (base) => {
         assert.deepEqual(titles(await (await fetch(base)).json()), [all, mine, theirs].sort())
+    })
+})
+
+test('a j-board member on several teams sees each of their events', { skip }, async () => {
+    const both = await person('jboard')
+    await prisma.member.update({ where: { userId: both }, data: { jboardTeams: ['formula', 'treasury'] } })
+
+    const make = async (team) => {
+        const row = await prisma.event.create({ data: { title: `${tag} ${team}`, date: new Date('2030-04-03'), track: 'jboard', team } })
+        made.events.push(row.eventId)
+        return row.eventId
+    }
+    const formula = await make('formula')
+    const treasury = await make('treasury')
+    const social = await make('social_media')
+    const ids = (rows) => rows.filter((row) => [formula, treasury, social].includes(row.eventId)).map((row) => row.eventId).sort()
+
+    await as(both, 'jboard', async (base) => {
+        assert.deepEqual(ids(await (await fetch(base)).json()), [formula, treasury].sort())
+        assert.equal((await fetch(`${base}/${social}`)).status, 404)
+        const filed = await fetch(base, {
+            method: 'POST',
+            headers: { 'content-type': 'application/json' },
+            body: JSON.stringify({ title: `${tag} treasury filed`, type: 'official', date: '2030-04-04', track: 'jboard', team: 'treasury' })
+        })
+        assert.equal(filed.status, 201)
+        made.events.push((await filed.json()).eventId)
     })
 })

@@ -41,18 +41,18 @@ const HIDDEN_TRACKS = {
 }
 const hiddenTracks = (role) => HIDDEN_TRACKS[role] ?? []
 
-// Inside j-board, each member sees their own team's j-board events and the
-// ones for all of j-board, never another team's — so the teams' calendars
-// stay apart. One with no team yet sees only the all-of-j-board ones.
-// Officers, treasurer and admin see every team's. `viewer` is
-// { role, team } (viewerOf); a j-board member's team is on their member row.
+// Inside j-board, each member sees the j-board events of every team they're
+// on and the ones for all of j-board, never another team's — so the teams'
+// calendars stay apart. One with no team yet sees only the all-of-j-board
+// ones. Officers, treasurer and admin see every team's. `viewer` is
+// { role, teams } (viewerOf); a j-board member's teams are on their member row.
 async function viewerOf(req) {
-    if (req.role !== 'jboard') { return { role: req.role, team: null } }
-    const member = await prisma.member.findUnique({ where: { userId: req.userId }, select: { jboardTeam: true } })
-    return { role: req.role, team: member?.jboardTeam ?? null }
+    if (req.role !== 'jboard') { return { role: req.role, teams: [] } }
+    const member = await prisma.member.findUnique({ where: { userId: req.userId }, select: { jboardTeams: true } })
+    return { role: req.role, teams: member?.jboardTeams ?? [] }
 }
 const otherTeam = (event, viewer) =>
-    viewer.role === 'jboard' && event.track === 'jboard' && event.team != null && event.team !== viewer.team
+    viewer.role === 'jboard' && event.track === 'jboard' && event.team != null && !viewer.teams.includes(event.team)
 const hiddenFrom = (event, viewer) => hiddenTracks(viewer.role).includes(event.track) || otherTeam(event, viewer)
 
 // The same rule as a query, for the list.
@@ -60,7 +60,7 @@ function visibleWhere(viewer) {
     const where = []
     if (hiddenTracks(viewer.role).length) { where.push({ track: { notIn: hiddenTracks(viewer.role) } }) }
     if (viewer.role === 'jboard') {
-        where.push({ OR: [{ track: { not: 'jboard' } }, { team: null }, ...(viewer.team ? [{ team: viewer.team }] : [])] })
+        where.push({ OR: [{ track: { not: 'jboard' } }, { team: null }, ...(viewer.teams.length ? [{ team: { in: viewer.teams } }] : [])] })
     }
     return where
 }

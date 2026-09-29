@@ -8,14 +8,14 @@ import { useSession } from '@/lib/session'
 // to set, but they do belong to one of j-board's teams. Blank is the whole of
 // j-board. `fieldClass` and `Label` are the form's own.
 //
-// A j-board member only files for their own team or all of j-board — another
-// team's event would vanish off their calendar (the API refuses it too). One
-// already filed under another team keeps showing that team, so an edit
-// doesn't quietly move it.
+// A j-board member only files for a team they're on or all of j-board —
+// another team's event would vanish off their calendar (the API refuses it
+// too). One already filed under another team keeps showing that team, so an
+// edit doesn't quietly move it.
 export default function TeamField({ value, onChange, fieldClass, Label }) {
 	const { user } = useSession()
 	const teams = user?.role === 'jboard'
-		? TEAMS.filter((team) => team.key === user.jboardTeam || team.key === value)
+		? TEAMS.filter((team) => (user.jboardTeams ?? []).includes(team.key) || team.key === value)
 		: TEAMS
 	return (
 		<label className="block">

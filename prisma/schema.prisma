@@ -197,10 +197,11 @@ model Member {
   role       MemberRole @default(member)
   points     Int        @default(0)
   dateJoined DateTime   @default(dbgenerated("CURRENT_DATE")) @map("date_joined") @db.Date
-  // The j-board team they're on, set by an admin from /students — only a
-  // j-board member has one. They see their own team's j-board events and the
-  // ones for all of j-board, not another team's (see eventRoutes.js).
-  jboardTeam EventTeam? @map("jboard_team")
+  // The j-board teams they're on, set by an admin from /students — only a
+  // j-board member has any, and can have several. They see the j-board events
+  // of every team they're on and the ones for all of j-board, not another
+  // team's (see eventRoutes.js).
+  jboardTeams EventTeam[] @default([]) @map("jboard_teams")
 
   user           User            @relation(fields: [userId], references: [userId], onDelete: Cascade)
   labs           MemberLab[]
