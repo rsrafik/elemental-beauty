@@ -61,7 +61,8 @@ export default function MemberEventView() {
 	// the flip shown while the request is out, so the click answers at once
 	const [pending, setPending] = useState(null)
 	const [showQr, setShowQr] = useState(false)
-	// bumped on a timer so "has it started" is re-asked against the clock
+	// bumped on a timer, with a re-read, so "has it started" (or has the door
+	// opened early — checkinOpen) is re-asked
 	const [, setTick] = useState(0)
 
 	const load = useCallback(async () => {
@@ -84,9 +85,12 @@ export default function MemberEventView() {
 	}, [id])
 
 	useEffect(() => {
-		const timer = setInterval(() => setTick((n) => n + 1), CLOCK_MS)
+		const timer = setInterval(() => {
+			setTick((n) => n + 1)
+			load()
+		}, CLOCK_MS)
 		return () => clearInterval(timer)
-	}, [])
+	}, [load])
 
 	// every button is one request and a re-read
 	const act = async (call, flip) => {
@@ -130,10 +134,14 @@ export default function MemberEventView() {
 			caption = ended ? 'you were there — thanks for coming!' : 'you’re checked in — enjoy!'
 		} else if (ended) {
 			caption = mine === 'absent' ? 'this event has happened — we missed you!' : 'this event has already happened'
-		} else if (event.started) {
+		} else if (event.started || (event.checkinOpen && (going || offered))) {
+			// the door opens at the start time, or earlier from the check-in
+			// page's "start check-in" — then it's only the QR that's early
 			if (going || offered) {
 				button = <ShowQrButton onClick={() => setShowQr(true)} />
-				caption = 'it’s on! show your QR code at the door to check in'
+				caption = event.started
+					? 'it’s on! show your QR code at the door to check in'
+					: 'check-in is open! show your QR code at the door'
 			} else if (waitlisted) {
 				caption = 'it’s started — if there’s room, an e-board member can let you in at the door'
 			} else {

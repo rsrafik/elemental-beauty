@@ -48,7 +48,7 @@ function requireLabStaff(req, res, next) {
 
 // Preview fields — what a member sees BEFORE passing the quiz
 const PREVIEW_SELECT = {
-    labId: true, title: true, date: true, startTime: true, endTime: true, location: true,
+    labId: true, title: true, date: true, startTime: true, endTime: true, location: true, checkinOpen: true,
     description: true, image: true, capacity: true, published: true,
     // whether it's taking sign-ups — the card and page leave the rsvp
     // button off when it isn't

@@ -295,6 +295,10 @@ model Lab {
   // button and new RSVPs are refused; anyone already on it can still cancel
   // or take an offered spot. Switched from the dots menu, like the one above.
   acceptingRsvps Boolean @default(true) @map("accepting_rsvps")
+  // Check-in opened early from the check-in page ("start check-in"): people
+  // signed up get their QR code on the lab's page before its start time. The
+  // door opens on its own at the start time regardless (see roster.js).
+  checkinOpen   Boolean @default(false) @map("checkin_open")
 
   lessons       LabLesson[]
   quizQuestions LabQuizQuestion[]
@@ -394,6 +398,8 @@ model Event {
   // it a "join" button. Only kept on an online, officers, EB board or j-board
   // event (MEETING_TRACKS in eventRoutes.js).
   meetingUrl     String?  @map("meeting_url")
+  // Check-in opened early from the check-in page, as a lab's checkinOpen.
+  checkinOpen    Boolean  @default(false) @map("checkin_open")
   // Who added it. Decides one thing: a j-board event added by an officer,
   // treasurer or admin is read-only to j-board (see eventRoutes.js). Null for
   // events from before this was kept, and for a creator since deleted.

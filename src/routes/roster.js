@@ -33,6 +33,11 @@ import { DUES_ANSWERS, asksDues, duesAnswerProblem, duesOwed, duesUnpaid, settle
 //                         the university asks for
 //   POST /:id/email-all  { subject, message } — the page's "email all": sent by
 //                        the server to everyone signed up (see emailAll.js)
+//   PUT  /:id/checkin-open  { open } — the page's "start check-in": opens the
+//                        door before the start time, so the people signed up
+//                        get their QR code on its page early (members' pages
+//                        read `checkinOpen`). { open: false } closes it again;
+//                        from the start time it's open whatever this says
 //   POST /:id/confirm-all  { deadline } — the page's "confirmation": everyone
 //                        signed up who hasn't confirmed yet is emailed a link
 //                        to confirm by then, with a lab's prelab attached
@@ -220,6 +225,24 @@ export function mountRoster(router, kind) {
         } catch (err) {
             console.error(err.message)
             res.status(502).json({ message: err.message })
+        }
+    })
+
+    router.put('/:id/checkin-open', ...staffOnly, async (req, res) => {
+        const parentId = parseInt(req.params.id)
+        if (isNaN(parentId)) { return res.status(400).json({ message: `Invalid ${label.toLowerCase()} id` }) }
+        if (typeof req.body?.open !== 'boolean') { return res.status(400).json({ message: 'open must be true or false' }) }
+        try {
+            const row = await parent.update({
+                where: { [key]: parentId },
+                data: { checkinOpen: req.body.open },
+                select: { checkinOpen: true }
+            })
+            res.json(row)
+        } catch (err) {
+            if (err.code === 'P2025') { return res.status(404).json({ message: `${label} not found` }) }
+            console.error(err.message)
+            res.sendStatus(500)
         }
     })
 

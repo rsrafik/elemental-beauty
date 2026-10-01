@@ -10,6 +10,7 @@ import EmailAllPopup from '@/components/EmailAllPopup'
 import ConfirmationPopup from '@/components/ConfirmationPopup'
 import DuesPopup from '@/components/checkin/DuesPopup'
 import { labs as labsApi, events as eventsApi, members as membersApi } from '@/lib/api'
+import { prettyTime } from '@/lib/dates'
 
 // The officer's check-in page for one lab or one event — where clicking its
 // card on /labs or /events lands. Top: the camera for scanning members' QR
@@ -432,6 +433,8 @@ export default function CheckInView({ kind, id }) {
 	// a check-in (scanned or ticked) that came back DUES_UNPAID, waiting on
 	// the officer's answer: { reply, answer(choice), close() } — see DuesPopup
 	const [duesAsk, setDuesAsk] = useState(null)
+	// "start check-in" on its way to the server
+	const [opening, setOpening] = useState(false)
 
 	const loadRoster = useCallback(async () => {
 		try {
@@ -464,6 +467,30 @@ export default function CheckInView({ kind, id }) {
 			clearInterval(timer)
 		}
 	}, [api, id])
+
+	// "start check-in" / "close check-in": before the start time, whether the
+	// people signed up get their QR code on its page yet (members' pages read
+	// checkinOpen; roster.js). From the start time it's open regardless, so
+	// the button only shows before then — the roster poll re-renders the page
+	// often enough to drop it on time.
+	const start = item ? startsAt(item) : null
+	const now = new Date()
+	const early = Boolean(start) && start > now
+	// past the start time on the day itself: open on its own, which the page
+	// says where the button was, so it isn't missed
+	const openNow = Boolean(start) && !early && start.toDateString() === now.toDateString()
+	const setDoor = async (open) => {
+		setOpening(true)
+		setError(null)
+		try {
+			const reply = await api.setCheckinOpen(id, open)
+			setItem((prev) => ({ ...prev, checkinOpen: reply.checkinOpen }))
+		} catch (err) {
+			setError(err.message)
+		} finally {
+			setOpening(false)
+		}
+	}
 
 	const act = async (memberId, action) => {
 		setBusy((prev) => new Set(prev).add(memberId))
@@ -690,7 +717,9 @@ export default function CheckInView({ kind, id }) {
 								{/* the page's four buttons, two by two. The columns are
 								    equal, each as wide as the widest label plus its
 								    padding, so none of them is squeezed to its text. An
-								    event has no prelab, so its fourth cell stays empty. */}
+								    event has no prelab, so its fourth cell stays empty.
+								    Before the start time, "start check-in" runs the full
+								    width under them. */}
 								<div className="
 									mt-[14px]
 									mx-auto
@@ -738,7 +767,35 @@ export default function CheckInView({ kind, id }) {
 											</IconLabel>
 										</EditorButton>
 									)}
+									{early && (
+										<EditorButton
+											className={`
+												${BUTTON}
+												col-span-2
+												${item.checkinOpen ? '' : 'bg-green!'}
+											`}
+											disabled={opening}
+											title={item.checkinOpen
+												? 'Hide the QR codes again until the start time'
+												: 'Let people signed up show their QR code now, before the start time'}
+											onClick={() => setDoor(!item.checkinOpen)}
+										>
+											{opening ? 'saving…' : item.checkinOpen ? 'close check-in' : 'start check-in'}
+										</EditorButton>
+									)}
 								</div>
+								{((early && item.checkinOpen) || openNow) && (
+									<p className="
+										mt-[8px]
+										font-vietnam
+										text-[12px]
+										text-green-dark
+									">
+										{openNow
+											? `check-in is open — it opened at ${prettyTime(item.startTime || '00:00').replace(' ', '').toLowerCase()}, and people signed up can show their QR code`
+											: 'check-in is open — people signed up can show their QR code now'}
+									</p>
+								)}
 								{kind === 'lab' && (
 									<>
 										<input

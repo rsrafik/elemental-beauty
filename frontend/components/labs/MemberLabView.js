@@ -28,8 +28,9 @@ import MemberLabContent from '@/components/labs/MemberLabContent'
 // mockups: from the left of the content column to the text, and from the
 // photo to the right edge.
 
-// How often the page looks at the clock (so it flips to check-in at start
-// time) and, while the QR is up, re-reads the lab to catch the scan.
+// How often the page looks at the clock and re-reads the lab (so it flips to
+// check-in at the start time, or as soon as the check-in page opens the door
+// early) and, while the QR is up, re-reads it to catch the scan.
 const CLOCK_MS = 30_000
 const CHECKIN_POLL_MS = 5_000
 
@@ -52,7 +53,9 @@ function stageFor(lab) {
 	if (lab.mine === 'attended') return lab.quizPassed ? 'lab' : 'quiz'
 	const ended = isoDate(lab.date) < today()
 	const holding = lab.mine === 'rsvped' || lab.mine === 'waitlisted' || lab.mine === 'offered'
-	if (!ended && holding && hasStarted(lab)) return 'checkin'
+	// the door opens at the start time, or earlier from the check-in page's
+	// "start check-in" (checkinOpen)
+	if (!ended && holding && (hasStarted(lab) || lab.checkinOpen)) return 'checkin'
 	return 'signup'
 }
 
@@ -83,9 +86,12 @@ export default function MemberLabView() {
 	}, [id])
 
 	useEffect(() => {
-		const timer = setInterval(() => setTick((n) => n + 1), CLOCK_MS)
+		const timer = setInterval(() => {
+			setTick((n) => n + 1)
+			load()
+		}, CLOCK_MS)
 		return () => clearInterval(timer)
-	}, [])
+	}, [load])
 
 	const stage = lab ? stageFor(lab) : null
 

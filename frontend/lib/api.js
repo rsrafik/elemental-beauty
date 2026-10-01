@@ -246,6 +246,8 @@ export const events = {
 	// the check-in page's "confirmation": everyone signed up who hasn't
 	// confirmed is emailed a link to, by `deadline` (an ISO time)
 	confirmAll: (id, deadline) => api(`/events/${id}/confirm-all`, { method: 'POST', body: { deadline } }),
+	// the check-in page's "start check-in": QR codes before the start time
+	setCheckinOpen: (id, open) => api(`/events/${id}/checkin-open`, { method: 'PUT', body: { open } }),
 	// a member confirming their own spot from the event's page
 	confirm: (id) => api(`/events/${id}/confirm`, { method: 'POST' }),
 	// the check-in page's attendance spreadsheet
@@ -317,6 +319,8 @@ export const labs = {
 	checkin: (id, qrToken, dues) => api(`/labs/${id}/checkin`, { method: 'POST', body: { qrToken, dues } }),
 	// the check-in page's "email all": { subject, message } to everyone signed up
 	emailAll: (id, message) => api(`/labs/${id}/email-all`, { method: 'POST', body: message }),
+	// the check-in page's "start check-in": QR codes before the start time
+	setCheckinOpen: (id, open) => api(`/labs/${id}/checkin-open`, { method: 'PUT', body: { open } }),
 	// the check-in page's "confirmation": everyone signed up who hasn't
 	// confirmed is emailed a link to, by `deadline` (an ISO time), with the
 	// prelab attached (src/offers.js)

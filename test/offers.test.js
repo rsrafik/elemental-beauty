@@ -354,3 +354,40 @@ test('a lab not taking sign-ups refuses new RSVPs but lets anyone on it cancel o
         server.close()
     }
 })
+
+test('"start check-in" opens a lab before its start time, for its staff only', { skip }, async () => {
+    const going = await member()
+    const officer = await member()
+    const id = await lab()
+    await join(id, going)
+
+    const app = express()
+    app.use(express.json())
+    app.use((req, res, next) => { req.userId = Number(req.get('x-user')); req.role = req.get('x-role') ?? 'member'; next() })
+    app.use('/labs', labRoutes)
+    const server = app.listen(0)
+    const base = `http://localhost:${server.address().port}/labs/${id}`
+    const as = (who, path, method, role, body) => fetch(`${base}${path}`, {
+        method,
+        headers: { 'x-user': String(who), ...(role ? { 'x-role': role } : {}), 'content-type': 'application/json' },
+        body: body && JSON.stringify(body)
+    })
+    try {
+        assert.equal((await (await as(going, '', 'GET')).json()).checkinOpen, false)
+
+        // a member can't open the door, nor a j-board member signed up for it
+        assert.equal((await as(going, '/checkin-open', 'PUT', null, { open: true })).status, 403)
+        assert.equal((await as(going, '/checkin-open', 'PUT', 'jboard', { open: true })).status, 403)
+        assert.equal((await as(officer, '/checkin-open', 'PUT', 'officer', { open: 'yes' })).status, 400)
+
+        const opened = await as(officer, '/checkin-open', 'PUT', 'officer', { open: true })
+        assert.equal(opened.status, 200)
+        assert.equal((await opened.json()).checkinOpen, true)
+        assert.equal((await (await as(going, '', 'GET')).json()).checkinOpen, true)
+
+        await as(officer, '/checkin-open', 'PUT', 'officer', { open: false })
+        assert.equal((await (await as(going, '', 'GET')).json()).checkinOpen, false)
+    } finally {
+        server.close()
+    }
+})
