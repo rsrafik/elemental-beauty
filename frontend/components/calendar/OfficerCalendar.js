@@ -28,16 +28,6 @@ import { EventDialog as EditEventDialog, toCard } from '@/components/events/Offi
 // Labs are deliberately missing from the category dropdown: they carry sign-ups
 // and check-in, so they get scheduled from /labs rather than from here.
 
-// Height of the sheet, in px: a six-week grid plus its weekday header. Both
-// columns are held to it, so a five-week month leaves empty space under the
-// last row instead of dragging the title and the legends up with it.
-//
-// On a wide screen it's a ceiling, and the row is never taller than the
-// window either: a day can hold several things, and a month that outgrows it
-// scrolls inside the grid's own column while the left one — month, add
-// button, legends — stays where it is.
-const SHEET_H = 815
-
 const WEEKDAYS = ['sun', 'mon', 'tue', 'wed', 'thu', 'fri', 'sat']
 
 // The kinds of thing that turn up on the calendar. Shown as the chip list and
@@ -1524,24 +1514,24 @@ export default function OfficerCalendar() {
 	return (
 		// my-auto rather than justify-center: it centers the sheet in the page but
 		// still lets a tall month scroll from its top instead of clipping it.
+		// xl:overflow-visible: on a wide screen the page column doesn't scroll —
+		// the grid does, in a box that reaches past it to the window's edges
+		// (see the grid's column), which a scrolling page column would clip
 		<DashboardShell className="
 			flex
 			flex-col
+			xl:overflow-visible
 		">
-			{/* On a wide screen the row fills the window's height up to SHEET_H
-			    (and sits in the middle of any left over), so neither column is at
-			    the mercy of how many week rows or entries the month has.
-			    items-stretch hands that height to both, which is what lets the
-			    title sit on the top edge and the legends on the bottom one — and
-			    the grid's column scrolls within it. min-h-0 lets it be shorter
-			    than its contents; on a window too short for the left column
-			    itself, that overflow is what the page still scrolls. */}
+			{/* On a wide screen the row is exactly as tall as the sidebar beside
+			    it (the page column shares its top and bottom edges), so neither
+			    column is at the mercy of how many week rows or entries the month
+			    has. items-stretch hands that height to both, which is what puts
+			    the title on the sidebar's top edge and the legends on its bottom
+			    one — and the grid's column scrolls within it. */}
 			<div
 				className="
-					xl:my-auto
 					xl:flex-1
 					xl:min-h-0
-					xl:max-h-[var(--sheet-h)]
 					flex
 					flex-col
 					xl:flex-row
@@ -1550,7 +1540,6 @@ export default function OfficerCalendar() {
 					xl:gap-8
 					2xl:gap-12
 				"
-				style={{ '--sheet-h': `${SHEET_H}px` }}
 			>
 				{/* left column: month and add button up top, legends at the bottom.
 				    calendar-side / calendar-grid bring the two columns in from
@@ -1784,14 +1773,24 @@ export default function OfficerCalendar() {
 				</div>
 
 				{/* right column: the month grid — its own scroller on a wide
-				    screen, with a little room on the right for the scrollbar */}
+				    screen, with a little room on the right for the scrollbar.
+				    The box reaches 32px past the row at both ends — the page's
+				    padding (DashboardShell's lg:p-8), so out to the window's top
+				    and bottom edges — and is padded by the same, so the month
+				    starts level with the sidebar's top edge and ends level with
+				    its bottom, but scrolls all the way to the window's.
+				    A column, so the weeks can share out the height (see below). */}
 				<div className="
 					calendar-grid
 					flex-1
 					min-w-0
 					xl:min-h-0
+					xl:-my-8
+					xl:py-8
 					xl:overflow-y-auto
 					xl:pr-2
+					xl:flex
+					xl:flex-col
 				">
 					<div className="
 						grid
@@ -1835,7 +1834,12 @@ export default function OfficerCalendar() {
 					    cells being relabelled, so every cell mounts again and the wave
 					    runs across the new month the way it did on arrival. Keyed on the
 					    row alone, only the cells whose date happened to change would
-					    remount, and the wave would come through in patches. */}
+					    remount, and the wave would come through in patches.
+					    On a wide screen the weeks split the height between them
+					    evenly (flex-1 grows each from nothing), so the rules are
+					    evenly spaced and the last one lands on the sidebar's bottom
+					    edge. A week with more on it than its share is as tall as it
+					    needs — and once they don't all fit, the column scrolls. */}
 					{weeks.map((week, i) => (
 						<div
 							key={`${stamp}-${i}`}
@@ -1848,6 +1852,7 @@ export default function OfficerCalendar() {
 								border-black/20
 								pb-2
 								md:pb-4
+								xl:flex-1
 							"
 						>
 							{week.map((day, column) => (
