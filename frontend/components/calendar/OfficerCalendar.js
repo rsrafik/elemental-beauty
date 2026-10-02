@@ -1779,7 +1779,12 @@ export default function OfficerCalendar() {
 				    and bottom edges — and is padded by the same, so the month
 				    starts level with the sidebar's top edge and ends level with
 				    its bottom, but scrolls all the way to the window's.
-				    A column, so the weeks can share out the height (see below). */}
+				    A column, so the weeks can share out the height (see below).
+				    A scroll box clips sideways too, so it also reaches 16px out
+				    on the left (into the gap between the columns), padded back
+				    by the same: room for the leftmost day's badge to grow on
+				    hover, and for today's glow, without their edge being cut
+				    off — the grid itself doesn't move. */}
 				<div className="
 					calendar-grid
 					flex-1
@@ -1787,6 +1792,8 @@ export default function OfficerCalendar() {
 					xl:min-h-0
 					xl:-my-8
 					xl:py-8
+					xl:-ml-4
+					xl:pl-4
 					xl:overflow-y-auto
 					xl:pr-2
 					xl:flex
