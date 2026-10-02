@@ -15,6 +15,12 @@ export const POINTS = {
 // deliberately NOT in this list so they can't be double-granted manually.
 export const MANUAL_ACTIONS = ['instagram_repost', 'instagram_follow', 'discord_join']
 
+// The ones a member can only get once — you follow or join a single time.
+// A repost can happen again, so it isn't one. Who has had which is
+// members.awards_claimed; giving one twice is refused, and it can be taken
+// back (DELETE /members/:id/points/:action).
+export const ONE_TIME_ACTIONS = ['instagram_follow', 'discord_join']
+
 export function eventPoints(eventType) {
     return eventType === 'official' ? POINTS.official_event : POINTS.social_event
 }

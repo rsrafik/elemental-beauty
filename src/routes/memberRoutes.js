@@ -3,7 +3,7 @@ import jwt from 'jsonwebtoken'
 import QRCode from 'qrcode'
 import prisma from '../prismaClient.js'
 import requireRole, { denyRole } from '../middleware/requireRole.js'
-import { POINTS, MANUAL_ACTIONS, eventPoints } from '../points.js'
+import { POINTS, MANUAL_ACTIONS, ONE_TIME_ACTIONS, eventPoints } from '../points.js'
 import { fromEmail, takenMessage } from '../accountEmail.js'
 import { sendVerificationEmail } from '../verification.js'
 import { STAFF, wantsEmail } from '../emailPrefs.js'
@@ -42,6 +42,7 @@ router.get('/', async (req, res) => {
                 points: true,
                 dateJoined: true,
                 jboardTeams: true,
+                awardsClaimed: true,
                 user: {
                     select: {
                         username: true,
@@ -256,6 +257,8 @@ router.get('/me/history', async (req, res) => {
         const awards = awardRows.map((row) => ({
             id: row.activityId,
             reason: row.details?.reason ?? null,
+            // a one-time award taken back — logged as its own negative line
+            undone: row.details?.undone === true,
             points: row.points ?? 0,
             at: row.createdAt,
             by: row.actorName
@@ -346,7 +349,8 @@ router.put('/me', async (req, res) => {
 // value server-side — clients never send a point amount, so the values in
 // points.js are the only amounts that can ever be granted. Attendance points
 // are NOT awardable here; they happen automatically at check-in/admission.
-// J-board can't touch anyone's points — this or PUT below.
+// A one-time one (ONE_TIME_ACTIONS) already given is refused with a 409.
+// J-board can't touch anyone's points — this, PUT or DELETE below.
 router.post('/:id/points', requireRole('officer'), denyRole('jboard'), async (req, res) => {
     const targetId = parseInt(req.params.id)
     if (isNaN(targetId)) { return res.status(400).json({ message: 'Invalid member id' }) }
@@ -355,15 +359,24 @@ router.post('/:id/points', requireRole('officer'), denyRole('jboard'), async (re
     if (!MANUAL_ACTIONS.includes(action)) {
         return res.status(400).json({ message: `action must be one of: ${MANUAL_ACTIONS.join(', ')}` })
     }
+    const once = ONE_TIME_ACTIONS.includes(action)
 
     try {
         // the award and its line in the log land together or not at all —
         // the log is what a member's points history reads it back from
         const updated = await prisma.$transaction(async (tx) => {
-            const member = await tx.member.update({
-                where: { userId: targetId },
-                data: { points: { increment: POINTS[action] } }
+            // a one-time award is marked as had in the same write that gives
+            // it, and only if it wasn't already — so two clicks at once can't
+            // both land
+            const given = await tx.member.updateMany({
+                where: { userId: targetId, ...(once ? { NOT: { awardsClaimed: { has: action } } } : {}) },
+                data: { points: { increment: POINTS[action] }, ...(once ? { awardsClaimed: { push: action } } : {}) }
             })
+            if (given.count === 0) {
+                const exists = await tx.member.findUnique({ where: { userId: targetId }, select: { userId: true } })
+                throw Object.assign(new Error(exists ? 'They’ve already had points for that' : 'Member not found'), { status: exists ? 409 : 404 })
+            }
+            const member = await tx.member.findUnique({ where: { userId: targetId } })
             await log({
                 actorId: req.userId,
                 action: 'points_awarded',
@@ -373,9 +386,52 @@ router.post('/:id/points', requireRole('officer'), denyRole('jboard'), async (re
             }, tx)
             return member
         })
-        res.json({ message: `+${POINTS[action]} points for ${action}`, points: updated.points })
+        res.json({ message: `+${POINTS[action]} points for ${action}`, points: updated.points, awardsClaimed: updated.awardsClaimed })
     } catch (err) {
-        if (err.code === 'P2025') { return res.status(404).json({ message: 'Member not found' }) }
+        if (err.status) { return res.status(err.status).json({ message: err.message }) }
+        console.error(err.message)
+        res.sendStatus(500)
+    }
+})
+
+// Officer+ (not j-board): take back a one-time award — the same button on
+// /students, clicked again. Their points go down by what it gave (never below
+// 0, if they've since been set lower by hand), it's no longer marked as had,
+// and the log gets the negative line, which their points history shows.
+router.delete('/:id/points/:action', requireRole('officer'), denyRole('jboard'), async (req, res) => {
+    const targetId = parseInt(req.params.id)
+    if (isNaN(targetId)) { return res.status(400).json({ message: 'Invalid member id' }) }
+    const { action } = req.params
+    if (!ONE_TIME_ACTIONS.includes(action)) {
+        return res.status(400).json({ message: `Only ${ONE_TIME_ACTIONS.join(' and ')} can be taken back` })
+    }
+
+    try {
+        const updated = await prisma.$transaction(async (tx) => {
+            const before = await tx.member.findUnique({ where: { userId: targetId }, select: { points: true, awardsClaimed: true } })
+            if (!before) { throw Object.assign(new Error('Member not found'), { status: 404 }) }
+            const take = Math.min(POINTS[action], before.points)
+            // only while it's still marked as had — two undos at once take it once
+            const undone = await tx.member.updateMany({
+                where: { userId: targetId, awardsClaimed: { has: action } },
+                data: {
+                    points: { decrement: take },
+                    awardsClaimed: { set: before.awardsClaimed.filter((had) => had !== action) }
+                }
+            })
+            if (undone.count === 0) { throw Object.assign(new Error('They haven’t had points for that'), { status: 409 }) }
+            await log({
+                actorId: req.userId,
+                action: 'points_awarded',
+                targetId,
+                points: -take,
+                details: { reason: action, undone: true }
+            }, tx)
+            return tx.member.findUnique({ where: { userId: targetId } })
+        })
+        res.json({ message: `Took back the points for ${action}`, points: updated.points, awardsClaimed: updated.awardsClaimed })
+    } catch (err) {
+        if (err.status) { return res.status(err.status).json({ message: err.message }) }
         console.error(err.message)
         res.sendStatus(500)
     }

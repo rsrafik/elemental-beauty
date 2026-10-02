@@ -202,6 +202,10 @@ model Member {
   // of every team they're on and the ones for all of j-board, not another
   // team's (see eventRoutes.js).
   jboardTeams EventTeam[] @default([]) @map("jboard_teams")
+  // The one-time awards they've had ('instagram_follow', 'discord_join' —
+  // ONE_TIME_ACTIONS in src/points.js): each is given once, and the same
+  // button on /students takes it back.
+  awardsClaimed String[] @default([]) @map("awards_claimed")
 
   user           User            @relation(fields: [userId], references: [userId], onDelete: Cascade)
   labs           MemberLab[]

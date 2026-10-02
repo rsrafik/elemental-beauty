@@ -50,6 +50,9 @@ function sentence(entry) {
 			if (d.reason === 'manual') {
 				return <>{actor} set {target}&apos;s points from {d.from} to {d.to} ({pts > 0 ? `+${pts}` : pts})</>
 			}
+			if (d.undone) {
+				return <>{actor} took back {target}&apos;s points for {AWARD[d.reason] ?? d.reason} ({pts})</>
+			}
 			return <>{actor} gave {target} +{pts} for {AWARD[d.reason] ?? d.reason}</>
 		case 'checked_in':
 			return <>{actor} {d.by === 'qr' ? 'scanned' : 'checked'} {target} into {d.title} (+{pts})</>

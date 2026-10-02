@@ -185,3 +185,38 @@ test('j-board cannot give or set anyone\'s points', { skip }, async () => {
     const row = await prisma.member.findUnique({ where: { userId: member } })
     assert.equal(row.points, 0)
 })
+
+test('following on instagram and joining the discord are given once, and can be taken back', { skip }, async () => {
+    const officer = await person('officer')
+    const member = await person('member')
+    await as(officer, 'officer', async (base) => {
+        const give = (action) => fetch(`${base}/${member}/points`, {
+            method: 'POST',
+            headers: { 'content-type': 'application/json' },
+            body: JSON.stringify({ action })
+        })
+        const undo = (action) => fetch(`${base}/${member}/points/${action}`, { method: 'DELETE' })
+
+        const first = await give('instagram_follow')
+        assert.equal(first.status, 200)
+        assert.deepEqual(await first.json(), { message: '+2 points for instagram_follow', points: 2, awardsClaimed: ['instagram_follow'] })
+        // twice: refused, nothing added
+        assert.equal((await give('instagram_follow')).status, 409)
+
+        // a repost can happen again
+        assert.equal((await give('instagram_repost')).status, 200)
+        assert.equal((await (await give('instagram_repost')).json()).points, 4)
+
+        // taken back: the 2 come off and it can be given again
+        const back = await undo('instagram_follow')
+        assert.equal(back.status, 200)
+        assert.deepEqual((await back.json()).awardsClaimed, [])
+        assert.equal((await undo('instagram_follow')).status, 409)
+        assert.equal((await undo('instagram_repost')).status, 400)
+        assert.equal((await (await give('instagram_follow')).json()).points, 4)
+    })
+    const row = await prisma.member.findUnique({ where: { userId: member } })
+    assert.equal(row.points, 4)
+    const undone = await prisma.activityLog.findFirst({ where: { targetId: member, points: -2 } })
+    assert.deepEqual(undone.details, { reason: 'instagram_follow', undone: true })
+})

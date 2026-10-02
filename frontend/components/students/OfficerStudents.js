@@ -92,6 +92,8 @@ function toRow(row) {
 		// j-board only: the teams they're on (see the role menu's side list)
 		teams: row.jboardTeams ?? [],
 		points: row.points,
+		// the one-time awards they've had (AwardPointsDialog greys those out)
+		claimed: row.awardsClaimed ?? [],
 		joined: String(row.user?.createdAt ?? row.dateJoined ?? '').slice(0, 10),
 		photo: row.user?.profilePicture ?? null,
 	}
@@ -2219,9 +2221,11 @@ export default function OfficerStudents() {
 				<AwardPointsDialog
 					student={awarding}
 					onClose={() => setAwarding(null)}
-					onAwarded={(id, points) =>
+					onAwarded={(id, points, claimed) =>
 						setStudents((prev) =>
-							prev.map((student) => (student.id === id ? { ...student, points } : student))
+							prev.map((student) => (student.id === id
+								? { ...student, points, ...(claimed ? { claimed } : {}) }
+								: student))
 						)}
 				/>
 			)}

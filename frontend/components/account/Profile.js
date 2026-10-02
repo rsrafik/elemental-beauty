@@ -833,7 +833,8 @@ function HistoryDialog({ which, history, error, onClose }) {
 				sub: `${row.type === 'official' ? 'official' : 'social'} event · ${whenLine(row)}`, points: row.points, at: row.date,
 			})),
 			...history.awards.map((row) => ({
-				key: `award-${row.id}`, title: AWARD_REASON[row.reason] ?? 'bonus points',
+				key: `award-${row.id}`,
+				title: `${AWARD_REASON[row.reason] ?? 'bonus points'}${row.undone ? ' — taken back' : ''}`,
 				sub: `from ${row.by} · ${longDate(row.at).toLowerCase()}`, points: row.points, at: row.at,
 			})),
 		].sort((a, b) => String(b.at ?? '').localeCompare(String(a.at ?? '')))

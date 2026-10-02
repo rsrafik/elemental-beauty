@@ -186,6 +186,8 @@ export const members = {
 	// action: instagram_repost | instagram_follow | discord_join — the server
 	// decides what each is worth (src/points.js)
 	awardPoints: (id, action) => api(`/members/${id}/points`, { method: 'POST', body: { action } }),
+	// takes back a one-time award (an instagram follow, joining the discord)
+	undoPoints: (id, action) => api(`/members/${id}/points/${action}`, { method: 'DELETE' }),
 	// a total typed by hand, logged as the difference it makes
 	setPoints: (id, points) => api(`/members/${id}/points`, { method: 'PUT', body: { points } }),
 	// what's behind /account's five numbers: { points, labs, events, awards, earlier }

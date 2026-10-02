@@ -14,19 +14,25 @@ import { members as membersApi } from '@/lib/api'
 // their points, for anything the three don't cover (the server logs the
 // difference).
 //
-//   student   the row: { id, first, last, points }
-//   onAwarded (id, newPoints) — the table updates the cell
+// Following on instagram and joining the discord are one-time (`once`; the
+// server's ONE_TIME_ACTIONS): once given, the button greys out, and clicking
+// it again takes the points back. A repost can be given any number of times.
+//
+//   student   the row: { id, first, last, points, claimed }
+//   onAwarded (id, newPoints, claimed) — the table updates the row
 
 export const AWARDS = [
-	{ action: 'instagram_follow', label: 'followed us on instagram', points: 2 },
+	{ action: 'instagram_follow', label: 'followed us on instagram', points: 2, once: true },
 	{ action: 'instagram_repost', label: 'reposted us on instagram', points: 1 },
-	{ action: 'discord_join', label: 'joined the discord', points: 2 },
+	{ action: 'discord_join', label: 'joined the discord', points: 2, once: true },
 ]
 
 export default function AwardPointsDialog({ student, onClose, onAwarded }) {
 	const [busy, setBusy] = useState(null)
 	const [status, setStatus] = useState(null)
 	const [points, setPoints] = useState(student.points)
+	// which one-time awards they've had
+	const [claimed, setClaimed] = useState(student.claimed ?? [])
 	// the box, as typed — kept a string so it can be cleared while editing
 	const [typed, setTyped] = useState(String(student.points))
 	const typedNumber = Number(typed)
@@ -51,16 +57,25 @@ export default function AwardPointsDialog({ student, onClose, onAwarded }) {
 		}
 	}
 
+	// a one-time award they've had is taken back instead
 	const give = async (award) => {
 		if (busy) return
+		const undo = award.once && claimed.includes(award.action)
 		setBusy(award.action)
 		setStatus(null)
 		try {
-			const reply = await membersApi.awardPoints(student.id, award.action)
+			const reply = undo
+				? await membersApi.undoPoints(student.id, award.action)
+				: await membersApi.awardPoints(student.id, award.action)
 			setPoints(reply.points)
 			setTyped(String(reply.points))
-			onAwarded(student.id, reply.points)
-			setStatus({ text: `+${award.points} for ${award.label} — ${student.first} has ${reply.points} now` })
+			if (reply.awardsClaimed) setClaimed(reply.awardsClaimed)
+			onAwarded(student.id, reply.points, reply.awardsClaimed)
+			setStatus({
+				text: undo
+					? `took back the points for ${award.label} — ${student.first} has ${reply.points} now`
+					: `+${award.points} for ${award.label} — ${student.first} has ${reply.points} now`,
+			})
 		} catch (err) {
 			setStatus({ error: true, text: err.message })
 		} finally {
@@ -147,47 +162,69 @@ export default function AwardPointsDialog({ student, onClose, onAwarded }) {
 						flex-col
 						gap-2
 					">
-						{AWARDS.map((award) => (
-							<li key={award.action}>
-								<button
-									type="button"
-									onClick={() => give(award)}
-									disabled={busy !== null}
-									className={`
-										w-full
-										flex
-										items-center
-										justify-between
-										gap-3
-										rounded-[12px]
-										bg-white
-										px-4
-										py-3
-										text-left
-										font-vietnam
-										text-sm
-										text-black
-										shadow-[0_2px_6px_rgba(0,0,0,0.08)]
-										transition-all
-										duration-200
-										ease-out
-										${busy === null
-											? 'cursor-pointer hover:-translate-y-0.5 hover:shadow-[0_6px_14px_rgba(0,0,0,0.12)]'
-											: 'opacity-60 cursor-wait'}
-									`}
-								>
-									<span>{busy === award.action ? 'giving…' : award.label}</span>
-									<span className="
-										font-beachday
-										text-[22px]
-										leading-none
-										text-salmon-med
-									">
-										+{award.points}
-									</span>
-								</button>
-							</li>
-						))}
+						{AWARDS.map((award) => {
+							// given already: greyed, and a click takes it back
+							const had = award.once && claimed.includes(award.action)
+							return (
+								<li key={award.action}>
+									<button
+										type="button"
+										onClick={() => give(award)}
+										disabled={busy !== null}
+										aria-pressed={award.once ? had : undefined}
+										title={had ? `Already given — click to take the ${award.points} points back` : undefined}
+										className={`
+											w-full
+											flex
+											items-center
+											justify-between
+											gap-3
+											rounded-[12px]
+											px-4
+											py-3
+											text-left
+											font-vietnam
+											text-sm
+											transition-all
+											duration-200
+											ease-out
+											${had
+												? 'bg-black/5 text-black/40'
+												: 'bg-white text-black shadow-[0_2px_6px_rgba(0,0,0,0.08)]'}
+											${busy === null
+												? `cursor-pointer ${had ? 'hover:bg-black/10 hover:text-black/60' : 'hover:-translate-y-0.5 hover:shadow-[0_6px_14px_rgba(0,0,0,0.12)]'}`
+												: 'opacity-60 cursor-wait'}
+										`}
+									>
+										<span>
+											{busy === award.action
+												? (had ? 'taking back…' : 'giving…')
+												: had ? `✓ ${award.label}` : award.label}
+										</span>
+										{had ? (
+											<span className="
+												font-vietnam
+												font-semibold
+												text-xs
+												uppercase
+												tracking-[0.1em]
+											">
+												undo
+											</span>
+										) : (
+											<span className="
+												font-beachday
+												text-[22px]
+												leading-none
+												text-salmon-med
+											">
+												+{award.points}
+											</span>
+										)}
+									</button>
+								</li>
+							)
+						})}
 					</ul>
 
 					{status && (
