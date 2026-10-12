@@ -16,12 +16,15 @@ datasource db {
 
 // Ranked in this order (see requireRole.js). J-board has everything an
 // officer has; only an admin can give it (or any staff role) to anyone.
+// `advisor` is the club's faculty advisor: they see everything an admin sees
+// and change nothing, bar emailing everyone (src/middleware/advisor.js).
 enum MemberRole {
   member
   officer
   jboard
   treasurer
   admin
+  advisor
 
   @@map("member_role")
 }

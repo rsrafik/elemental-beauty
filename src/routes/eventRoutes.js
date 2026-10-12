@@ -79,6 +79,8 @@ const CREATOR = { select: { firstName: true, lastName: true, username: true, mem
 
 // The two extras every event reply carries about its creator: their name, and
 // whether the person asking may edit it. The nested row itself is dropped.
+// The advisor isn't in it: they can't edit anything, so `canEdit` is false for
+// them and the pages open the read-only details instead of the editor.
 const RANK_OFFICER = ['officer', 'jboard', 'treasurer', 'admin']
 function withCreator({ createdBy, ...event }, role) {
     const name = createdBy ? `${createdBy.firstName} ${createdBy.lastName}`.trim() || createdBy.username : null

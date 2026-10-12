@@ -1,5 +1,6 @@
 import jwt from 'jsonwebtoken'
 import prisma from '../prismaClient.js'
+import { ADVISOR_REFUSAL, advisorMayDo } from './advisor.js'
 
 async function authMiddleware(req, res, next) {
     const header = req.headers['authorization']
@@ -38,6 +39,11 @@ async function authMiddleware(req, res, next) {
 
         req.userId = user.userId
         req.role = user.member?.role ?? null
+
+        // an advisor reads everything and changes nothing (see advisor.js)
+        if (req.role === 'advisor' && !advisorMayDo(req.method, req.originalUrl)) {
+            return res.status(403).json({ message: ADVISOR_REFUSAL })
+        }
         next()
     } catch (err) {
         console.error(err.message)

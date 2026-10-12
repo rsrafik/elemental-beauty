@@ -12,7 +12,7 @@ import { useCalendarEventDialogs } from '@/components/calendar/CalendarEventDial
 import { VideoIcon } from '@/components/events/MeetingLink'
 import { calendarOnly, hasMeetingLink } from '@/lib/calendar'
 import { isoDate, prettyTimeRange, shortDate, today } from '@/lib/dates'
-import { canManageLabs, onLeaderboard } from '@/lib/roles'
+import { canChange, canManageLabs, onLeaderboard } from '@/lib/roles'
 
 // Shown to officer / treasurer / admin.
 // Sidebar + a 2x2 grid (quick actions / upcoming / announcement / leaderboard)
@@ -248,6 +248,9 @@ export default function OfficerDashboard() {
 	const role = useRole()
 	// adding labs is for officers and up, not j-board (canManageLabs)
 	const labEditor = canManageLabs(useSession().user)
+	// The advisor sees this dashboard as it is and can only use "Email All":
+	// new event, new lab and the announcement box are greyed for them.
+	const changes = canChange(role)
 	const signOut = useSignOut()
 	const router = useRouter()
 
@@ -499,6 +502,8 @@ export default function OfficerDashboard() {
 					<button
 						type="button"
 						onClick={() => router.push('/events?new=1')}
+						disabled={!changes}
+						title={changes ? undefined : 'Advisors can view everything but can’t make changes'}
 						className="
 						w-full
 						rounded-full
@@ -515,6 +520,10 @@ export default function OfficerDashboard() {
 						hover:-translate-y-0.5
 						hover:shadow-[inset_0px_0px_0px_rgba(0,0,0,0.5)]
 						active:brightness-105
+						disabled:text-black/40
+						disabled:cursor-not-allowed
+						disabled:hover:translate-y-0
+						disabled:hover:shadow-[inset_-5px_-5px_2px_rgba(0,0,0,0.5)]
 					">
 						New Event
 					</button>
@@ -524,7 +533,9 @@ export default function OfficerDashboard() {
 						type="button"
 						onClick={() => router.push('/labs?new=1')}
 						disabled={!labEditor}
-						title={labEditor ? undefined : 'Only officers, the treasurer and admins add labs'}
+						title={labEditor ? undefined : changes
+							? 'Only officers, the treasurer and admins add labs'
+							: 'Advisors can view everything but can’t make changes'}
 						className="
 						w-full
 						rounded-full
@@ -779,7 +790,8 @@ export default function OfficerDashboard() {
 							setDraft(event.target.value)
 							setError(null)
 						}}
-						placeholder="type message here..."
+						placeholder={changes ? 'type message here...' : 'advisors can view but not post'}
+						disabled={!changes}
 						className="
 							mt-4
 							flex-1
@@ -799,7 +811,7 @@ export default function OfficerDashboard() {
 					<button
 						type="button"
 						onClick={post}
-						disabled={draft.trim() === '' || posting}
+						disabled={draft.trim() === '' || posting || !changes}
 						aria-label="Post announcement"
 						className={`
 						absolute

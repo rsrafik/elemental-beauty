@@ -70,6 +70,7 @@ const ROLE_INK = {
 	jboard: 'text-[#6B4FBF] border-[#6B4FBF]/60',
 	treasurer: 'text-yellow-dark border-yellow-dark/60',
 	admin: 'text-green-dark border-green-dark/60',
+	advisor: 'text-[#2D6E75] border-[#2D6E75]/60',
 }
 
 // The colour each number on the counter is written in. Five different inks on

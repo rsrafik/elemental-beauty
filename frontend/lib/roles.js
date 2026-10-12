@@ -10,7 +10,8 @@
 // someone who has an account but no member row yet.
 
 // j-board sits just above officer: everything an officer has, not the
-// treasurer's books.
+// treasurer's books. The advisor ranks with admin, so every page an admin can
+// open is open to them — but they can't change anything there (canChange).
 export const RANK = {
 	user: 0,
 	member: 1,
@@ -18,17 +19,27 @@ export const RANK = {
 	jboard: 3,
 	treasurer: 4,
 	admin: 5,
+	advisor: 5,
 }
 
-// hasRole('officer', role) -> true for officer, j-board, treasurer, admin.
+// hasRole('officer', role) -> true for officer, j-board, treasurer, admin, advisor.
 export function hasRole(min, role) {
 	return (RANK[role] ?? -1) >= (RANK[min] ?? Infinity)
 }
 
-// Who the leaderboard ranks. Officers, treasurers and admins run the board
-// rather than compete on it, so their points never put them on it — the
-// dashboard's podium and the rail on /account both leave them off.
-const OFF_THE_BOARD = ['officer', 'treasurer', 'admin']
+// Whether `role` may change anything at all. Everyone but the advisor — the
+// club's faculty advisor, who sees everything an admin does and changes
+// nothing but "Email All". Pages use it to leave out or grey the controls an
+// advisor can't use; the API refuses those changes regardless
+// (src/middleware/advisor.js).
+export function canChange(role) {
+	return role !== 'advisor'
+}
+
+// Who the leaderboard ranks. Officers, treasurers, admins and the advisor run
+// the board rather than compete on it, so their points never put them on it —
+// the dashboard's podium and the rail on /account both leave them off.
+const OFF_THE_BOARD = ['officer', 'treasurer', 'admin', 'advisor']
 export function onLeaderboard(role) {
 	return !OFF_THE_BOARD.includes(role)
 }
@@ -85,7 +96,7 @@ export function roleLabel(role) {
 // Otherwise j-board opens a lab's check-in page and signs up like a member.
 // Mirrors mayEditLab in src/routes/labRoutes.js, which is the one that counts.
 export function canManageLabs(user) {
-	return hasRole('officer', user?.role) && user.role !== 'jboard'
+	return hasRole('officer', user?.role) && user.role !== 'jboard' && canChange(user.role)
 }
 
 // `lab` is a row off the API (it carries jboardCanEdit for staff)

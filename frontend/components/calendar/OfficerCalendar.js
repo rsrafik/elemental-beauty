@@ -12,7 +12,7 @@ import TeamField from '@/components/events/TeamField'
 import { JoinMeetingButton, MeetingLinkField } from '@/components/events/MeetingLink'
 import { COVER_MAX, shrinkImage } from '@/lib/images'
 import { prettyTimeRange, thisMonth } from '@/lib/dates'
-import { canEditLab, defaultOffTracks, hiddenTracks, tracksChangedFrom } from '@/lib/roles'
+import { canChange, canEditLab, defaultOffTracks, hiddenTracks, tracksChangedFrom } from '@/lib/roles'
 import { useRole, useSession } from '@/lib/session'
 import { useCalendarEventDialogs } from '@/components/calendar/CalendarEventDialogs'
 
@@ -248,7 +248,7 @@ function TypeChip({ label, onRemove }) {
 			text-black
 		">
 			{label}
-			<button
+			{onRemove && <button
 				type="button"
 				onClick={onRemove}
 				aria-label={`Remove ${label}`}
@@ -270,7 +270,7 @@ function TypeChip({ label, onRemove }) {
 				"
 			>
 				<CloseIcon className="w-2.5 h-2.5" />
-			</button>
+			</button>}
 		</span>
 	)
 }
@@ -1273,6 +1273,9 @@ function EventDialog({ categories, onClose, onSave }) {
 
 export default function OfficerCalendar() {
 	const role = useRole()
+	// the advisor reads the calendar and changes none of it: no "add event",
+	// no adding or removing tags (events open read-only — the API's canEdit)
+	const changes = canChange(role)
 	const { user } = useSession()
 	const router = useRouter()
 	// Which month is on screen. Stepping goes through Date so December rolls
@@ -1567,7 +1570,7 @@ export default function OfficerCalendar() {
 						</div>
 					</div>
 
-					<button
+					{changes && <button
 						type="button"
 						onClick={() => setDialogOpen(true)}
 						className="
@@ -1606,7 +1609,7 @@ export default function OfficerCalendar() {
 							group-hover:rotate-90
 						" />
 						add event
-					</button>
+					</button>}
 
 					{/* mt-auto drops both legends to the bottom of the column, so they
 					    finish level with the last rule of the grid. pt-12 keeps them off
@@ -1646,7 +1649,7 @@ export default function OfficerCalendar() {
 								<TypeChip
 									key={type}
 									label={type}
-									onRemove={() => setPendingRemoval(type)}
+									onRemove={changes ? () => setPendingRemoval(type) : null}
 								/>
 							))}
 
@@ -1659,7 +1662,7 @@ export default function OfficerCalendar() {
 									onCommit={commitDraft}
 									onCancel={cancelDraft}
 								/>
-							) : (
+							) : changes && (
 								<AddChip onClick={startAdding} />
 							)}
 						</div>

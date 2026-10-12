@@ -5,6 +5,8 @@ import { useDismiss } from '@/lib/dismiss'
 import { longDate, prettyTimeRange } from '@/lib/dates'
 import { LinkList } from '@/components/events/EventLinks'
 import { capacityField, teamLabel } from '@/lib/calendar'
+import { canChange } from '@/lib/roles'
+import { useRole } from '@/lib/session'
 
 // What the officer calendar opens instead of the editor when the event isn't
 // yours to change: a j-board event an officer, treasurer or admin added, seen
@@ -14,6 +16,8 @@ import { capacityField, teamLabel } from '@/lib/calendar'
 // `event` is the row straight off GET /api/events; `trackLabel` is how the
 // calendar writes its track ('j-board'), so the two can't disagree.
 export default function EventDetailsDialog({ event, trackLabel, onClose }) {
+	// the advisor sees this for every event: they can't change any of them
+	const advisor = !canChange(useRole())
 	const { closing, dismiss } = useDismiss()
 	const close = () => dismiss(onClose)
 
@@ -207,7 +211,9 @@ export default function EventDetailsDialog({ event, trackLabel, onClose }) {
 					text-black/50
 				">
 					{event.creatorName ? `Added by ${event.creatorName}. ` : ''}
-					Only officers and up can change it.
+					{advisor
+						? 'Advisors can view events but not change them.'
+						: 'Only officers and up can change it.'}
 				</p>
 			</div>
 		</div>

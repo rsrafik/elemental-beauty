@@ -11,7 +11,7 @@ import HideFromEventsToggle from '@/components/events/HideFromEventsToggle'
 import { LinksField, cleanLinks } from '@/components/events/EventLinks'
 import TeamField from '@/components/events/TeamField'
 import { MeetingLinkField } from '@/components/events/MeetingLink'
-import { hiddenTracks } from '@/lib/roles'
+import { canChange, hiddenTracks } from '@/lib/roles'
 import { useRole } from '@/lib/session'
 import { splitByDate, CompletedDivider, COMPLETED_CARD } from '@/components/CardSections'
 import { COVER_MAX, shrinkImage } from '@/lib/images'
@@ -224,7 +224,8 @@ function EventCard({ title, date, time, endTime, location, image, onOpen, onEdit
 					</div>
 				</div>
 
-				<button
+				{/* no dots for someone who can't edit (the advisor) */}
+				{onEdit && <button
 					type="button"
 					onClick={(clicked) => {
 						clicked.stopPropagation()
@@ -248,7 +249,7 @@ function EventCard({ title, date, time, endTime, location, image, onOpen, onEdit
 					"
 				>
 					<DotsIcon className="w-4 h-4" />
-				</button>
+				</button>}
 			</div>
 		</div>
 	)
@@ -959,13 +960,15 @@ const GRID = `
 
 export default function OfficerEvents({ openNew = false }) {
 	const router = useRouter()
+	// the advisor sees every event and edits none: no +, no dots
+	const changes = canChange(useRole())
 	const [events, setEvents] = useState([])
 	const [categories, setCategories] = useState([])
 	const [error, setError] = useState(null)
 
 	// null = closed. { event: null } opens an empty dialog, { event } loads that
 	// row into it — one dialog serving both the + and the dots.
-	const [editing, setEditing] = useState(openNew ? { event: null } : null)
+	const [editing, setEditing] = useState(openNew && changes ? { event: null } : null)
 
 	// Closing the form takes `?new` back off the URL, so a refresh doesn't
 	// reopen something you just dismissed. Done on close rather than on arrival
@@ -1091,7 +1094,7 @@ export default function OfficerEvents({ openNew = false }) {
 						{error}
 					</span>
 				)}
-				<button
+				{changes && <button
 					type="button"
 					onClick={() => setEditing({ event: null })}
 					aria-label="New event"
@@ -1122,7 +1125,7 @@ export default function OfficerEvents({ openNew = false }) {
 						ease-out
 						group-hover:drop-shadow-[-2px_2px_1px_rgba(0,0,0,0.5)]
 					" />
-				</button>
+				</button>}
 			</div>
 
 			<div className={GRID}>
@@ -1136,7 +1139,7 @@ export default function OfficerEvents({ openNew = false }) {
 						location={row.location}
 						image={row.image}
 						onOpen={() => router.push(`/events/view?id=${row.id}`)}
-						onEdit={() => setEditing({ event: row })}
+						onEdit={changes ? () => setEditing({ event: row }) : null}
 					/>
 				))}
 			</div>
@@ -1156,7 +1159,7 @@ export default function OfficerEvents({ openNew = false }) {
 								location={row.location}
 								image={row.image}
 								onOpen={() => router.push(`/events/view?id=${row.id}`)}
-								onEdit={() => setEditing({ event: row })}
+								onEdit={changes ? () => setEditing({ event: row }) : null}
 							/>
 						))}
 					</div>

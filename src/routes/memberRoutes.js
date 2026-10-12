@@ -13,7 +13,7 @@ import { log } from '../activity.js'
 
 const router = express.Router()
 
-const ROLES = ['member', 'officer', 'jboard', 'treasurer', 'admin']
+const ROLES = ['member', 'officer', 'jboard', 'treasurer', 'admin', 'advisor']
 
 // Anyone on staff can only be handled by an admin; officers and treasurers are
 // left with plain members. The roster puts this gate on the row's checkbox so
@@ -628,6 +628,11 @@ router.put('/:id/role', requireRole('admin'), async (req, res) => {
         return res.status(400).json({ message: 'You cannot change your own role' })
     }
 
+    // Becoming the advisor opts them out of the club-wide "Email All". Their
+    // role leaves them out by default, but a choice they made as a member
+    // would otherwise carry over; they can switch it back on from /account.
+    const optOut = role === 'advisor' ? { emailClub: false } : {}
+
     try {
         const updated = await prisma.$transaction(async (tx) => {
             const before = await tx.member.findUnique({ where: { userId: targetId }, select: { role: true } })
@@ -642,7 +647,7 @@ router.put('/:id/role', requireRole('admin'), async (req, res) => {
                 if (!user) { throw Object.assign(new Error('Member not found'), { code: 'P2025' }) }
                 await tx.user.update({
                     where: { userId: targetId },
-                    data: { emailVerified: true, waiverSigned: true }
+                    data: { emailVerified: true, waiverSigned: true, ...optOut }
                 })
                 const member = await tx.member.create({ data: { userId: targetId, role } })
                 await log({ actorId: req.userId, action: 'role_changed', targetId, details: { from: 'user', to: role } }, tx)
@@ -654,6 +659,9 @@ router.put('/:id/role', requireRole('admin'), async (req, res) => {
                 // j-board teams go with leaving j-board
                 data: { role, ...(role === 'jboard' ? {} : { jboardTeams: [] }) }
             })
+            if (before.role !== role && role === 'advisor') {
+                await tx.user.update({ where: { userId: targetId }, data: optOut })
+            }
             if (before.role !== role) {
                 await log({ actorId: req.userId, action: 'role_changed', targetId, details: { from: before.role, to: role } }, tx)
             }

@@ -4,7 +4,8 @@ import { useEffect, useState } from 'react'
 import DashboardShell from '@/components/dashboards/DashboardShell'
 import DuesCard from '@/components/analytics/DuesCard'
 import { ReceiptDialog as SubmitReceiptDialog, ReceiptsCard } from '@/components/analytics/OfficerAnalytics'
-import { useCurrentUser } from '@/lib/session'
+import { useCurrentUser, useRole } from '@/lib/session'
+import { canChange } from '@/lib/roles'
 import { useDismiss } from '@/lib/dismiss'
 import {
 	Card,
@@ -474,7 +475,7 @@ function LedgerCard({ tab, onTab, rows, year, onAdd, onEdit, onDelete }) {
 						onChange={setPicked}
 					/>
 
-					<button
+					{onAdd && <button
 						type="button"
 						onClick={onAdd}
 						className="
@@ -511,7 +512,7 @@ function LedgerCard({ tab, onTab, rows, year, onAdd, onEdit, onDelete }) {
 							group-hover:rotate-90
 						" />
 						{ledger.add}
-					</button>
+					</button>}
 				</div>
 			</div>
 
@@ -589,12 +590,14 @@ function LedgerCard({ tab, onTab, rows, year, onAdd, onEdit, onDelete }) {
 										justify-end
 										gap-2
 									">
-										<RowButton label={row.grantId ? 'Edit the grant' : 'Edit'} onClick={() => onEdit(row)}>
-											<PencilIcon className="w-4 h-4" />
-										</RowButton>
+										{onEdit && (
+											<RowButton label={row.grantId ? 'Edit the grant' : 'Edit'} onClick={() => onEdit(row)}>
+												<PencilIcon className="w-4 h-4" />
+											</RowButton>
+										)}
 										{/* a grant's row goes when the grant is un-awarded or
 										    deleted, from the tracker — not from here */}
-										{!row.grantId && (
+										{onDelete && !row.grantId && (
 											<RowButton label="Delete" tone="danger" onClick={() => onDelete(row)}>
 												<TrashIcon className="w-4 h-4" />
 											</RowButton>
@@ -1392,16 +1395,27 @@ function RequestQueue({ requests, filter, onFilter, onApprove, onDeny, onReimbur
 											min-w-0
 											flex-1
 										">
-											<p className="
-												font-vietnam
-												font-semibold
-												text-sm
-												text-black
-												truncate
+											{/* only the title gives way when the column is
+											    narrow — the number and the "resent" tag stay
+											    whole after it, rather than being cut off with it */}
+											<div className="
+												flex
+												items-center
+												gap-2
+												min-w-0
 											">
-												{request.what}
+												<p className="
+													min-w-0
+													font-vietnam
+													font-semibold
+													text-sm
+													text-black
+													truncate
+												">
+													{request.what}
+												</p>
 												<span className="
-													ml-2
+													shrink-0
 													font-vietnam
 													text-xs
 													text-black/35
@@ -1415,7 +1429,7 @@ function RequestQueue({ requests, filter, onFilter, onApprove, onDeny, onReimbur
 													<span
 														title={`previously denied: ${request.previousDenial}`}
 														className="
-															ml-2
+															shrink-0
 															rounded-full
 															bg-yellow-light
 															px-2
@@ -1431,7 +1445,7 @@ function RequestQueue({ requests, filter, onFilter, onApprove, onDeny, onReimbur
 														resent
 													</span>
 												)}
-											</p>
+											</div>
 
 											{/* once it's been turned down, the reason is the thing
 											    worth reading on the row */}
@@ -1515,7 +1529,7 @@ function RequestQueue({ requests, filter, onFilter, onApprove, onDeny, onReimbur
 										justify-end
 										gap-2
 									">
-										{request.status === 'pending' && (
+										{onApprove && request.status === 'pending' && (
 											<>
 												<QueueAction
 													label="approve"
@@ -1534,7 +1548,7 @@ function RequestQueue({ requests, filter, onFilter, onApprove, onDeny, onReimbur
 											</>
 										)}
 
-										{request.status === 'approved' && (
+										{onReimburse && request.status === 'approved' && (
 											<>
 												<QueueAction
 													label="reimburse"
@@ -1732,6 +1746,10 @@ function YearsDialog({ years, current, contentsOf, onAdd, onRemove, onClose }) {
 // ---- page ------------------------------------------------------------------
 
 export default function TreasurerAnalytics() {
+	// The advisor gets this page — every ledger, the whole queue, dues — with
+	// every control for keeping the books taken off: no adding, editing,
+	// deleting, settling, targets or years (canChange). The CSV still exports.
+	const changes = canChange(useRole())
 	const [income, setIncome] = useState([])
 	const [expenses, setExpenses] = useState([])
 	const [grants, setGrants] = useState([])
@@ -2125,7 +2143,7 @@ export default function TreasurerAnalytics() {
 						labelFor={yearLabel}
 						label="School year"
 						extraLabel="+ add or remove years…"
-						onExtra={() => setEditingYears(true)}
+						onExtra={changes ? () => setEditingYears(true) : undefined}
 					/>
 					{error && (
 						<span className="
@@ -2162,8 +2180,8 @@ export default function TreasurerAnalytics() {
 
 					<GrantTracker
 						grants={yearGrants}
-						onEdit={(grant) => setEditing({ kind: 'grants', row: grant })}
-						onAdd={() => setEditing({ kind: 'grants', row: null })}
+						onEdit={changes ? (grant) => setEditing({ kind: 'grants', row: grant }) : undefined}
+						onAdd={changes ? () => setEditing({ kind: 'grants', row: null }) : undefined}
 					/>
 				</div>
 
@@ -2181,7 +2199,7 @@ export default function TreasurerAnalytics() {
 						total={total(yearIncome)}
 						goal={forYear(goals, shownYear)}
 						goalNote="income goal"
-						onGoal={allYears ? undefined : (amount) => setTarget('incomeGoal', amount)}
+						onGoal={allYears || !changes ? undefined : (amount) => setTarget('incomeGoal', amount)}
 						tint="bg-green"
 						year={shownYear}
 					/>
@@ -2193,7 +2211,7 @@ export default function TreasurerAnalytics() {
 						total={total(yearExpenses)}
 						goal={forYear(budgets, shownYear)}
 						goalNote="budget spent"
-						onGoal={allYears ? undefined : (amount) => setTarget('expenseBudget', amount)}
+						onGoal={allYears || !changes ? undefined : (amount) => setTarget('expenseBudget', amount)}
 						tint="bg-orange"
 						year={shownYear}
 					/>
@@ -2207,13 +2225,13 @@ export default function TreasurerAnalytics() {
 					onTab={setTab}
 					rows={rows}
 					year={shownYear}
-					onAdd={() => setEditing({ kind: tab, row: null })}
-					onEdit={(row) => {
+					onAdd={changes ? () => setEditing({ kind: tab, row: null }) : undefined}
+					onEdit={changes ? (row) => {
 						// a grant's income row is edited as the grant it is
 						const grant = row.grantId && grants.find((entry) => entry.id === row.grantId)
 						setEditing(grant ? { kind: 'grants', row: grant } : { kind: tab, row })
-					}}
-					onDelete={(row) => setDeleting({ kind: tab, row })}
+					} : undefined}
+					onDelete={changes ? (row) => setDeleting({ kind: tab, row }) : undefined}
 				/>
 
 				{/* their own receipts beside everyone's — the queue only gets
@@ -2224,21 +2242,25 @@ export default function TreasurerAnalytics() {
 					gap-6
 					2xl:grid-cols-3
 				">
-					<ReceiptsCard
-						receipts={mineOpen}
-						onSubmit={() => setComposing({ request: null })}
-						onRevise={(request) => setComposing({ request })}
-						onRevoke={setRevoking}
-					/>
+					{/* the advisor has no receipts of their own to hand in, and
+					    reads the queue without settling any of it */}
+					{changes && (
+						<ReceiptsCard
+							receipts={mineOpen}
+							onSubmit={() => setComposing({ request: null })}
+							onRevise={(request) => setComposing({ request })}
+							onRevoke={setRevoking}
+						/>
+					)}
 
-					<div className="2xl:col-span-2">
+					<div className={changes ? '2xl:col-span-2' : '2xl:col-span-3'}>
 						<RequestQueue
 							requests={queue}
 							filter={queueFilter}
 							onFilter={setQueueFilter}
-							onApprove={approve}
-							onDeny={setDenying}
-							onReimburse={reimburse}
+							onApprove={changes ? approve : undefined}
+							onDeny={changes ? setDenying : undefined}
+							onReimburse={changes ? reimburse : undefined}
 							onView={setViewing}
 						/>
 					</div>
@@ -2249,6 +2271,7 @@ export default function TreasurerAnalytics() {
 						key={`${shownYear}-${duesVersion}`}
 						year={shownYear}
 						onChange={() => load().catch((err) => setError(err.message))}
+						readOnly={!changes}
 					/>
 				)}
 			</div>

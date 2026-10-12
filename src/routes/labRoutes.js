@@ -10,7 +10,10 @@ import { readEndTime } from '../clubTime.js'
 import { DUES_ANSWERS, duesAnswerProblem, duesLookup, duesOwed, duesUnpaid, settleDues } from '../dues.js'
 
 const router = express.Router()
-const RANK_OFFICER = ['officer', 'jboard', 'treasurer', 'admin']
+// the advisor is in both lists below so they see what staff see — drafts,
+// every lab unlocked; the changes these lists allow are refused to them
+// before any route runs (src/middleware/advisor.js)
+const RANK_OFFICER = ['officer', 'jboard', 'treasurer', 'admin', 'advisor']
 
 // Who may write a lab — its details, lesson, quiz and publishing: officers,
 // the treasurer and admins, always; j-board only on a lab one of those has
@@ -19,7 +22,7 @@ const RANK_OFFICER = ['officer', 'jboard', 'treasurer', 'admin']
 // with officers and up. Everyone else in j-board runs a lab's door like any
 // officer and signs up for it like a member. Mirrors canEditLab in
 // frontend/lib/roles.js.
-const LAB_STAFF = ['officer', 'treasurer', 'admin']
+const LAB_STAFF = ['officer', 'treasurer', 'admin', 'advisor']
 
 async function mayEditLab(req, labId) {
     if (LAB_STAFF.includes(req.role)) { return true }

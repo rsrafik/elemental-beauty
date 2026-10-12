@@ -2,7 +2,7 @@
 
 import { useEffect, useLayoutEffect, useRef, useState } from 'react'
 import DashboardShell from '@/components/dashboards/DashboardShell'
-import { hasRole, onLeaderboard, roleLabel } from '@/lib/roles'
+import { canChange, hasRole, onLeaderboard, roleLabel } from '@/lib/roles'
 import { useRole, useSession } from '@/lib/session'
 import { members as membersApi } from '@/lib/api'
 import { TEAMS, teamLabel } from '@/lib/calendar'
@@ -45,7 +45,7 @@ import ActivityLog from '@/components/students/ActivityLog'
 
 // What a role can be changed to, or added as. 'user' isn't one — it's the
 // absence of a member row, which only the waiver or deleting the row changes.
-const ROLES = ['member', 'officer', 'jboard', 'treasurer', 'admin']
+const ROLES = ['member', 'officer', 'jboard', 'treasurer', 'admin', 'advisor']
 
 // What the filter offers: every role on the sheet, 'user' included.
 const FILTER_ROLES = ['user', ...ROLES]
@@ -60,6 +60,7 @@ const ROLE_ORDER = {
 	jboard: 3,
 	treasurer: 4,
 	admin: 5,
+	advisor: 6,
 }
 
 const ROLE_PILL = {
@@ -69,6 +70,7 @@ const ROLE_PILL = {
 	jboard: 'bg-[#E8DEFF] text-[#6B4FBF]',
 	treasurer: 'bg-yellow-light text-yellow-dark',
 	admin: 'bg-green text-green-dark',
+	advisor: 'bg-[#D8EEF0] text-[#2D6E75]',
 }
 
 // GET /members returns a member row with its user row nested inside it. The
@@ -1493,12 +1495,18 @@ export default function OfficerStudents() {
 	// Anyone on staff can only be removed by an admin; officers and treasurers
 	// are left with plain members. Same rule the API has to enforce for real —
 	// this only keeps the UI from offering what the server would refuse.
-	const isAdmin = hasRole('admin', role)
+	//
+	// The advisor sees the roster as an admin does — every role, every
+	// address, the activity log — and changes none of it: no adding, removing,
+	// roles or points (canChange).
+	const changes = canChange(role)
+	const isAdmin = hasRole('admin', role) && changes
 	// j-board sees everyone's points but can't change them (no "+")
-	const canGivePoints = role !== 'jboard'
+	const canGivePoints = role !== 'jboard' && changes
 	// You can never remove yourself from the roster — leaving is /account's
 	// "delete my account" (DELETE /auth/me), not something done from here.
 	const canRemove = (student) =>
+		changes &&
 		student.id !== user?.userId &&
 		(isAdmin || student.role === 'member' || student.role === 'user')
 
@@ -1963,7 +1971,9 @@ export default function OfficerStudents() {
 												title={
 													canRemove(student)
 														? undefined
-														: `only an admin can remove ${roleLabel(student.role)}s`
+														: changes
+															? `only an admin can remove ${roleLabel(student.role)}s`
+															: 'advisors can view the roster but not change it'
 												}
 											/>
 										</td>
@@ -2023,7 +2033,7 @@ export default function OfficerStudents() {
 												<RoleTag
 													role={student.role}
 													teams={student.teams}
-													title="only an admin can change roles"
+													title={changes ? 'only an admin can change roles' : 'advisors can view roles but not change them'}
 												/>
 											)}
 										</td>

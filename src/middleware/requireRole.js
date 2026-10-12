@@ -1,11 +1,14 @@
 // j-board sits just above officer: everything an officer can do, but not the
-// treasurer's books
+// treasurer's books. The advisor ranks with admin — they can open everything
+// an admin can — but every change they'd make is refused before it gets this
+// far (authMiddleware, see advisor.js).
 const RANK = {
     member: 1,
     officer: 2,
     jboard: 3,
     treasurer: 4,
-    admin: 5
+    admin: 5,
+    advisor: 5
 }
 
 function requireRole(minRole) {

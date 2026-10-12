@@ -10,6 +10,8 @@
 //   treasurer / treasurer   the same pages, with /analytics as the full ledger
 //   admin / admin           outranks everyone; the only role that can change
 //                           other people's roles or remove staff
+//   advisor / advisor       the faculty advisor: sees everything admin does,
+//                           changes nothing but "Email All"
 //
 // The password is the username in every case. This is a trial fixture and
 // nothing here should ever be run against real data — it starts by deleting
@@ -39,7 +41,8 @@ const ACCOUNTS = [
     { username: 'officer', firstName: 'Ola', lastName: 'Harris', role: 'officer', points: 240 },
     { username: 'jboard', firstName: 'Jada', lastName: 'Brooks', role: 'jboard', points: 180 },
     { username: 'treasurer', firstName: 'Tess', lastName: 'Nelson', role: 'treasurer', points: 130 },
-    { username: 'admin', firstName: 'Ada', lastName: 'White', role: 'admin', points: 310 }
+    { username: 'admin', firstName: 'Ada', lastName: 'White', role: 'admin', points: 310 },
+    { username: 'advisor', firstName: 'Avery', lastName: 'Lowe', role: 'advisor', points: 0 }
 ]
 
 // Enough other members that the leaderboard, the rank rail on /account and the

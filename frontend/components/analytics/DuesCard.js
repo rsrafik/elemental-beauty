@@ -60,7 +60,9 @@ function SmallButton({ onClick, disabled, tone = 'plain', title, children }) {
 	)
 }
 
-export default function DuesCard({ year, onChange }) {
+// `readOnly` is the advisor's copy: who's paid and the year's figures, with
+// nothing to mark, undo, clear or reprice.
+export default function DuesCard({ year, onChange, readOnly = false }) {
 	const [data, setData] = useState(null)
 	const [error, setError] = useState(null)
 	const [busy, setBusy] = useState(null)
@@ -174,6 +176,7 @@ export default function DuesCard({ year, onChange }) {
 						value={amountDraft}
 						onChange={setAmountDraft}
 						onSave={saveFigure('duesAmount', amountDraft)}
+						disabled={readOnly}
 						aria={`Dues owed per member for ${year}`}
 					/>
 					{/* what someone unpaid is charged for one lab or members-only
@@ -184,6 +187,7 @@ export default function DuesCard({ year, onChange }) {
 						value={priceDraft}
 						onChange={setPriceDraft}
 						onSave={saveFigure('nonmemberPrice', priceDraft)}
+						disabled={readOnly}
 						aria={`Non-member price per lab or members-only event for ${year}`}
 					/>
 				</div>
@@ -237,13 +241,13 @@ export default function DuesCard({ year, onChange }) {
 						</button>
 					))}
 				</div>
-				<SmallButton
+				{!readOnly && <SmallButton
 					onClick={() => setClearing(true)}
 					disabled={paid.length === 0 || busy === 'clear'}
 					title={`Mark everyone unpaid for ${year} — the money already paid stays in the ledger`}
 				>
 					{busy === 'clear' ? 'clearing…' : 'clear'}
-				</SmallButton>
+				</SmallButton>}
 			</div>
 
 			{error && (
@@ -314,10 +318,21 @@ export default function DuesCard({ year, onChange }) {
 											? `paid ${money(member.payment.amount)} · ${prettyDate(member.payment.paidOn)}`
 											: 'waived'}
 									</span>
-									<SmallButton tone="quiet" onClick={() => undo(member)} disabled={working} title="Take this payment back (its ledger row goes too)">
-										{working ? '…' : 'undo'}
-									</SmallButton>
+									{!readOnly && (
+										<SmallButton tone="quiet" onClick={() => undo(member)} disabled={working} title="Take this payment back (its ledger row goes too)">
+											{working ? '…' : 'undo'}
+										</SmallButton>
+									)}
 								</div>
+							) : readOnly ? (
+								<span className="
+									font-vietnam
+									text-xs
+									font-semibold
+									text-black/40
+								">
+									unpaid
+								</span>
 							) : (
 								<div className="
 									flex
@@ -369,7 +384,7 @@ export default function DuesCard({ year, onChange }) {
 
 // One of the two figures at the top: a label, then a dollar box saved when
 // it's left (or on enter).
-function MoneyField({ label, title, value, onChange, onSave, aria }) {
+function MoneyField({ label, title, value, onChange, onSave, aria, disabled = false }) {
 	return (
 		<label
 			title={title}
@@ -408,7 +423,8 @@ function MoneyField({ label, title, value, onChange, onSave, aria }) {
 					onKeyDown={(event) => event.key === 'Enter' && event.currentTarget.blur()}
 					placeholder="0"
 					aria-label={aria}
-					className={`${FIELD} pl-7 tabular-nums`}
+					disabled={disabled}
+					className={`${FIELD} pl-7 tabular-nums disabled:opacity-60 disabled:cursor-not-allowed`}
 				/>
 			</span>
 		</label>

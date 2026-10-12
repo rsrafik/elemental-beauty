@@ -31,9 +31,11 @@ export default function LabAccessGuard({ id, children }) {
 	if (allowed === null) return null
 	if (!allowed) {
 		return (
-			<NoAccess message={id
-				? 'J-board can edit this lab once e-board allows it from its menu.'
-				: 'Only e-board, the treasurer and admins add labs.'} />
+			<NoAccess message={user?.role === 'advisor'
+				? 'Advisors can view labs but not add or edit them.'
+				: id
+					? 'J-board can edit this lab once e-board allows it from its menu.'
+					: 'Only e-board, the treasurer and admins add labs.'} />
 		)
 	}
 	return children

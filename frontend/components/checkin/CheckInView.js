@@ -1,6 +1,8 @@
 'use client'
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { canChange } from '@/lib/roles'
+import { useRole } from '@/lib/session'
 import DashboardShell from '@/components/dashboards/DashboardShell'
 import { BackButton, metaLine, useDesignZoom } from '@/components/labs/LabViewParts'
 import QrScanner from '@/components/checkin/QrScanner'
@@ -417,6 +419,10 @@ function ManualAdd({ onAdd, people }) {
 
 export default function CheckInView({ kind, id }) {
 	const api = API[kind]
+	// The advisor sees the door as it stands — who's signed up, who's in, the
+	// waitlist — and can email everyone or download the attendance, but runs
+	// none of it: no camera, no ticks or crosses, no confirmations or prelab.
+	const changes = canChange(useRole())
 	const zoom = useDesignZoom()
 	const [emailing, setEmailing] = useState(false)
 	const [confirming, setConfirming] = useState(false)
@@ -681,7 +687,7 @@ export default function CheckInView({ kind, id }) {
 					gap-6
 					lg:gap-[33.8px]
 				">
-					<QrScanner onScan={scanned} />
+					{changes && <QrScanner onScan={scanned} />}
 
 					<div className="
 						w-full
@@ -739,13 +745,15 @@ export default function CheckInView({ kind, id }) {
 									</EditorButton>
 									{/* asks everyone signed up to confirm their spot, with the
 									    prelab attached (src/offers.js) */}
-									<EditorButton
-										className={BUTTON}
-										title={`Ask ${unconfirmed} ${unconfirmed === 1 ? 'person' : 'people'} to confirm their spot`}
-										onClick={() => setConfirming(true)}
-									>
-										confirmation
-									</EditorButton>
+									{changes && (
+										<EditorButton
+											className={BUTTON}
+											title={`Ask ${unconfirmed} ${unconfirmed === 1 ? 'person' : 'people'} to confirm their spot`}
+											onClick={() => setConfirming(true)}
+										>
+											confirmation
+										</EditorButton>
+									)}
 									{/* everyone on the list as a spreadsheet — who came, who
 									    didn't — for the reports the university asks for */}
 									<EditorButton
@@ -756,7 +764,7 @@ export default function CheckInView({ kind, id }) {
 									>
 										{exporting ? 'saving…' : 'attendance csv'}
 									</EditorButton>
-									{kind === 'lab' && (
+									{kind === 'lab' && changes && (
 										<EditorButton
 											className={BUTTON}
 											disabled={prelabBusy}
@@ -767,7 +775,7 @@ export default function CheckInView({ kind, id }) {
 											</IconLabel>
 										</EditorButton>
 									)}
-									{early && (
+									{early && changes && (
 										<EditorButton
 											className={`
 												${BUTTON}
@@ -823,14 +831,18 @@ export default function CheckInView({ kind, id }) {
 												>
 													{item.prelabPdfName}
 												</button>
-												{' · '}
-												<button
-													type="button"
-													onClick={removePrelab}
-													className="cursor-pointer hover:text-salmon-dark"
-												>
-													remove
-												</button>
+												{changes && (
+													<>
+														{' · '}
+														<button
+															type="button"
+															onClick={removePrelab}
+															className="cursor-pointer hover:text-salmon-dark"
+														>
+															remove
+														</button>
+													</>
+												)}
 											</p>
 										)}
 									</>
@@ -881,7 +893,7 @@ export default function CheckInView({ kind, id }) {
 										items-center
 										gap-[8px]
 									">
-										<RowButton
+										{changes && <RowButton
 											tone={row.offerSentAt ? 'blue-sent' : 'blue'}
 											label={row.offerSentAt
 												? `Offer sent to ${fullName(row)} ${ago(row.offerSentAt)} — send again`
@@ -890,7 +902,7 @@ export default function CheckInView({ kind, id }) {
 											disabled={busy.has(row.memberId)}
 										>
 											<EnvelopeIcon className="w-[16px] h-[16px]" />
-										</RowButton>
+										</RowButton>}
 										<Person row={row} />
 									</div>
 								) : (
@@ -898,7 +910,7 @@ export default function CheckInView({ kind, id }) {
 										<Person row={row} note={<ConfirmNote row={row} />} />
 									</div>
 								)}
-								<div className="
+								{changes && <div className="
 									flex
 									gap-[15.5px]
 								">
@@ -918,7 +930,7 @@ export default function CheckInView({ kind, id }) {
 									>
 										<CrossIcon className="w-[20px] h-[20px]" />
 									</RowButton>
-								</div>
+								</div>}
 							</Row>
 						))}
 					</Column>
@@ -930,14 +942,14 @@ export default function CheckInView({ kind, id }) {
 								<div className="pl-[18px] min-w-0">
 									<Person row={row} />
 								</div>
-								<RowButton
+								{changes && <RowButton
 									tone="red"
 									label={`Undo ${fullName(row)}'s check-in`}
 									onClick={() => act(row.memberId, 'uncheck')}
 									disabled={busy.has(row.memberId)}
 								>
 									<CrossIcon className="w-[20px] h-[20px]" />
-								</RowButton>
+								</RowButton>}
 							</Row>
 						))}
 					</Column>
@@ -945,7 +957,7 @@ export default function CheckInView({ kind, id }) {
 					<Column
 						title="waitlist"
 						count={waitlist.length}
-						footer={<ManualAdd onAdd={add} people={people} />}
+						footer={changes ? <ManualAdd onAdd={add} people={people} /> : null}
 					>
 						{waitlist.length === 0 && <Empty>nobody on the waitlist</Empty>}
 						{waitlist.map((row, i) => (
@@ -953,7 +965,7 @@ export default function CheckInView({ kind, id }) {
 								<div className="pl-[27.5px] min-w-0">
 									<Person row={row} number={i + 1} />
 								</div>
-								<div className="
+								{changes && <div className="
 									flex
 									gap-[10px]
 								">
@@ -973,7 +985,7 @@ export default function CheckInView({ kind, id }) {
 									>
 										<CrossIcon className="w-[20px] h-[20px]" />
 									</RowButton>
-								</div>
+								</div>}
 							</Row>
 						))}
 					</Column>

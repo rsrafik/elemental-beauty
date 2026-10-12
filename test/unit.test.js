@@ -9,6 +9,7 @@ import { readMessage } from '../src/emailAll.js'
 import { fromEmail } from '../src/accountEmail.js'
 import { schoolYearOf } from '../src/dues.js'
 import { wipeProblem } from '../scripts/localDatabase.js'
+import { advisorMayDo } from '../src/middleware/advisor.js'
 
 // ---- the club's clock ------------------------------------------------------
 
@@ -131,4 +132,28 @@ test('the seed and reset only wipe a database on this machine', () => {
     assert.match(at('postgresql://postgres:pw@localhost:5433/elemental', 'production'), /production/)
     assert.match(at(undefined), /not set/)
     assert.match(at('not a url'), /not a valid URL/)
+})
+
+// ---- the advisor -----------------------------------------------------------
+
+test('an advisor can read anything but only change email-all and their own account', () => {
+    // reads, anywhere
+    assert.equal(advisorMayDo('GET', '/api/transactions?from=2026-01-01'), true)
+    assert.equal(advisorMayDo('HEAD', '/api/members'), true)
+    // the email-alls
+    assert.equal(advisorMayDo('POST', '/api/members/email-all'), true)
+    assert.equal(advisorMayDo('POST', '/api/labs/12/email-all'), true)
+    assert.equal(advisorMayDo('POST', '/api/events/3/email-all'), true)
+    // their own account
+    assert.equal(advisorMayDo('PUT', '/api/members/me'), true)
+    assert.equal(advisorMayDo('DELETE', '/api/auth/me'), true)
+    // everything else that changes something
+    assert.equal(advisorMayDo('POST', '/api/labs'), false)
+    assert.equal(advisorMayDo('PUT', '/api/members/5/role'), false)
+    assert.equal(advisorMayDo('POST', '/api/announcements'), false)
+    assert.equal(advisorMayDo('DELETE', '/api/events/3'), false)
+    assert.equal(advisorMayDo('POST', '/api/labs/12/checkin'), false)
+    assert.equal(advisorMayDo('PUT', '/api/members/email-all'), false)
+    // a look-alike path doesn't slip through
+    assert.equal(advisorMayDo('POST', '/api/labs/12/email-all/extra'), false)
 })

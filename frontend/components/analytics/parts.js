@@ -999,6 +999,7 @@ function TrendTag({ change, good }) {
 	return (
 		<span className={`
 			inline-flex
+			shrink-0
 			items-center
 			gap-1
 			rounded-full
@@ -1007,6 +1008,7 @@ function TrendTag({ change, good }) {
 			font-vietnam
 			font-semibold
 			text-[11px]
+			whitespace-nowrap
 			${helping ? 'bg-green/40 text-green-dark' : 'bg-salmon-lightest text-salmon-dark'}
 		`}>
 			<ArrowIcon up={up} className="w-2.5 h-2.5" />
@@ -1043,19 +1045,27 @@ export function StatCard({ label, stat, icon, tint, good }) {
 				<CardTitle>{label}</CardTitle>
 			</div>
 
+			{/* the change sits beside the figure when there's room, and wraps
+			    under it on a narrow card rather than running off its edge. The
+			    figure shrinks with the card (a container query on this row), so
+			    a four-figure balance still fits a third of a narrow page. */}
 			<div className="
+				@container
 				mt-4
 				flex
+				flex-wrap
 				items-end
-				gap-2
+				gap-x-2
+				gap-y-1.5
 			">
 				<p className="
 					font-vietnam
 					font-bold
-					text-[30px]
+					text-[clamp(18px,16cqi,30px)]
 					leading-none
 					text-black
 					tabular-nums
+					whitespace-nowrap
 				">
 					{money(stat.value)}
 				</p>
