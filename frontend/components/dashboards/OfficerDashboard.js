@@ -9,8 +9,8 @@ import { announcements as announcementsApi, eventCategories, events as eventsApi
 import EmailAllPopup from '@/components/EmailAllPopup'
 import { useUnsavedChanges } from '@/components/LeaveGuard'
 import { useCalendarEventDialogs } from '@/components/calendar/CalendarEventDialogs'
-import { JoinMeetingButton } from '@/components/events/MeetingLink'
-import { STAFF_TRACKS, calendarOnly, hasMeetingLink } from '@/lib/calendar'
+import { VideoIcon } from '@/components/events/MeetingLink'
+import { calendarOnly, hasMeetingLink } from '@/lib/calendar'
 import { isoDate, shortDate, today } from '@/lib/dates'
 import { canManageLabs, onLeaderboard } from '@/lib/roles'
 
@@ -131,20 +131,56 @@ const attending = (row) =>
 
 // What goes under a ring's title: how many are coming — or, for a calendar-only
 // event, which nobody signs up for, its "join" button if it has a meeting link
-// and nothing if it doesn't. `className` is the ring's own spacing.
-function RingDetail({ row, className = '' }) {
+// and nothing if it doesn't. The button is the ring's own colour (`fill`, its
+// background class), pressed into it with an inset shadow. `className` is the
+// ring's own spacing round it, past the gap under the title.
+function RingDetail({ row, fill, className = '' }) {
 	if (!row) return null
 	if (row.event) {
+		if (!row.meetingUrl) return null
+		// The dashboard's own "join", not the calendar's pill
+		// (JoinMeetingButton): bigger, to sit under a big title. A link, so
+		// it opens like any other; the click stops here so it doesn't also
+		// open the event.
 		return (
-			<JoinMeetingButton
-				url={row.meetingUrl}
-				tone={STAFF_TRACKS[row.track]?.pill}
-				className={className}
-			/>
+			<a
+				href={row.meetingUrl}
+				target="_blank"
+				rel="noopener noreferrer"
+				onClick={(clicked) => clicked.stopPropagation()}
+				className={`
+					mt-3
+					inline-flex
+					items-center
+					gap-2
+					rounded-full
+					${fill}
+					px-5
+					py-2
+					font-vietnam
+					font-semibold
+					text-[15px]
+					sm:text-[17px]
+					leading-none
+					text-black
+					whitespace-nowrap
+					shadow-[inset_3px_3px_5px_rgba(0,0,0,0.45)]
+					transition-transform
+					duration-150
+					ease-out
+					hover:-translate-y-0.5
+					active:translate-y-0
+					${className}
+				`}
+			>
+				<VideoIcon className="w-[18px] h-[18px] shrink-0" />
+				join
+			</a>
 		)
 	}
 	return (
 		<h3 className={`
+			mt-1
 			text-black
 			font-vietnam
 			text-sm
@@ -538,8 +574,8 @@ export default function OfficerDashboard() {
 							</h2>
 							<RingDetail
 								row={upcoming[2]}
+								fill="bg-orange-light"
 								className="
-									mt-1
 									ml-4
 									sm:ml-8
 									lg:ml-20
@@ -588,7 +624,7 @@ export default function OfficerDashboard() {
 							">
 								{upcoming[1]?.title ?? ''}
 							</h2>
-							<RingDetail row={upcoming[1]} className="mt-1" />
+							<RingDetail row={upcoming[1]} fill="bg-orange-lighter" />
 						</div>
                     </div>
 					<div {...ring(upcoming[0])} className={`
@@ -634,7 +670,7 @@ export default function OfficerDashboard() {
 							">
 								{upcoming[0]?.title ?? ''}
 							</h2>
-							<RingDetail row={upcoming[0]} className="mt-1" />
+							<RingDetail row={upcoming[0]} fill="bg-orange-lightest" />
 						</div>
                     </div>
 

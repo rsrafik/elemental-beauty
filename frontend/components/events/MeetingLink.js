@@ -29,7 +29,7 @@ export function MeetingLinkField({ value, onChange, fieldClass, Label }) {
 	)
 }
 
-function VideoIcon({ className = '' }) {
+export function VideoIcon({ className = '' }) {
 	return (
 		<svg
 			viewBox="0 0 24 24"
