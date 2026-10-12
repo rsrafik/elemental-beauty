@@ -43,6 +43,11 @@ const LG = 1024
 // window. Its top is this far down the page, in design pixels.
 const LESSON_TOP = 74.4
 
+// Below `lg`: the menu bar (64px, stuck 16–24px from the top), the gap under
+// it and the page's bottom padding — what the lesson viewer leaves of the
+// window's height.
+const MOBILE_CHROME = 128
+
 // ---- the right-hand column -------------------------------------------------
 //
 // In the mockups everything on the right shares one column: the lesson
@@ -189,10 +194,13 @@ export default function MemberLabContent({ lab }) {
 
 	// From the viewer's top to the bottom of the window, in the right column's
 	// own (twice-zoomed) pixels — and the bottom padding it reaches through to
-	// get there.
+	// get there. On a phone it's the window less the sticky menu bar above it
+	// and the page's padding below, so scrolled up under the bar the whole
+	// viewer fits on screen, bottom edge and all. `svh` is the height with
+	// the browser's toolbars showing, so it doesn't change as they hide.
 	const lessonHeight = wide
 		? ((height - SHELL_PAD) / zoom - LESSON_TOP) / viewZoom
-		: Math.round(height * 0.8)
+		: `calc(100svh - ${MOBILE_CHROME}px)`
 
 	return (
 		<div
@@ -361,6 +369,7 @@ export default function MemberLabContent({ lab }) {
 								file={lab.lessonFile}
 								fileName={lab.lessonPdfName}
 								zoom={zoom * viewZoom}
+								closed={!wide}
 								style={{ height: lessonHeight }}
 							/>
 						) : (

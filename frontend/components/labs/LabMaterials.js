@@ -11,7 +11,9 @@ import { parseSections } from '@/lib/labContent'
 // full, then over to the right — which is what CSS columns do with a fixed
 // height and `column-fill: auto`. A lab with more than two columns' worth
 // would spill into a third column out of sight, so if that happens the card
-// stops holding its height and balances the two columns instead.
+// stops holding its height and wraps instead: the sections go two to a row,
+// row after row underneath. (A card that's one long section has nothing to
+// put side by side, so it balances its two columns instead.)
 
 // A touch bigger than the mockup's 12px on 14.4, which read small in the
 // cards once they grew to fill the column.
@@ -34,15 +36,49 @@ function Sections({ text, className = '' }) {
 	// Measured by the observer rather than in the effect itself, and latched:
 	// once the card has let go of its height the columns stop overflowing, and
 	// flipping back would only make it overflow again.
+	//
+	// The sections are watched as well as the box: the web font arriving makes
+	// them taller without the box changing size, and that's often what pushes
+	// the last one over. And the last section's edge is checked as well as the
+	// scroll width, which Safari doesn't always grow for an overflowing column.
 	useLayoutEffect(() => {
 		const el = ref.current
 		if (!el) return
-		const observer = new ResizeObserver(() => {
-			if (el.scrollWidth > el.clientWidth + 1) setSpills(true)
-		})
+		let live = true
+		const check = () => {
+			if (!live) return
+			const last = el.lastElementChild
+			const right = el.getBoundingClientRect().right
+			if (
+				el.scrollWidth > el.clientWidth + 1
+				|| (last && last.getBoundingClientRect().right > right + 1)
+			) setSpills(true)
+		}
+		const observer = new ResizeObserver(check)
 		observer.observe(el)
-		return () => observer.disconnect()
+		for (const child of el.children) observer.observe(child)
+		document.fonts?.ready.then(check)
+		return () => {
+			live = false
+			observer.disconnect()
+		}
 	}, [sections])
+
+	const wraps = spills && sections.length > 1
+	const layout = wraps
+		? {
+			display: 'grid',
+			gridTemplateColumns: 'repeat(2, minmax(0, 1fr))',
+			alignItems: 'start',
+			columnGap: 21.5,
+			rowGap: LINE,
+		}
+		: {
+			columnCount: 2,
+			columnGap: 21.5,
+			columnFill: spills ? 'balance' : 'auto',
+			height: spills ? 'auto' : COLUMN_HEIGHT,
+		}
 
 	if (sections.length === 0) {
 		return (
@@ -69,11 +105,8 @@ function Sections({ text, className = '' }) {
 			`}
 			style={{
 				fontSize: TEXT,
-				columnCount: 2,
-				columnGap: 21.5,
-				columnFill: spills ? 'balance' : 'auto',
-				height: spills ? 'auto' : COLUMN_HEIGHT,
 				lineHeight: `${LINE}px`,
+				...layout,
 			}}
 		>
 			{sections.map((section, s) => (
@@ -82,8 +115,8 @@ function Sections({ text, className = '' }) {
 					className="[break-inside:avoid]"
 					// one empty line between sections — as a top margin, so it
 					// disappears at the top of a column instead of pushing the
-					// section down
-					style={{ marginTop: s === 0 ? 0 : LINE }}
+					// section down (wrapped into rows, the grid's gap is that line)
+					style={{ marginTop: s === 0 || wraps ? 0 : LINE }}
 				>
 					{section.heading && (
 						<p className="font-semibold">{section.heading}</p>

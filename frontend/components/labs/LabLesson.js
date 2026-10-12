@@ -442,7 +442,11 @@ function Thumbnail({ doc, number, active, onClick }) {
 
 // `file` shows a PDF that hasn't been uploaded yet instead of the lab's saved
 // one — the editor's member preview, with a new lesson picked but not saved.
-export default function LabLesson({ labId, file = null, fileName, zoom = 1, style }) {
+//
+// `closed` gives the viewer a bottom edge — an orange strip with rounded
+// corners, the toolbar's colour — for when it ends on the page (a phone)
+// rather than running off the bottom of the window.
+export default function LabLesson({ labId, file = null, fileName, zoom = 1, closed = false, style }) {
 	const rootRef = useRef(null)
 	const containerRef = useRef(null)
 	const viewerRef = useRef(null)
@@ -456,6 +460,9 @@ export default function LabLesson({ labId, file = null, fileName, zoom = 1, styl
 	const [scaleValue, setScaleValue] = useState('auto')
 	const [customScale, setCustomScale] = useState('')
 	const [sidebarOpen, setSidebarOpen] = useState(false)
+	// fullscreen without the Fullscreen API — an iPhone only lets a <video> go
+	// fullscreen — the viewer instead covers the window, fixed over the page
+	const [filling, setFilling] = useState(false)
 
 	// Load pdf.js on the client only (it wants a DOM and a worker), fetch the
 	// file through the authenticated endpoint, and hand it to pdf.js's viewer.
@@ -535,6 +542,38 @@ export default function LabLesson({ labId, file = null, fileName, zoom = 1, styl
 		}
 	}, [labId, file])
 
+	// pdf.js works out a preset zoom (automatic, page width, …) once, for the
+	// box it has then. Going fullscreen or turning the phone changes the box,
+	// so set the preset again to have it re-fit the page.
+	useEffect(() => {
+		const container = containerRef.current
+		if (!container) return
+		const observer = new ResizeObserver(() => {
+			const viewer = pdfViewer.current
+			const value = viewer?.currentScaleValue
+			if (viewer?.pdfDocument && value && Number.isNaN(Number(value))) {
+				viewer.currentScaleValue = value
+			}
+		})
+		observer.observe(container)
+		return () => observer.disconnect()
+	}, [])
+
+	useEffect(() => {
+		if (!filling) return
+		const onKey = (event) => {
+			if (event.key === 'Escape') setFilling(false)
+		}
+		const html = document.documentElement
+		const overflow = html.style.overflow
+		html.style.overflow = 'hidden'
+		window.addEventListener('keydown', onKey)
+		return () => {
+			html.style.overflow = overflow
+			window.removeEventListener('keydown', onKey)
+		}
+	}, [filling])
+
 	const goTo = (n) => {
 		const viewer = pdfViewer.current
 		if (!viewer || !pages) return
@@ -557,8 +596,10 @@ export default function LabLesson({ labId, file = null, fileName, zoom = 1, styl
 	const fullscreen = () => {
 		const root = rootRef.current
 		if (!root) return
-		if (document.fullscreenElement) document.exitFullscreen().catch(() => {})
-		else root.requestFullscreen?.().catch(() => {})
+		if (filling) setFilling(false)
+		else if (document.fullscreenElement) document.exitFullscreen().catch(() => {})
+		else if (root.requestFullscreen) root.requestFullscreen().catch(() => setFilling(true))
+		else setFilling(true)
 	}
 
 	const download = () => {
@@ -576,12 +617,14 @@ export default function LabLesson({ labId, file = null, fileName, zoom = 1, styl
 	return (
 		<div
 			ref={rootRef}
-			className="
+			className={`
 				flex
 				flex-col
 				bg-white
-			"
-			style={style}
+				${filling ? 'fixed inset-0 z-[60]' : ''}
+				${closed && !filling ? 'rounded-b-[8px]' : ''}
+			`}
+			style={filling ? undefined : style}
 		>
 			<Toolbar
 				page={page}
@@ -679,6 +722,15 @@ export default function LabLesson({ labId, file = null, fileName, zoom = 1, styl
 					</div>
 				</div>
 			</div>
+
+			{closed && !filling && (
+				<div className="
+					h-[8px]
+					shrink-0
+					rounded-b-[8px]
+					bg-orange
+				" />
+			)}
 		</div>
 	)
 }

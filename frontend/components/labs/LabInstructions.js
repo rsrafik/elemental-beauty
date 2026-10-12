@@ -265,6 +265,12 @@ function NavButton({ direction, onClick, disabled, size, chevron }) {
 
 // One card's face in the normal-size deck — the design's 530×415 white
 // window: badge in the corner, title and step centred in the middle.
+//
+// The title and step sit in their own scrolling box, between the badge's row
+// and the fullscreen button's: centred while they fit, and when a step is too
+// long for the card they start at the top of the box and scroll inside it.
+// (`my-auto` rather than `justify-center`, which would push the top of a
+// too-tall block out of reach above the box.)
 function CardFace({ step }) {
 	return (
 		<>
@@ -289,51 +295,61 @@ function CardFace({ step }) {
 			</span>
 			<div className="
 				absolute
-				inset-0
+				inset-x-0
+				top-[80px]
+				bottom-[40px]
+				overflow-y-auto
+				overscroll-contain
 				flex
 				flex-col
-				items-center
-				justify-center
 				px-[40px]
 				text-center
 			">
-				{step.title && (
-					<h3 className="
-						font-vietnam
-						font-semibold
-						text-[25px]
-						leading-[30px]
-						text-black
-					">
-						{step.title}
-					</h3>
-				)}
-				<p className="
-					mt-[37.3px]
-					max-w-[290px]
-					font-vietnam
-					text-[14.5px]
-					leading-[23.4px]
-					text-black
+				<div className="
+					my-auto
+					flex
+					flex-col
+					items-center
 				">
-					{step.text}
-				</p>
-				<Warnings
-					list={step.warnings}
-					className="
-						mt-[10px]
+					{step.title && (
+						<h3 className="
+							font-vietnam
+							font-semibold
+							text-[25px]
+							leading-[30px]
+							text-black
+						">
+							{step.title}
+						</h3>
+					)}
+					<p className="
+						mt-[37.3px]
 						max-w-[290px]
 						font-vietnam
 						text-[14.5px]
 						leading-[23.4px]
-					"
-				/>
+						text-black
+					">
+						{step.text}
+					</p>
+					<Warnings
+						list={step.warnings}
+						className="
+							mt-[10px]
+							max-w-[290px]
+							font-vietnam
+							text-[14.5px]
+							leading-[23.4px]
+						"
+					/>
+				</div>
 			</div>
 		</>
 	)
 }
 
-// The same card, drawn on the fullscreen mockup's 1712×1004 frame.
+// The same card, drawn on the fullscreen mockup's 1712×1004 frame — its text
+// scrolling the same way, between the badge and the arrows.
 function FullscreenFace({ step }) {
 	return (
 		<>
@@ -358,57 +374,72 @@ function FullscreenFace({ step }) {
 			</span>
 			<div className="
 				absolute
-				inset-0
+				inset-x-0
+				top-[150px]
+				bottom-[105px]
+				overflow-y-auto
+				overscroll-contain
 				flex
 				flex-col
-				items-center
-				justify-center
 				px-[80px]
-				pb-[43.6px]
 				text-center
 			">
-				{step.title && (
-					<h3 className="
-						font-vietnam
-						font-semibold
-						text-[48.5px]
-						leading-[58px]
-						text-black
-					">
-						{step.title}
-					</h3>
-				)}
-				<p className="
-					mt-[43.8px]
-					max-w-[700px]
-					font-vietnam
-					text-[29px]
-					leading-[47px]
-					text-black
+				<div className="
+					my-auto
+					flex
+					flex-col
+					items-center
 				">
-					{step.text}
-				</p>
-				<Warnings
-					list={step.warnings}
-					className="
-						mt-[20px]
+					{step.title && (
+						<h3 className="
+							font-vietnam
+							font-semibold
+							text-[48.5px]
+							leading-[58px]
+							text-black
+						">
+							{step.title}
+						</h3>
+					)}
+					<p className="
+						mt-[43.8px]
 						max-w-[700px]
 						font-vietnam
 						text-[29px]
 						leading-[47px]
-					"
-				/>
+						text-black
+					">
+						{step.text}
+					</p>
+					<Warnings
+						list={step.warnings}
+						className="
+							mt-[20px]
+							max-w-[700px]
+							font-vietnam
+							text-[29px]
+							leading-[47px]
+						"
+					/>
+				</div>
 			</div>
 		</>
 	)
 }
 
 // The fullscreen deck. It lives in its own box on <body> (so none of the
-// page's zoom or layout reaches it) that only shows while it's the fullscreen
-// element, and it zooms its 1712×1004 frame to fit whatever screen it's on.
+// page's zoom or layout reaches it) that only shows while it's fullscreen,
+// and it zooms its 1712×1004 frame to fit whatever screen it's on. A screen
+// taller than it is wide (a phone held upright) would shrink that frame to a
+// quarter and the text to nothing, so there the frame is only PORTRAIT_W wide
+// and runs as tall as the screen.
+const PORTRAIT_W = 720
+
 function FullscreenDeck({ host, steps, index, go, onExit }) {
 	const { width, height } = useWindowSize()
-	const zoom = Math.min(width / 1712, height / 1004)
+	const zoom = height > width
+		? Math.min(width / PORTRAIT_W, height / 1004)
+		: Math.min(width / 1712, height / 1004)
 
 	return createPortal(
 		<div
@@ -522,7 +553,22 @@ function Flashcards({ parts }) {
 		document.body.appendChild(host)
 		return () => host.remove()
 	}, [host])
-	const fullscreen = useFullscreenElement() === host && host !== null
+	// An iPhone has no Fullscreen API for anything but <video>, so there the
+	// box is pinned over the whole window instead (the `filling` class in
+	// globals.css) — the same deck, short of hiding the browser's own bars.
+	const [filling, setFilling] = useState(false)
+	const fullscreen = (useFullscreenElement() === host && host !== null) || filling
+	useEffect(() => {
+		if (!host || !filling) return
+		host.classList.add('filling')
+		const html = document.documentElement
+		const overflow = html.style.overflow
+		html.style.overflow = 'hidden'
+		return () => {
+			host.classList.remove('filling')
+			html.style.overflow = overflow
+		}
+	}, [host, filling])
 
 	const go = (next) => setIndex(Math.max(0, Math.min(steps.length - 1, next)))
 
@@ -533,13 +579,19 @@ function Flashcards({ parts }) {
 			if (event.target.closest?.('input, textarea, select, [contenteditable]')) return
 			if (event.key === 'ArrowLeft') setIndex((i) => Math.max(0, i - 1))
 			if (event.key === 'ArrowRight') setIndex((i) => Math.min(steps.length - 1, i + 1))
+			if (event.key === 'Escape') setFilling(false)
 		}
 		window.addEventListener('keydown', onKey)
 		return () => window.removeEventListener('keydown', onKey)
 	}, [steps.length])
 
-	const enterFullscreen = () => host?.requestFullscreen?.().catch(() => {})
+	const enterFullscreen = () => {
+		if (!host) return
+		if (host.requestFullscreen) host.requestFullscreen().catch(() => setFilling(true))
+		else setFilling(true)
+	}
 	const exitFullscreen = () => {
+		setFilling(false)
 		if (document.fullscreenElement) document.exitFullscreen().catch(() => {})
 	}
 
@@ -556,7 +608,8 @@ function Flashcards({ parts }) {
 	}
 
 	// Table of contents: down the first column, then the second — parts 1 and
-	// 2 on the left, 3 and 4 on the right.
+	// 2 on the left, 3 and 4 on the right. Below `lg` there isn't the width
+	// for two, so it's one column, the full width of the deck.
 	const rows = Math.ceil(parts.length / 2)
 	const firstStepOf = (p) => steps.findIndex((step) => step.part === p)
 
@@ -676,13 +729,17 @@ function Flashcards({ parts }) {
 						className="
 							mt-[19.2px]
 							grid
-							grid-flow-col
+							auto-rows-[38.3px]
 							gap-y-[9.2px]
+							lg:grid-flow-col
+							lg:grid-cols-[repeat(2,var(--toc-col))]
+							lg:grid-rows-[repeat(var(--toc-rows),38.3px)]
+							lg:gap-x-[var(--toc-gap)]
 						"
 						style={{
-							gridTemplateRows: `repeat(${rows}, 38.3px)`,
-							gridTemplateColumns: `repeat(2, ${TOC_COL}px)`,
-							columnGap: TOC_GAP,
+							'--toc-rows': rows,
+							'--toc-col': `${TOC_COL}px`,
+							'--toc-gap': `${TOC_GAP}px`,
 						}}
 					>
 						{parts.map((part, p) => {

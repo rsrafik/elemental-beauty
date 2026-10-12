@@ -700,9 +700,17 @@ body {
 
 /* The flashcard deck's fullscreen box (components/labs/LabInstructions.js)
    sits on <body> the whole time the deck is on the page, and is only drawn
-   while it's the element that's fullscreen. */
+   while it's the element that's fullscreen — or, where there's no Fullscreen
+   API (an iPhone), while it's `filling`: pinned over the whole window. */
 .flashcard-fullscreen:not(:fullscreen) {
   display: none;
+}
+
+.flashcard-fullscreen.filling {
+  display: block;
+  position: fixed;
+  inset: 0;
+  z-index: 100;
 }
 
 /* The lesson viewer (components/labs/LabLesson.js): pdf.js lays pages out with
