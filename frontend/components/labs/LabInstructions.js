@@ -1,7 +1,7 @@
 'use client'
 
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react'
-import { createPortal } from 'react-dom'
+import { createPortal, flushSync } from 'react-dom'
 import { parseInstructions, stepsOf } from '@/lib/labContent'
 
 // The instruction tab of the full lab. Two modes, swapped with the button at
@@ -301,6 +301,11 @@ function ScrollingText({ size, children }) {
 	const ref = useRef(null)
 	const [above, setAbove] = useState(false)
 	const [below, setBelow] = useState(false)
+	// Whether the fades animate yet. Not on the way in: a long step has to
+	// arrive with its fade and pill already there — sliding in with the card
+	// rather than fading up after it lands — so they only animate once the
+	// card has been drawn, for scrolling.
+	const [settled, setSettled] = useState(false)
 
 	const measure = useCallback(() => {
 		const el = ref.current
@@ -309,18 +314,28 @@ function ScrollingText({ size, children }) {
 		setBelow(el.scrollHeight - el.scrollTop - el.clientHeight > 1)
 	}, [])
 
-	// measured again whenever the box or the text changes size — the card
-	// turning wider, the web font arriving
+	// Measured again whenever the box or the text changes size — the card
+	// turning wider, the web font arriving. The observer reports after layout
+	// and before the browser paints, and flushSync puts the answer on screen
+	// in that same frame, so the card is never drawn without its fade first
+	// (a plain state update would land a frame late). Every card in the deck
+	// is laid out at once, off to the side, so they're all measured before
+	// they slide in.
 	useLayoutEffect(() => {
 		const el = ref.current
 		if (!el) return
 		let live = true
-		const observer = new ResizeObserver(measure)
+		const observer = new ResizeObserver(() => flushSync(measure))
 		observer.observe(el)
 		observer.observe(el.firstElementChild)
 		document.fonts?.ready.then(() => live && measure())
+		// two frames: the first one's callbacks run before the observer's
+		let frame = requestAnimationFrame(() => {
+			frame = requestAnimationFrame(() => live && setSettled(true))
+		})
 		return () => {
 			live = false
+			cancelAnimationFrame(frame)
 			observer.disconnect()
 		}
 	}, [measure])
@@ -366,8 +381,7 @@ function ScrollingText({ size, children }) {
 					bg-gradient-to-b
 					from-white
 					to-transparent
-					transition-opacity
-					duration-200
+					${settled ? 'transition-opacity duration-200' : ''}
 					${sizes.fadeTop}
 					${above ? 'opacity-100' : 'opacity-0'}
 				`}
@@ -383,8 +397,7 @@ function ScrollingText({ size, children }) {
 					from-white
 					via-white/80
 					to-transparent
-					transition-opacity
-					duration-200
+					${settled ? 'transition-opacity duration-200' : ''}
 					${sizes.fadeBottom}
 					${below ? 'opacity-100' : 'opacity-0'}
 				`}
@@ -407,8 +420,7 @@ function ScrollingText({ size, children }) {
 					leading-none
 					text-black
 					cursor-pointer
-					transition-opacity
-					duration-200
+					${settled ? 'transition-opacity duration-200' : ''}
 					${sizes.pill}
 					${below ? 'opacity-100' : 'opacity-0 pointer-events-none'}
 				`}
