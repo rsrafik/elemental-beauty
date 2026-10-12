@@ -11,7 +11,7 @@ import { useUnsavedChanges } from '@/components/LeaveGuard'
 import { useCalendarEventDialogs } from '@/components/calendar/CalendarEventDialogs'
 import { VideoIcon } from '@/components/events/MeetingLink'
 import { calendarOnly, hasMeetingLink } from '@/lib/calendar'
-import { isoDate, shortDate, today } from '@/lib/dates'
+import { isoDate, prettyTimeRange, shortDate, today } from '@/lib/dates'
 import { canManageLabs, onLeaderboard } from '@/lib/roles'
 
 // Shown to officer / treasurer / admin.
@@ -94,6 +94,8 @@ function soonest(labs, events) {
 			href: `/labs/view?id=${lab.labId}`,
 			date: isoDate(lab.date),
 			time: lab.startTime ?? '',
+			endTime: lab.endTime ?? null,
+			location: lab.location ?? null,
 			title: lab.title,
 			taken: lab.taken,
 			capacity: lab.capacity,
@@ -105,6 +107,8 @@ function soonest(labs, events) {
 				href: `/events/view?id=${event.eventId}`,
 				date: isoDate(event.date),
 				time: event.startTime ?? '',
+				endTime: event.endTime ?? null,
+				location: event.location ?? null,
 				title: event.title,
 				taken: event.taken,
 				capacity: event.capacity,
@@ -129,6 +133,28 @@ function soonest(labs, events) {
 const attending = (row) =>
 	row.capacity == null ? `Attending: ${row.taken}` : `Attending: ${row.taken}/${row.capacity}`
 
+// When and where, under a ring's title — '5:00-7:00PM • WTHR 200', the way
+// the lab pages write it (metaLine in LabViewParts). Whichever half is missing is left off, and with
+// neither there's no line at all.
+function RingWhen({ row, className = '' }) {
+	if (!row) return null
+	const text = [prettyTimeRange(row.time, row.endTime).replace(/ /g, ''), row.location].filter(Boolean).join(' • ')
+	if (!text) return null
+	return (
+		<p className={`
+			mt-1
+			font-vietnam
+			font-semibold
+			text-sm
+			sm:text-base
+			text-black/70
+			${className}
+		`}>
+			{text}
+		</p>
+	)
+}
+
 // What goes under a ring's title: how many are coming — or, for a calendar-only
 // event, which nobody signs up for, its "join" button if it has a meeting link
 // and nothing if it doesn't. The button is the ring's own colour (`fill`, its
@@ -139,7 +165,9 @@ function RingDetail({ row, fill, className = '' }) {
 	if (row.event) {
 		if (!row.meetingUrl) return null
 		// The dashboard's own "join", not the calendar's pill
-		// (JoinMeetingButton): bigger, to sit under a big title. A link, so
+		// (JoinMeetingButton): bigger, to sit under a big title, and moving
+		// like the quick actions — it lifts and its inset shadow lets go on
+		// hover, and brightens when pressed. A link, so
 		// it opens like any other; the click stops here so it doesn't also
 		// open the event.
 		return (
@@ -165,11 +193,13 @@ function RingDetail({ row, fill, className = '' }) {
 					text-black
 					whitespace-nowrap
 					shadow-[inset_3px_3px_5px_rgba(0,0,0,0.45)]
-					transition-transform
-					duration-150
+					cursor-pointer
+					transition
+					duration-200
 					ease-out
 					hover:-translate-y-0.5
-					active:translate-y-0
+					hover:shadow-[inset_0px_0px_0px_rgba(0,0,0,0.45)]
+					active:brightness-105
 					${className}
 				`}
 			>
@@ -306,18 +336,31 @@ export default function OfficerDashboard() {
 		return () => { live = false }
 	}, [])
 
+	// Which ring is pulled forward on a touch screen — 1 or 2, null for the
+	// front one. With a mouse, hovering a ring at the back slides the ones in
+	// front of it out of the way (the peer-hover classes below); a screen
+	// that can't hover gets that from its first tap on a ring instead, and
+	// only a tap on the ring that's already showing opens it.
+	const [expanded, setExpanded] = useState(null)
+
 	// What makes a ring clickable: a link to its lab or event's check-in page,
 	// or for a calendar-only event, a button that opens it as the calendar
 	// does — nothing, for a ring with nothing on it. Enter only counts on the
 	// ring itself, not on the "join" link inside it.
-	const ring = (row) => {
+	const ring = (row, index) => {
 		if (!row) return {}
 		const go = () => (row.event ? openEvent(row.event) : router.push(row.href))
+		// the front ring is the one showing when nothing's pulled forward
+		const showing = index === 0 ? null : index
 		return {
 			role: row.event ? 'button' : 'link',
 			tabIndex: 0,
 			'aria-label': row.event ? `Open ${row.title}` : `${row.title} check-in`,
-			onClick: go,
+			onClick: () => {
+				const touch = window.matchMedia('(hover: none)').matches
+				if (touch && expanded !== showing) setExpanded(showing)
+				else go()
+			},
 			onKeyDown: (event) => {
 				if (event.key === 'Enter' && event.target === event.currentTarget) go()
 			},
@@ -535,7 +578,7 @@ export default function OfficerDashboard() {
 						{upcomingError ?? 'upcoming'}
 					</h2>
 					{/* concentric rings anchored to the bottom-left corner */}
-					<div {...ring(upcoming[2])} className={`
+					<div {...ring(upcoming[2], 2)} className={`
 						peer/light
 						${upcoming[2] ? 'cursor-pointer' : ''}
 						absolute
@@ -572,6 +615,16 @@ export default function OfficerDashboard() {
 							">
 								{upcoming[2]?.title ?? ''}
 							</h2>
+							<RingWhen
+								row={upcoming[2]}
+								className="
+									ml-4
+									sm:ml-8
+									lg:ml-20
+									text-center
+									lg:text-left
+								"
+							/>
 							<RingDetail
 								row={upcoming[2]}
 								fill="bg-orange-light"
@@ -584,7 +637,7 @@ export default function OfficerDashboard() {
 								"
 							/>
                     </div>
-					<div {...ring(upcoming[1])} className={`
+					<div {...ring(upcoming[1], 1)} className={`
 						peer/lighter
 						${upcoming[1] ? 'cursor-pointer' : ''}
 						absolute
@@ -601,6 +654,7 @@ export default function OfficerDashboard() {
 						ease-out
 						peer-hover/light:-translate-x-[50%]
 						peer-hover/light:translate-y-[45%]
+						${expanded === 2 ? '-translate-x-[50%] translate-y-[45%]' : ''}
                         shadow-[5px_-5px_2px_rgba(0,0,0,0.5)]
 					`}>
 						<RingDate>{upcoming[1] ? shortDate(upcoming[1].date) : ''}</RingDate>
@@ -624,10 +678,11 @@ export default function OfficerDashboard() {
 							">
 								{upcoming[1]?.title ?? ''}
 							</h2>
+							<RingWhen row={upcoming[1]} />
 							<RingDetail row={upcoming[1]} fill="bg-orange-lighter" />
 						</div>
                     </div>
-					<div {...ring(upcoming[0])} className={`
+					<div {...ring(upcoming[0], 0)} className={`
 						${upcoming[0] ? 'cursor-pointer' : ''}
 						absolute
 						bottom-0
@@ -645,6 +700,7 @@ export default function OfficerDashboard() {
 						peer-hover/light:translate-y-[55%]
 						peer-hover/lighter:-translate-x-[60%]
 						peer-hover/lighter:translate-y-[55%]
+						${expanded ? '-translate-x-[60%] translate-y-[55%]' : ''}
                         shadow-[5px_-5px_2px_rgba(0,0,0,0.5)]
 					`}>
 						<RingDate>{upcoming[0] ? shortDate(upcoming[0].date) : ''}</RingDate>
@@ -670,6 +726,7 @@ export default function OfficerDashboard() {
 							">
 								{upcoming[0]?.title ?? ''}
 							</h2>
+							<RingWhen row={upcoming[0]} />
 							<RingDetail row={upcoming[0]} fill="bg-orange-lightest" />
 						</div>
                     </div>
