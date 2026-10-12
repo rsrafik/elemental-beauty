@@ -12,6 +12,8 @@ import { labs as labsApi } from '@/lib/api'
 //   − / +     zoom out / in, and the zoom list (automatic, page fit, 50% …)
 //   ⛶ ⤓       fullscreen, and download the original file
 //
+// A narrow viewer (a phone) gets a compact bar instead — see CompactToolbar.
+//
 // The toolbar is in the design's pixels like the rest of the page, which is
 // zoomed to the window (see Scaled in LabViewParts). The pages are not: they
 // sit in a box that undoes that zoom, so pdf.js draws them at the screen's
@@ -33,6 +35,10 @@ const ZOOM_PRESETS = [
 ]
 
 const THUMB_W = 96
+
+// Below this width (the viewer's own, in its pixels) the full toolbar's
+// controls run into each other, so it switches to the compact one.
+const NARROW_W = 520
 
 // ---- toolbar icons ---------------------------------------------------------
 //
@@ -160,6 +166,94 @@ function Separator({ left }) {
 	)
 }
 
+// The page box's typing: what's in it is kept apart from the page actually
+// showing until Enter (or leaving the box) commits it. Both toolbars use it.
+function usePageBox(page, pages, onPage) {
+	const [draft, setDraft] = useState(null)
+
+	const commit = () => {
+		if (draft === null) return
+		const n = parseInt(draft, 10)
+		if (!Number.isNaN(n)) onPage(Math.min(Math.max(n, 1), pages || 1))
+		setDraft(null)
+	}
+
+	return {
+		type: 'text',
+		inputMode: 'numeric',
+		'aria-label': 'Page',
+		value: draft ?? String(page || ''),
+		onChange: (event) => setDraft(event.target.value.replace(/\D/g, '')),
+		onFocus: (event) => event.target.select(),
+		onBlur: commit,
+		onKeyDown: (event) => {
+			if (event.key === 'Enter') {
+				commit()
+				event.currentTarget.blur()
+			}
+			if (event.key === 'Escape') {
+				setDraft(null)
+				event.currentTarget.blur()
+			}
+		},
+	}
+}
+
+// The zoom list: a real <select> for the keyboard and screen readers, dressed
+// as the design's pale pill with its chevron. The padding is the same on both
+// sides so the label centres in the pill itself, not in the part of it left of
+// the chevron. `className` places and sizes it (it must position it, so the
+// chevron has something to sit in); `text` is its type size.
+function ZoomSelect({ scaleValue, customScale, onScale, className = '', text = 'text-[11px]' }) {
+	const isPreset = ZOOM_PRESETS.some(([value]) => value === scaleValue)
+	return (
+		<div className={className}>
+			<select
+				aria-label="Zoom"
+				value={isPreset ? scaleValue : 'custom'}
+				onChange={(event) => onScale(event.target.value)}
+				className={`
+					block
+					w-full
+					h-full
+					appearance-none
+					rounded-[3px]
+					bg-[#FDEBE6]
+					px-[22px]
+					text-center
+					[text-align-last:center]
+					font-vietnam
+					${text}
+					text-black/50
+					outline-none
+					cursor-pointer
+					focus-visible:ring-1
+					focus-visible:ring-cream
+				`}
+			>
+				{!isPreset && (
+					<option value="custom" disabled>
+						{customScale}
+					</option>
+				)}
+				{ZOOM_PRESETS.map(([value, label]) => (
+					<option key={value} value={value}>{label}</option>
+				))}
+			</select>
+			<ChevronDownIcon className="
+				pointer-events-none
+				absolute
+				right-[10px]
+				top-1/2
+				-translate-y-1/2
+				w-[9px]
+				h-[6px]
+				text-black/50
+			" />
+		</div>
+	)
+}
+
 function Toolbar({
 	page,
 	pages,
@@ -173,18 +267,7 @@ function Toolbar({
 	onFullscreen,
 	onDownload,
 }) {
-	// what's typed in the page box, separate from the page actually showing
-	// until Enter (or leaving the box) commits it
-	const [draft, setDraft] = useState(null)
-
-	const commit = () => {
-		if (draft === null) return
-		const n = parseInt(draft, 10)
-		if (!Number.isNaN(n)) onPage(Math.min(Math.max(n, 1), pages || 1))
-		setDraft(null)
-	}
-
-	const isPreset = ZOOM_PRESETS.some(([value]) => value === scaleValue)
+	const pageBox = usePageBox(page, pages, onPage)
 
 	return (
 		<div className="
@@ -222,23 +305,7 @@ function Toolbar({
 			</ToolButton>
 
 			<input
-				type="text"
-				inputMode="numeric"
-				aria-label="Page"
-				value={draft ?? String(page || '')}
-				onChange={(event) => setDraft(event.target.value.replace(/\D/g, ''))}
-				onFocus={(event) => event.target.select()}
-				onBlur={commit}
-				onKeyDown={(event) => {
-					if (event.key === 'Enter') {
-						commit()
-						event.currentTarget.blur()
-					}
-					if (event.key === 'Escape') {
-						setDraft(null)
-						event.currentTarget.blur()
-					}
-				}}
+				{...pageBox}
 				className="
 					absolute
 					left-[101.4px]
@@ -298,60 +365,18 @@ function Toolbar({
 				<PlusIcon className="w-full h-full overflow-visible" />
 			</ToolButton>
 
-			{/* a real <select> for the keyboard and screen readers, dressed as
-			    the design's pale pill with its chevron. The padding is the same
-			    on both sides so the label centres in the pill itself, not in
-			    the part of it left of the chevron. */}
-			<div className="
-				absolute
-				left-[57.5px]
-				top-[1.5px]
-				w-[159px]
-				h-[21px]
-			">
-				<select
-					aria-label="Zoom"
-					value={isPreset ? scaleValue : 'custom'}
-					onChange={(event) => onScale(event.target.value)}
-					className="
-						block
-						w-full
-						h-full
-						appearance-none
-						rounded-[3px]
-						bg-[#FDEBE6]
-						px-[22px]
-						text-center
-						[text-align-last:center]
-						font-vietnam
-						text-[11px]
-						text-black/50
-						outline-none
-						cursor-pointer
-						focus-visible:ring-1
-						focus-visible:ring-cream
-					"
-				>
-					{!isPreset && (
-						<option value="custom" disabled>
-							{customScale}
-						</option>
-					)}
-					{ZOOM_PRESETS.map(([value, label]) => (
-						<option key={value} value={value}>{label}</option>
-					))}
-				</select>
-				<ChevronDownIcon className="
-					pointer-events-none
+			<ZoomSelect
+				scaleValue={scaleValue}
+				customScale={customScale}
+				onScale={onScale}
+				className="
 					absolute
-					right-[10px]
-					top-1/2
-					-translate-y-1/2
-					w-[9px]
-					h-[6px]
-					text-black/50
-				" />
-			</div>
+					left-[57.5px]
+					top-[1.5px]
+					w-[159px]
+					h-[21px]
+				"
+			/>
 			</div>
 
 			<ToolButton
@@ -368,6 +393,326 @@ function Toolbar({
 			>
 				<DownloadIcon className="w-full h-full" />
 			</ToolButton>
+		</div>
+	)
+}
+
+// ---- the narrow toolbar ----------------------------------------------------
+//
+// On a phone the bar above is too narrow for everything it carries — the page
+// box ran into the zoom buttons. So a narrow viewer gets this one instead: a
+// taller bar (finger-sized buttons), the page controls on the left, zoom and
+// fullscreen on the right, and what's used least — the zoom list and the
+// download — in a "⋯" menu at the end. On the narrowest phones (a bar under
+// 330px) zoom in and out go into the menu too; that's a container query on
+// the bar's own width, so it holds wherever the viewer is.
+
+function DotsIcon(props) {
+	return (
+		<svg viewBox="0 0 18 4" fill="currentColor" aria-hidden="true" {...props}>
+			<circle cx="2" cy="2" r="1.8" />
+			<circle cx="9" cy="2" r="1.8" />
+			<circle cx="16" cy="2" r="1.8" />
+		</svg>
+	)
+}
+
+// An icon button laid out in the row rather than placed by hand: a 32px
+// target with the icon `icon` sized inside it.
+function BarButton({ label, onClick, disabled, children, ...rest }) {
+	return (
+		<button
+			type="button"
+			aria-label={label}
+			title={label}
+			onClick={onClick}
+			disabled={disabled}
+			className="
+				w-8
+				h-8
+				shrink-0
+				flex
+				items-center
+				justify-center
+				text-cream
+				disabled:text-orange-lighter
+				cursor-pointer
+				disabled:cursor-default
+				transition-transform
+				duration-150
+				ease-out
+				active:enabled:scale-90
+			"
+			{...rest}
+		>
+			{children}
+		</button>
+	)
+}
+
+function BarSeparator() {
+	return (
+		<span
+			aria-hidden="true"
+			className="
+				w-[2px]
+				h-[18px]
+				shrink-0
+				rounded-full
+				bg-orange-dark
+			"
+		/>
+	)
+}
+
+function CompactToolbar({
+	page,
+	pages,
+	onPage,
+	scaleValue,
+	customScale,
+	onScale,
+	onZoom,
+	sidebarOpen,
+	onSidebar,
+	onFullscreen,
+	onDownload,
+}) {
+	const pageBox = usePageBox(page, pages, onPage)
+	const [menuOpen, setMenuOpen] = useState(false)
+	const menuRef = useRef(null)
+
+	// the menu closes on a tap anywhere outside it, or Escape
+	useEffect(() => {
+		if (!menuOpen) return
+		const onDown = (event) => {
+			if (!menuRef.current?.contains(event.target)) setMenuOpen(false)
+		}
+		const onKey = (event) => {
+			if (event.key === 'Escape') setMenuOpen(false)
+		}
+		document.addEventListener('pointerdown', onDown)
+		window.addEventListener('keydown', onKey)
+		return () => {
+			document.removeEventListener('pointerdown', onDown)
+			window.removeEventListener('keydown', onKey)
+		}
+	}, [menuOpen])
+
+	return (
+		<div className="
+			@container
+			relative
+			h-[40px]
+			shrink-0
+			rounded-t-[8px]
+			bg-orange
+			px-[4px]
+			flex
+			items-center
+			justify-between
+			select-none
+		">
+			<div className="
+				flex
+				items-center
+				gap-[2px]
+				shrink-0
+			">
+				<BarButton
+					label={sidebarOpen ? 'Hide page thumbnails' : 'Show page thumbnails'}
+					onClick={onSidebar}
+				>
+					<SidebarIcon className="w-[19px] h-[18px]" />
+				</BarButton>
+				<BarButton
+					label="Previous page"
+					onClick={() => onPage(page - 1)}
+					disabled={page <= 1}
+				>
+					<ArrowIcon className="w-[13px] h-[17px]" />
+				</BarButton>
+				<BarSeparator />
+				<BarButton
+					label="Next page"
+					onClick={() => onPage(page + 1)}
+					disabled={page >= pages}
+				>
+					<ArrowIcon down className="w-[13px] h-[17px]" />
+				</BarButton>
+				<input
+					{...pageBox}
+					className="
+						ml-[4px]
+						w-[34px]
+						h-[24px]
+						shrink-0
+						rounded-[3px]
+						bg-orange-lighter
+						px-[4px]
+						text-right
+						font-vietnam
+						text-[13px]
+						leading-none
+						text-orange-dark
+						outline-none
+						focus:ring-1
+						focus:ring-cream
+					"
+				/>
+				<span className="
+					ml-[5px]
+					font-vietnam
+					text-[13px]
+					text-orange-dark
+					whitespace-nowrap
+				">
+					of {pages || '–'}
+				</span>
+			</div>
+
+			<div className="
+				flex
+				items-center
+				gap-[2px]
+				shrink-0
+			">
+				<div className="
+					flex
+					items-center
+					gap-[2px]
+					@max-[330px]:hidden
+				">
+					<BarButton label="Zoom out" onClick={() => onZoom(-1)}>
+						<MinusIcon className="w-[15px] h-[3px] overflow-visible" />
+					</BarButton>
+					<BarSeparator />
+					<BarButton label="Zoom in" onClick={() => onZoom(1)}>
+						<PlusIcon className="w-[15px] h-[14px] overflow-visible" />
+					</BarButton>
+				</div>
+				<BarButton label="Fullscreen" onClick={onFullscreen}>
+					<FullscreenIcon className="w-[17px] h-[18px]" />
+				</BarButton>
+
+				<div ref={menuRef} className="relative">
+					<BarButton
+						label="More"
+						onClick={() => setMenuOpen((open) => !open)}
+						aria-haspopup="menu"
+						aria-expanded={menuOpen}
+					>
+						<DotsIcon className="w-[18px] h-[4px]" />
+					</BarButton>
+
+					{menuOpen && (
+						<div
+							role="menu"
+							className="
+								absolute
+								right-0
+								top-[calc(100%+6px)]
+								z-20
+								w-[200px]
+								rounded-[8px]
+								bg-cream
+								p-[10px]
+								shadow-[0_4px_16px_rgba(0,0,0,0.25)]
+								flex
+								flex-col
+								gap-[8px]
+							"
+						>
+							<div className="
+								flex
+								items-center
+								justify-between
+							">
+								<span className="
+									font-vietnam
+									font-semibold
+									text-[12px]
+									text-black/50
+								">
+									zoom
+								</span>
+								{/* in here only when the bar has no room for them */}
+								<div className="
+									hidden
+									@max-[330px]:flex
+									gap-[6px]
+								">
+									{[
+										['Zoom out', -1, <MinusIcon key="icon" className="w-[13px] h-[3px] overflow-visible" />],
+										['Zoom in', 1, <PlusIcon key="icon" className="w-[13px] h-[12px] overflow-visible" />],
+									].map(([label, step, icon]) => (
+										<button
+											key={label}
+											type="button"
+											aria-label={label}
+											onClick={() => onZoom(step)}
+											className="
+												w-[30px]
+												h-[30px]
+												flex
+												items-center
+												justify-center
+												rounded-[6px]
+												bg-orange
+												text-cream
+												cursor-pointer
+												active:scale-90
+												transition-transform
+												duration-150
+											"
+										>
+											{icon}
+										</button>
+									))}
+								</div>
+							</div>
+							<ZoomSelect
+								scaleValue={scaleValue}
+								customScale={customScale}
+								onScale={(value) => {
+									onScale(value)
+									setMenuOpen(false)
+								}}
+								className="relative w-full h-[32px]"
+								text="text-[14px]"
+							/>
+							<button
+								type="button"
+								role="menuitem"
+								onClick={() => {
+									onDownload()
+									setMenuOpen(false)
+								}}
+								className="
+									flex
+									items-center
+									gap-[8px]
+									rounded-[6px]
+									bg-orange
+									px-[10px]
+									h-[34px]
+									font-vietnam
+									font-semibold
+									text-[14px]
+									text-cream
+									cursor-pointer
+									active:scale-[0.98]
+									transition-transform
+									duration-150
+								"
+							>
+								<DownloadIcon className="w-[17px] h-[16px]" />
+								download
+							</button>
+						</div>
+					)}
+				</div>
+			</div>
 		</div>
 	)
 }
@@ -463,6 +808,15 @@ export default function LabLesson({ labId, file = null, fileName, zoom = 1, clos
 	// fullscreen without the Fullscreen API — an iPhone only lets a <video> go
 	// fullscreen — the viewer instead covers the window, fixed over the page
 	const [filling, setFilling] = useState(false)
+	// a viewer too narrow for the full toolbar (a phone) gets the compact one
+	const [narrow, setNarrow] = useState(false)
+	useEffect(() => {
+		const root = rootRef.current
+		if (!root) return
+		const observer = new ResizeObserver(() => setNarrow(root.clientWidth < NARROW_W))
+		observer.observe(root)
+		return () => observer.disconnect()
+	}, [])
 
 	// Load pdf.js on the client only (it wants a DOM and a worker), fetch the
 	// file through the authenticated endpoint, and hand it to pdf.js's viewer.
@@ -614,6 +968,8 @@ export default function LabLesson({ labId, file = null, fileName, zoom = 1, clos
 		setTimeout(() => URL.revokeObjectURL(url), 1000)
 	}
 
+	const Bar = narrow ? CompactToolbar : Toolbar
+
 	return (
 		<div
 			ref={rootRef}
@@ -626,7 +982,7 @@ export default function LabLesson({ labId, file = null, fileName, zoom = 1, clos
 			`}
 			style={filling ? undefined : style}
 		>
-			<Toolbar
+			<Bar
 				page={page}
 				pages={pages}
 				onPage={goTo}
