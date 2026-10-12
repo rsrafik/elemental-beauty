@@ -1,6 +1,7 @@
 'use client'
 
 import { useEffect, useState } from 'react'
+import { useUnsavedChanges } from '@/components/LeaveGuard'
 import { useRouter } from 'next/navigation'
 import DashboardShell from '@/components/dashboards/DashboardShell'
 import { BackButton, Scaled } from '@/components/labs/LabViewParts'
@@ -196,6 +197,8 @@ export default function QuizEditor({ id }) {
 	const [busy, setBusy] = useState(false)
 	const [dirty, setDirty] = useState(false)
 	const [confirmDiscard, setConfirmDiscard] = useState(false)
+	// leaving with edits not yet saved asks first
+	useUnsavedChanges(dirty)
 
 	useEffect(() => {
 		if (!id) return

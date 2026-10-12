@@ -6,6 +6,7 @@ import localFont from "next/font/local";
 import { SessionProvider } from "@/lib/session";
 import ZoomReset from "@/components/ZoomReset";
 import { NavTracker } from "@/lib/history";
+import { LeaveGuard } from "@/components/LeaveGuard";
 import "./globals.css";
 
 const bevietnampro = Be_Vietnam_Pro({
@@ -128,6 +129,9 @@ export default function RootLayout({ children }) {
         <NavTracker />
         {/* zooms back out after an iPhone zooms in on a tapped field */}
         <ZoomReset />
+        {/* asks before leaving a page with unsaved changes
+            (components/LeaveGuard.js) */}
+        <LeaveGuard />
       </body>
     </html>
   );

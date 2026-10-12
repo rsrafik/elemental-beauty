@@ -24,6 +24,18 @@ import { isoDate } from '@/lib/dates'
 const LAB_TYPE = 'Lab'
 const LAB_TRACK = 'members'
 
+// The staff calendar's tracks — what its key calls each one, and its colours
+// (see OfficerCalendar for what each field is for). Here rather than there so
+// the staff dashboard can colour a "join" button the way the calendar does.
+export const STAFF_TRACKS = {
+	members: { label: 'members', pill: 'bg-orange text-white', hollow: 'ring-orange text-orange', fill: 'var(--color-orange)' },
+	officers: { label: 'e-board', pill: 'bg-yellow text-black', hollow: 'ring-yellow text-yellow-dark', fill: 'var(--color-yellow)', dark: true },
+	open: { label: 'open to all', pill: 'bg-green text-black', hollow: 'ring-green text-green-dark', fill: 'var(--color-green)', dark: true },
+	online: { label: 'online', pill: 'bg-blue text-white', hollow: 'ring-blue text-blue', fill: 'var(--color-blue)' },
+	board: { label: 'EB board', pill: 'bg-[#6B4FBF] text-white', hollow: 'ring-[#6B4FBF] text-[#6B4FBF]', fill: '#6B4FBF' },
+	jboard: { label: 'j-board', pill: 'bg-[#D6488F] text-white', hollow: 'ring-[#D6488F] text-[#D6488F]', fill: '#D6488F' },
+}
+
 // An event whose tag was deleted off the legend keeps its place on the grid;
 // it just has nothing to file it under any more.
 const UNTAGGED = 'Event'

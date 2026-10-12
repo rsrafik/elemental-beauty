@@ -1,6 +1,7 @@
 'use client'
 
 import { useEffect, useRef, useState, useSyncExternalStore } from 'react'
+import { useUnsavedChanges } from '@/components/LeaveGuard'
 import { useRouter } from 'next/navigation'
 import DashboardShell from '@/components/dashboards/DashboardShell'
 import { BackButton, useDesignZoom } from '@/components/labs/LabViewParts'
@@ -525,6 +526,8 @@ export default function LabEditor({ id }) {
 	const [previewing, setPreviewing] = useState(false)
 	const [dirty, setDirty] = useState(false)
 	const [confirmDiscard, setConfirmDiscard] = useState(false)
+	// leaving with edits not yet saved asks first
+	useUnsavedChanges(dirty)
 	const coverInput = useRef(null)
 	const lessonInput = useRef(null)
 

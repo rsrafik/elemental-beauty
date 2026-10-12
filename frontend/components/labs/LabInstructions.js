@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useMemo, useState, useSyncExternalStore } from 'react'
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react'
 import { createPortal } from 'react-dom'
 import { parseInstructions, stepsOf } from '@/lib/labContent'
 
@@ -263,17 +263,209 @@ function NavButton({ direction, onClick, disabled, size, chevron }) {
 	)
 }
 
+// A card's text: title, step and warnings, in a box that scrolls when a step
+// is too long for the card.
+//
+// The box is the whole inner card, top edge to bottom edge, so a long step
+// scrolls the full height of it and slides under the badge (drawn after it,
+// on top). Its padding keeps the text clear of the badge and the buttons
+// while it's at rest, and the text centres in what's left while it fits —
+// `my-auto` rather than `justify-center`, which would push the top of a
+// too-tall block out of reach above the box.
+//
+// While there's more below, the bottom fades out and a "scroll" pill sits
+// over it (a tap on it scrolls on); once there's something above, the top
+// fades too. Phones hide scrollbars until you scroll, so without these a long
+// step would just look cut off. `size` is 'card' or 'full' — the normal deck
+// or the fullscreen one, whose arrows sit along the bottom, so its pill sits
+// above them.
+const SCROLL_SIZES = {
+	card: {
+		box: 'px-[40px] pt-[80px] pb-[56px]',
+		fadeTop: 'h-[80px]',
+		fadeBottom: 'h-[72px]',
+		pill: 'bottom-[12px] gap-[4px] px-[10px] py-[4px] text-[11px]',
+		chevron: 'w-[8px] h-[8px]',
+	},
+	full: {
+		box: 'px-[80px] pt-[150px] pb-[170px]',
+		fadeTop: 'h-[150px]',
+		fadeBottom: 'h-[200px]',
+		pill: 'bottom-[106px] gap-[8px] px-[20px] py-[8px] text-[22px]',
+		chevron: 'w-[16px] h-[16px]',
+	},
+}
+
+function ScrollingText({ size, children }) {
+	const sizes = SCROLL_SIZES[size]
+	const ref = useRef(null)
+	const [above, setAbove] = useState(false)
+	const [below, setBelow] = useState(false)
+
+	const measure = useCallback(() => {
+		const el = ref.current
+		if (!el) return
+		setAbove(el.scrollTop > 1)
+		setBelow(el.scrollHeight - el.scrollTop - el.clientHeight > 1)
+	}, [])
+
+	// measured again whenever the box or the text changes size — the card
+	// turning wider, the web font arriving
+	useLayoutEffect(() => {
+		const el = ref.current
+		if (!el) return
+		let live = true
+		const observer = new ResizeObserver(measure)
+		observer.observe(el)
+		observer.observe(el.firstElementChild)
+		document.fonts?.ready.then(() => live && measure())
+		return () => {
+			live = false
+			observer.disconnect()
+		}
+	}, [measure])
+
+	const scrollOn = () => {
+		const el = ref.current
+		el?.scrollBy({ top: el.clientHeight * 0.6, behavior: 'smooth' })
+	}
+
+	return (
+		<>
+			<div
+				ref={ref}
+				onScroll={measure}
+				className={`
+					absolute
+					inset-0
+					overflow-y-auto
+					overscroll-contain
+					flex
+					flex-col
+					text-center
+					${sizes.box}
+				`}
+			>
+				<div className="
+					my-auto
+					flex
+					flex-col
+					items-center
+				">
+					{children}
+				</div>
+			</div>
+
+			<div
+				aria-hidden="true"
+				className={`
+					pointer-events-none
+					absolute
+					inset-x-0
+					top-0
+					bg-gradient-to-b
+					from-white
+					to-transparent
+					transition-opacity
+					duration-200
+					${sizes.fadeTop}
+					${above ? 'opacity-100' : 'opacity-0'}
+				`}
+			/>
+			<div
+				aria-hidden="true"
+				className={`
+					pointer-events-none
+					absolute
+					inset-x-0
+					bottom-0
+					bg-gradient-to-t
+					from-white
+					via-white/80
+					to-transparent
+					transition-opacity
+					duration-200
+					${sizes.fadeBottom}
+					${below ? 'opacity-100' : 'opacity-0'}
+				`}
+			/>
+			<button
+				type="button"
+				onClick={scrollOn}
+				tabIndex={below ? 0 : -1}
+				aria-hidden={!below}
+				className={`
+					absolute
+					left-1/2
+					-translate-x-1/2
+					flex
+					items-center
+					rounded-full
+					bg-green
+					font-vietnam
+					font-semibold
+					leading-none
+					text-black
+					cursor-pointer
+					transition-opacity
+					duration-200
+					${sizes.pill}
+					${below ? 'opacity-100' : 'opacity-0 pointer-events-none'}
+				`}
+			>
+				scroll
+				{/* the right-pointing chevron, turned to point down */}
+				<Chevron
+					direction="right"
+					className={`
+						${sizes.chevron}
+						rotate-90
+						motion-safe:animate-bounce
+					`}
+				/>
+			</button>
+		</>
+	)
+}
+
 // One card's face in the normal-size deck — the design's 530×415 white
 // window: badge in the corner, title and step centred in the middle.
-//
-// The title and step sit in their own scrolling box, between the badge's row
-// and the fullscreen button's: centred while they fit, and when a step is too
-// long for the card they start at the top of the box and scroll inside it.
-// (`my-auto` rather than `justify-center`, which would push the top of a
-// too-tall block out of reach above the box.)
 function CardFace({ step }) {
 	return (
 		<>
+			<ScrollingText size="card">
+				{step.title && (
+					<h3 className="
+						font-vietnam
+						font-semibold
+						text-[25px]
+						leading-[30px]
+						text-black
+					">
+						{step.title}
+					</h3>
+				)}
+				<p className="
+					mt-[37.3px]
+					max-w-[290px]
+					font-vietnam
+					text-[14.5px]
+					leading-[23.4px]
+					text-black
+				">
+					{step.text}
+				</p>
+				<Warnings
+					list={step.warnings}
+					className="
+						mt-[10px]
+						max-w-[290px]
+						font-vietnam
+						text-[14.5px]
+						leading-[23.4px]
+					"
+				/>
+			</ScrollingText>
 			<span className="
 				absolute
 				left-[27px]
@@ -293,66 +485,48 @@ function CardFace({ step }) {
 			">
 				{step.label}
 			</span>
-			<div className="
-				absolute
-				inset-x-0
-				top-[80px]
-				bottom-[40px]
-				overflow-y-auto
-				overscroll-contain
-				flex
-				flex-col
-				px-[40px]
-				text-center
-			">
-				<div className="
-					my-auto
-					flex
-					flex-col
-					items-center
-				">
-					{step.title && (
-						<h3 className="
-							font-vietnam
-							font-semibold
-							text-[25px]
-							leading-[30px]
-							text-black
-						">
-							{step.title}
-						</h3>
-					)}
-					<p className="
-						mt-[37.3px]
-						max-w-[290px]
-						font-vietnam
-						text-[14.5px]
-						leading-[23.4px]
-						text-black
-					">
-						{step.text}
-					</p>
-					<Warnings
-						list={step.warnings}
-						className="
-							mt-[10px]
-							max-w-[290px]
-							font-vietnam
-							text-[14.5px]
-							leading-[23.4px]
-						"
-					/>
-				</div>
-			</div>
 		</>
 	)
 }
 
 // The same card, drawn on the fullscreen mockup's 1712×1004 frame — its text
-// scrolling the same way, between the badge and the arrows.
+// scrolling the same way.
 function FullscreenFace({ step }) {
 	return (
 		<>
+			<ScrollingText size="full">
+				{step.title && (
+					<h3 className="
+						font-vietnam
+						font-semibold
+						text-[48.5px]
+						leading-[58px]
+						text-black
+					">
+						{step.title}
+					</h3>
+				)}
+				<p className="
+					mt-[43.8px]
+					max-w-[700px]
+					font-vietnam
+					text-[29px]
+					leading-[47px]
+					text-black
+				">
+					{step.text}
+				</p>
+				<Warnings
+					list={step.warnings}
+					className="
+						mt-[20px]
+						max-w-[700px]
+						font-vietnam
+						text-[29px]
+						leading-[47px]
+					"
+				/>
+			</ScrollingText>
 			<span className="
 				absolute
 				left-[53px]
@@ -372,57 +546,6 @@ function FullscreenFace({ step }) {
 			">
 				{step.label}
 			</span>
-			<div className="
-				absolute
-				inset-x-0
-				top-[150px]
-				bottom-[105px]
-				overflow-y-auto
-				overscroll-contain
-				flex
-				flex-col
-				px-[80px]
-				text-center
-			">
-				<div className="
-					my-auto
-					flex
-					flex-col
-					items-center
-				">
-					{step.title && (
-						<h3 className="
-							font-vietnam
-							font-semibold
-							text-[48.5px]
-							leading-[58px]
-							text-black
-						">
-							{step.title}
-						</h3>
-					)}
-					<p className="
-						mt-[43.8px]
-						max-w-[700px]
-						font-vietnam
-						text-[29px]
-						leading-[47px]
-						text-black
-					">
-						{step.text}
-					</p>
-					<Warnings
-						list={step.warnings}
-						className="
-							mt-[20px]
-							max-w-[700px]
-							font-vietnam
-							text-[29px]
-							leading-[47px]
-						"
-					/>
-				</div>
-			</div>
 		</>
 	)
 }

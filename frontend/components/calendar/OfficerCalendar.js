@@ -5,17 +5,16 @@ import { useRouter } from 'next/navigation'
 import { useDismiss } from '@/lib/dismiss'
 import DashboardShell from '@/components/dashboards/DashboardShell'
 import { eventCategories, events as eventsApi, labs as labsApi } from '@/lib/api'
-import { buildMonths, calendarOnly, capacityField, categoryNameOf, dayBadge, hasMeetingLink, teamLabel, typesIn } from '@/lib/calendar'
+import { STAFF_TRACKS, buildMonths, calendarOnly, capacityField, categoryNameOf, dayBadge, hasMeetingLink, teamLabel, typesIn } from '@/lib/calendar'
 import HideFromEventsToggle from '@/components/events/HideFromEventsToggle'
 import { LinksField, cleanLinks } from '@/components/events/EventLinks'
 import TeamField from '@/components/events/TeamField'
 import { JoinMeetingButton, MeetingLinkField } from '@/components/events/MeetingLink'
 import { COVER_MAX, shrinkImage } from '@/lib/images'
-import EventDetailsDialog from '@/components/events/EventDetailsDialog'
 import { prettyTimeRange, thisMonth } from '@/lib/dates'
 import { canEditLab, defaultOffTracks, hiddenTracks, tracksChangedFrom } from '@/lib/roles'
 import { useRole, useSession } from '@/lib/session'
-import { EventDialog as EditEventDialog, toCard } from '@/components/events/OfficerEvents'
+import { useCalendarEventDialogs } from '@/components/calendar/CalendarEventDialogs'
 
 // /calendar for officer / treasurer / admin: the member month view, plus the
 // button that puts something new on it.
@@ -62,14 +61,7 @@ function categoriesFrom(categories) {
 // `fill` is the pill's colour as a value and `dark` marks the ones with black
 // text — for the split badge of a day shared by several tracks (dayBadge in
 // lib/calendar), which is painted with a gradient rather than a class.
-const TRACKS = {
-	members: { label: 'members', pill: 'bg-orange text-white', hollow: 'ring-orange text-orange', fill: 'var(--color-orange)' },
-	officers: { label: 'e-board', pill: 'bg-yellow text-black', hollow: 'ring-yellow text-yellow-dark', fill: 'var(--color-yellow)', dark: true },
-	open: { label: 'open to all', pill: 'bg-green text-black', hollow: 'ring-green text-green-dark', fill: 'var(--color-green)', dark: true },
-	online: { label: 'online', pill: 'bg-blue text-white', hollow: 'ring-blue text-blue', fill: 'var(--color-blue)' },
-	board: { label: 'EB board', pill: 'bg-[#6B4FBF] text-white', hollow: 'ring-[#6B4FBF] text-[#6B4FBF]', fill: '#6B4FBF' },
-	jboard: { label: 'j-board', pill: 'bg-[#D6488F] text-white', hollow: 'ring-[#D6488F] text-[#D6488F]', fill: '#D6488F' },
-}
+const TRACKS = STAFF_TRACKS
 
 // Officers-only, EB-board and j-board days never reach the member calendar,
 // which filters them out. This page shows the board every track it can see —
@@ -1287,12 +1279,6 @@ export default function OfficerCalendar() {
 	// into January of the next year on its own.
 	const [view, setView] = useState(thisMonth)
 	const [dialogOpen, setDialogOpen] = useState(false)
-	// The event open in the editor, as /events' cards shape it — set by
-	// clicking its entry (see Entry), null when closed.
-	const [editing, setEditing] = useState(null)
-	// Or, for one that isn't this person's to change, the row open read-only
-	// (see EventDetailsDialog).
-	const [viewing, setViewing] = useState(null)
 
 	// The tracks switched off in the colour key: their days leave the grid and
 	// the agenda. Everything starts on, bar j-board for officers and the
@@ -1450,52 +1436,17 @@ export default function OfficerCalendar() {
 			return
 		}
 		const row = eventRows.find((event) => event.eventId === entry.eventId)
-		if (!row) return
-		// the API says whether it's yours to change — a j-board event an
-		// officer or above added isn't, to j-board
-		if (row.canEdit === false) setViewing(row)
-		else setEditing(toCard(row))
+		// the editor, or read-only if the API says it isn't yours to change
+		if (row) openEvent(row)
 	}
 
-	// The editor's save and delete. Same body /events
-	// sends; the whole page reloads afterwards since the entry may have moved
-	// day, changed colour or gone.
-	const updateEvent = async (values) => {
-		setError(null)
-		try {
-			await eventsApi.update(editing.id, {
-				title: values.title,
-				date: values.date,
-				startTime: values.time || null,
-				endTime: values.time ? values.endTime || null : null,
-				categoryId: values.categoryId === '' ? null : Number(values.categoryId),
-				track: values.track,
-				description: values.description,
-				image: values.image,
-				capacity: capacityField(values.track) !== 'spots' || values.spots.trim() === '' ? null : Number(values.spots),
-				team: values.track === 'jboard' ? values.team || null : null,
-				location: values.location.trim() || null,
-				hideFromEvents: values.hideFromEvents,
-				links: values.links,
-				meetingUrl: hasMeetingLink(values.track) ? values.meetingUrl.trim() || null : null,
-			})
-			await load()
-		} catch (err) {
-			setError(err.message)
-		}
-		setEditing(null)
-	}
-
-	const deleteEvent = async () => {
-		setError(null)
-		try {
-			await eventsApi.remove(editing.id)
-			await load()
-		} catch (err) {
-			setError(err.message)
-		}
-		setEditing(null)
-	}
+	// The editor's save and delete reload the whole page afterwards, since the
+	// entry may have moved day, changed colour or gone.
+	const { open: openEvent, dialogs: eventDialogs } = useCalendarEventDialogs({
+		categories,
+		onChanged: load,
+		onError: setError,
+	})
 
 	const weeks = monthWeeks(view.year, view.month)
 	const stamp = monthKey(view.year, view.month)
@@ -1895,23 +1846,7 @@ export default function OfficerCalendar() {
 				/>
 			)}
 
-			{editing && (
-				<EditEventDialog
-					event={editing}
-					categories={categories}
-					onClose={() => setEditing(null)}
-					onSave={updateEvent}
-					onDelete={deleteEvent}
-				/>
-			)}
-
-			{viewing && (
-				<EventDetailsDialog
-					event={viewing}
-					trackLabel={TRACKS[viewing.track]?.label}
-					onClose={() => setViewing(null)}
-				/>
-			)}
+			{eventDialogs}
 
 			{pendingRemoval && (
 				<ConfirmRemoveDialog

@@ -5,8 +5,12 @@ import { useRouter } from 'next/navigation'
 import Sidebar from '@/components/dashboards/Sidebar'
 import { useRole, useSession, useSignOut } from '@/lib/session'
 import { navFor, showInstagramFor } from '@/lib/nav'
-import { announcements as announcementsApi, events as eventsApi, labs as labsApi, members } from '@/lib/api'
+import { announcements as announcementsApi, eventCategories, events as eventsApi, labs as labsApi, members } from '@/lib/api'
 import EmailAllPopup from '@/components/EmailAllPopup'
+import { useUnsavedChanges } from '@/components/LeaveGuard'
+import { useCalendarEventDialogs } from '@/components/calendar/CalendarEventDialogs'
+import { JoinMeetingButton } from '@/components/events/MeetingLink'
+import { STAFF_TRACKS, calendarOnly, hasMeetingLink } from '@/lib/calendar'
 import { isoDate, shortDate, today } from '@/lib/dates'
 import { canManageLabs, onLeaderboard } from '@/lib/roles'
 
@@ -70,6 +74,88 @@ function RingDate({ children }) {
 	)
 }
 
+// The next three things on the calendar that haven't started yet, labs and
+// events together, soonest first — [0] goes in the small front box, the one
+// you see without hovering. Something later today still counts; one that
+// already started this morning doesn't. Worked out here rather than with the
+// API's ?when=upcoming, which compares whole dates.
+//
+// An event that lives only on the calendar — a board track, a meeting, or
+// "hide from events" switched on — has no sign-ups and no check-in page, so it
+// keeps its row (`event`) to open the way the calendar opens it instead.
+function soonest(labs, events) {
+	const now = today()
+	const clock = new Date().toTimeString().slice(0, 5)
+	return [
+		// drafts aren't happening yet — they stay on /labs until published
+		...labs.filter((lab) => lab.published !== false).map((lab) => ({
+			id: `lab-${lab.labId}`,
+			// clicking the ring opens its check-in page
+			href: `/labs/view?id=${lab.labId}`,
+			date: isoDate(lab.date),
+			time: lab.startTime ?? '',
+			title: lab.title,
+			taken: lab.taken,
+			capacity: lab.capacity,
+		})),
+		...events.map((event) => {
+			const onCalendarOnly = calendarOnly(event.track, event.category?.name) || event.hideFromEvents
+			return {
+				id: `event-${event.eventId}`,
+				href: `/events/view?id=${event.eventId}`,
+				date: isoDate(event.date),
+				time: event.startTime ?? '',
+				title: event.title,
+				taken: event.taken,
+				capacity: event.capacity,
+				event: onCalendarOnly ? event : null,
+				track: event.track,
+				// the calendar's "join" pill, where the event has a link
+				meetingUrl: hasMeetingLink(event.track) ? event.meetingUrl ?? null : null,
+			}
+		}),
+	]
+		// today only while it's still ahead — no time on it counts as
+		// all day, so it stays until tomorrow
+		.filter((row) => row.date > now || (row.date === now && (!row.time || row.time >= clock)))
+		// same day: the earlier start time comes first, and something
+		// with no time on it sorts ahead of something with one
+		.sort((a, b) => a.date.localeCompare(b.date) || a.time.localeCompare(b.time))
+		.slice(0, 3)
+}
+
+// An event with no cap is uncapped, not 0 — the label drops the denominator
+// rather than inventing one.
+const attending = (row) =>
+	row.capacity == null ? `Attending: ${row.taken}` : `Attending: ${row.taken}/${row.capacity}`
+
+// What goes under a ring's title: how many are coming — or, for a calendar-only
+// event, which nobody signs up for, its "join" button if it has a meeting link
+// and nothing if it doesn't. `className` is the ring's own spacing.
+function RingDetail({ row, className = '' }) {
+	if (!row) return null
+	if (row.event) {
+		return (
+			<JoinMeetingButton
+				url={row.meetingUrl}
+				tone={STAFF_TRACKS[row.track]?.pill}
+				className={className}
+			/>
+		)
+	}
+	return (
+		<h3 className={`
+			text-black
+			font-vietnam
+			text-sm
+			sm:text-base
+			${className}
+		`}>
+			{attending(row)}
+		</h3>
+	)
+}
+
 function LeaderRow({ place, name }) {
 	return (
 		<div className="
@@ -116,9 +202,30 @@ export default function OfficerDashboard() {
 	// doesn't think of them as separate queues, and neither does this panel.
 	// Soonest first: [0] is drawn on the front ring, [2] on the one at the back.
 	const [upcoming, setUpcoming] = useState([])
+	// the event tags, for the editor a calendar-only event opens in
+	const [categories, setCategories] = useState([])
+	// a save or delete from that editor the API refused — the panel's heading
+	// says so, the way the announcement box's does
+	const [upcomingError, setUpcomingError] = useState(null)
+
+	// A calendar-only event opens what the calendar opens for it: the event's
+	// editor, or the read-only overview if it isn't this person's to change.
+	// A save or delete re-reads the panel, since the event may have moved or
+	// gone.
+	const reloadUpcoming = () =>
+		Promise.all([labsApi.list(), eventsApi.list()])
+			.then(([labs, events]) => setUpcoming(soonest(labs, events)))
+			.catch(() => {})
+	const { open: openEvent, dialogs: eventDialogs } = useCalendarEventDialogs({
+		categories,
+		onChanged: reloadUpcoming,
+		onError: setUpcomingError,
+	})
 
 	// what's in the announcement box, and what the POST button is doing about it
 	const [draft, setDraft] = useState('')
+	// leaving with an announcement typed and not posted asks first
+	useUnsavedChanges(draft.trim() !== '')
 	const [posting, setPosting] = useState(false)
 	const [posted, setPosted] = useState(false)
 	const [error, setError] = useState(null)
@@ -152,70 +259,34 @@ export default function OfficerDashboard() {
 			})
 			.catch(() => {})
 
-		// The next three things that haven't started yet, labs and events
-		// together, soonest first — [0] goes in the small front box, the one
-		// you see without hovering. Something later today still counts; one
-		// that already started this morning doesn't. Worked out here rather
-		// than with the API's ?when=upcoming, which compares whole dates.
-		Promise.all([labsApi.list(), eventsApi.list()])
-			.then(([labs, events]) => {
+		Promise.all([labsApi.list(), eventsApi.list(), eventCategories.list()])
+			.then(([labs, events, tags]) => {
 				if (!live) return
-				const now = today()
-				const clock = new Date().toTimeString().slice(0, 5)
-				const soon = [
-					// drafts aren't happening yet — they stay on /labs until published
-					...labs.filter((lab) => lab.published !== false).map((lab) => ({
-						id: `lab-${lab.labId}`,
-						// clicking the ring opens its check-in page
-						href: `/labs/view?id=${lab.labId}`,
-						date: isoDate(lab.date),
-						time: lab.startTime ?? '',
-						title: lab.title,
-						taken: lab.taken,
-						capacity: lab.capacity,
-					})),
-					...events.map((event) => ({
-						id: `event-${event.eventId}`,
-						href: `/events/view?id=${event.eventId}`,
-						date: isoDate(event.date),
-						time: event.startTime ?? '',
-						title: event.title,
-						taken: event.taken,
-						capacity: event.capacity,
-					})),
-				]
-					// today only while it's still ahead — no time on it counts as
-					// all day, so it stays until tomorrow
-					.filter((row) => row.date > now || (row.date === now && (!row.time || row.time >= clock)))
-					// same day: the earlier start time comes first, and something
-					// with no time on it sorts ahead of something with one
-					.sort((a, b) => a.date.localeCompare(b.date) || a.time.localeCompare(b.time))
-					.slice(0, 3)
-				setUpcoming(soon)
+				setUpcoming(soonest(labs, events))
+				setCategories(tags)
 			})
 			.catch(() => {})
 
 		return () => { live = false }
 	}, [])
 
-	// What makes a ring a link to its lab or event's check-in page — nothing,
-	// for a ring with nothing on it.
-	const ring = (row) => row
-		? {
-			role: 'link',
+	// What makes a ring clickable: a link to its lab or event's check-in page,
+	// or for a calendar-only event, a button that opens it as the calendar
+	// does — nothing, for a ring with nothing on it. Enter only counts on the
+	// ring itself, not on the "join" link inside it.
+	const ring = (row) => {
+		if (!row) return {}
+		const go = () => (row.event ? openEvent(row.event) : router.push(row.href))
+		return {
+			role: row.event ? 'button' : 'link',
 			tabIndex: 0,
-			'aria-label': `${row.title} check-in`,
-			onClick: () => router.push(row.href),
+			'aria-label': row.event ? `Open ${row.title}` : `${row.title} check-in`,
+			onClick: go,
 			onKeyDown: (event) => {
-				if (event.key === 'Enter') router.push(row.href)
+				if (event.key === 'Enter' && event.target === event.currentTarget) go()
 			},
 		}
-		: {}
-
-	// An event with no cap is uncapped, not 0 — the label drops the denominator
-	// rather than inventing one.
-	const attending = (row) =>
-		row.capacity == null ? `Attending: ${row.taken}` : `Attending: ${row.taken}/${row.capacity}`
+	}
 
 	const post = async () => {
 		const body = draft.trim()
@@ -425,7 +496,7 @@ export default function OfficerDashboard() {
 						text-[22px]
 						text-black
 					">
-						upcoming
+						{upcomingError ?? 'upcoming'}
 					</h2>
 					{/* concentric rings anchored to the bottom-left corner */}
 					<div {...ring(upcoming[2])} className={`
@@ -465,20 +536,17 @@ export default function OfficerDashboard() {
 							">
 								{upcoming[2]?.title ?? ''}
 							</h2>
-							<h3 className="
-								text-black
-								font-vietnam
-								text-sm
-								sm:text-base
-								mt-1
-								ml-4
-								sm:ml-8
-								lg:ml-20
-								mb-6
-								lg:mb-10
-							">
-								{upcoming[2] ? attending(upcoming[2]) : ''}
-							</h3>
+							<RingDetail
+								row={upcoming[2]}
+								className="
+									mt-1
+									ml-4
+									sm:ml-8
+									lg:ml-20
+									mb-6
+									lg:mb-10
+								"
+							/>
                     </div>
 					<div {...ring(upcoming[1])} className={`
 						peer/lighter
@@ -520,15 +588,7 @@ export default function OfficerDashboard() {
 							">
 								{upcoming[1]?.title ?? ''}
 							</h2>
-							<h3 className="
-								text-black
-								font-vietnam
-								text-sm
-								sm:text-base
-								mt-1
-							">
-								{upcoming[1] ? attending(upcoming[1]) : ''}
-							</h3>
+							<RingDetail row={upcoming[1]} className="mt-1" />
 						</div>
                     </div>
 					<div {...ring(upcoming[0])} className={`
@@ -574,15 +634,7 @@ export default function OfficerDashboard() {
 							">
 								{upcoming[0]?.title ?? ''}
 							</h2>
-							<h3 className="
-								text-black
-								font-vietnam
-								text-sm
-								sm:text-base
-								mt-1
-							">
-								{upcoming[0] ? attending(upcoming[0]) : ''}
-							</h3>
+							<RingDetail row={upcoming[0]} className="mt-1" />
 						</div>
                     </div>
 
@@ -804,6 +856,7 @@ export default function OfficerDashboard() {
 					onClose={() => setEmailing(false)}
 				/>
 			)}
+			{eventDialogs}
 		</main>
 	)
 }

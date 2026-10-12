@@ -1,6 +1,7 @@
 'use client'
 
 import { useEffect, useRef, useState } from 'react'
+import { useUnsavedChanges } from '@/components/LeaveGuard'
 import Link from 'next/link'
 import DashboardShell from '@/components/dashboards/DashboardShell'
 import { Popup, PopupButton } from '@/components/labs/LabViewParts'
@@ -2162,6 +2163,8 @@ export default function Profile() {
 		draft.last !== profile.last ||
 		draft.email !== profile.email ||
 		draft.photo !== profile.photo
+	// leaving with the form changed and not saved asks first
+	useUnsavedChanges(dirty)
 
 	// a name nobody can read is worse than the one you had, so an empty field
 	// greys the save out rather than being taken and complained about after

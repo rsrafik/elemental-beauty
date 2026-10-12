@@ -529,6 +529,9 @@ export default function Sidebar({
 						<button
 							type="button"
 							onClick={onLogout}
+							// leaves the page, so it asks first if there's
+							// unsaved work on it (components/LeaveGuard.js)
+							data-leaves-page
 							aria-label="Log out"
 							className="
 								group
