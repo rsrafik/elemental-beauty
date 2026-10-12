@@ -698,6 +698,22 @@ body {
   cursor: not-allowed;
 }
 
+/* A flashcard sliding in or out (Track in components/labs/LabInstructions.js).
+   Each card says where it comes from or goes to: --slide-from / --slide-to,
+   100% or -100% of its own width. The incoming card ends at no transform at
+   all — sitting exactly in the window, nothing left to round to a pixel. */
+@keyframes flashcard-in {
+  from {
+    transform: translate3d(var(--slide-from), 0, 0);
+  }
+}
+
+@keyframes flashcard-out {
+  to {
+    transform: translate3d(var(--slide-to), 0, 0);
+  }
+}
+
 /* The flashcard deck's fullscreen box (components/labs/LabInstructions.js)
    sits on <body> the whole time the deck is on the page, and is only drawn
    while it's the element that's fullscreen — or, where there's no Fullscreen

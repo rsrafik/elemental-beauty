@@ -16,10 +16,12 @@ import { parseInstructions, stepsOf } from '@/lib/labContent'
 // Scaled in LabViewParts). The fullscreen deck is drawn on its own 1712×1004
 // mockup and zooms itself to the screen.
 
-// The slide between cards: the site's ease-out, long enough to read as a
-// card moving rather than the text changing.
-const SLIDE_MS = 450
-const SLIDE_EASE = 'cubic-bezier(0.22, 1, 0.36, 1)'
+// The slide between cards: long enough to read as a card moving rather than
+// the text changing. An ease-out, but not the site's steepest one — that
+// curve gets within a few pixels in half the time and spends the rest
+// creeping, which on a phone reads as the card stopping short of the edge.
+const SLIDE_MS = 380
+const SLIDE_EASE = 'cubic-bezier(0.33, 1, 0.68, 1)'
 
 // The flashcard's width. The mockup's is 563; this one runs wider, so the deck
 // fills more of the column.
@@ -189,10 +191,58 @@ function RegularList({ parts }) {
 
 // ---- flashcards ------------------------------------------------------------
 
-// The strip of cards behind the white window. Every card is laid out once,
-// side by side, and the strip slides — so going from one step to the next
-// is the card actually moving over, not the text swapping.
+// The cards behind the white window. Only the one showing is on the page —
+// plus, during a move, the one it replaced: the old card slides out one way
+// as the new one slides in from the other (the keyframes are flashcard-in and
+// flashcard-out in globals.css), so going from one step to the next is a
+// card moving over, not the text swapping.
+//
+// Why not a strip of every card that slides as one: on an iPhone that strip
+// is a layer the width of the whole deck, with a native scroll view and a
+// mask in every card, and Safari redraws all of it when a slide ends — which
+// showed as the card stopping short and snapping into place. Two plain cards
+// are cheap to move, and the incoming one ends at no offset at all, so
+// there's nothing to round to a pixel when it lands.
+//
+// `renderCard(step, active)`: `active` is false while a card is moving, so
+// it holds still as a picture — no scrolling — until it has landed.
 function Track({ steps, index, renderCard, className = '' }) {
+	// the card showing, and the one sliding out (null when nothing's moving);
+	// kept in step with `index` during render, the way React suggests for
+	// state that follows a prop
+	const [shown, setShown] = useState(index)
+	const [leaving, setLeaving] = useState(null)
+	if (shown !== index) {
+		setLeaving(shown)
+		setShown(index)
+	}
+
+	// once the slide's done the old card goes and the new one comes alive
+	useEffect(() => {
+		if (leaving === null) return
+		const timer = setTimeout(() => setLeaving(null), SLIDE_MS + 40)
+		return () => clearTimeout(timer)
+	}, [leaving, shown])
+
+	const moving = leaving !== null
+	// forward: in from the right, out to the left; back: the other way
+	const forward = moving && shown > leaving
+	const animation = (name) => `${name} ${SLIDE_MS}ms ${SLIDE_EASE} both`
+
+	const card = (i, style) => (
+		<div
+			key={i}
+			aria-hidden={i !== shown}
+			className="
+				absolute
+				inset-0
+			"
+			style={style}
+		>
+			{renderCard(steps[i], i === shown && !moving)}
+		</div>
+	)
+
 	return (
 		<div className={`
 			absolute
@@ -200,35 +250,14 @@ function Track({ steps, index, renderCard, className = '' }) {
 			overflow-hidden
 			${className}
 		`}>
-			<div
-				className="
-					flex
-					h-full
-				"
-				style={{
-					transform: `translateX(-${index * 100}%)`,
-					transition: `transform ${SLIDE_MS}ms ${SLIDE_EASE}`,
-					// kept on its own layer all the time: Safari otherwise lifts
-					// it onto one when the slide starts and drops it when it
-					// ends, and the redraw at the end shows as a stop and a snap
-					willChange: 'transform',
-				}}
-			>
-				{steps.map((step, i) => (
-					<div
-						key={i}
-						aria-hidden={i !== index}
-						className="
-							relative
-							w-full
-							h-full
-							shrink-0
-						"
-					>
-						{renderCard(step)}
-					</div>
-				))}
-			</div>
+			{moving && steps[leaving] && card(leaving, {
+				animation: animation('flashcard-out'),
+				'--slide-to': forward ? '-100%' : '100%',
+			})}
+			{steps[shown] && card(shown, moving ? {
+				animation: animation('flashcard-in'),
+				'--slide-from': forward ? '100%' : '-100%',
+			} : undefined)}
 		</div>
 	)
 }
@@ -291,7 +320,8 @@ function NavButton({ direction, onClick, disabled, size, chevron }) {
 // until you scroll, so without it a long step would just look cut off.
 //
 // `size` is 'card' or 'full' — the normal deck or the fullscreen one, whose
-// arrows sit along the bottom, so its pill sits above them.
+// arrows sit along the bottom, so its pill sits above them. `active` is false
+// while the card is sliding (see Track): it doesn't scroll until it lands.
 const SCROLL_SIZES = {
 	card: {
 		box: 'px-[40px] pt-[80px] pb-[56px]',
@@ -313,7 +343,7 @@ function fadeMask({ top, bottom }) {
 	return { maskImage: mask, WebkitMaskImage: mask }
 }
 
-function ScrollingText({ size, children }) {
+function ScrollingText({ size, active, children }) {
 	const sizes = SCROLL_SIZES[size]
 	const ref = useRef(null)
 	const [below, setBelow] = useState(false)
@@ -353,11 +383,10 @@ function ScrollingText({ size, children }) {
 				className={`
 					absolute
 					inset-0
-					overflow-y-auto
-					overscroll-contain
 					flex
 					flex-col
 					text-center
+					${active ? 'overflow-y-auto overscroll-contain' : 'overflow-hidden'}
 					${sizes.box}
 				`}
 				style={fadeMask(sizes.fade)}
@@ -405,7 +434,7 @@ function ScrollingText({ size, children }) {
 					className={`
 						${sizes.chevron}
 						rotate-90
-						${below ? 'motion-safe:animate-bounce' : ''}
+						${below && active ? 'motion-safe:animate-bounce' : ''}
 					`}
 				/>
 			</button>
@@ -415,10 +444,10 @@ function ScrollingText({ size, children }) {
 
 // One card's face in the normal-size deck — the design's 530×415 white
 // window: badge in the corner, title and step centred in the middle.
-function CardFace({ step }) {
+function CardFace({ step, active }) {
 	return (
 		<>
-			<ScrollingText size="card">
+			<ScrollingText size="card" active={active}>
 				{step.title && (
 					<h3 className="
 						font-vietnam
@@ -476,10 +505,10 @@ function CardFace({ step }) {
 
 // The same card, drawn on the fullscreen mockup's 1712×1004 frame — its text
 // scrolling the same way.
-function FullscreenFace({ step }) {
+function FullscreenFace({ step, active }) {
 	return (
 		<>
-			<ScrollingText size="full">
+			<ScrollingText size="full" active={active}>
 				{step.title && (
 					<h3 className="
 						font-vietnam
@@ -579,7 +608,7 @@ function FullscreenDeck({ host, steps, index, go, onExit }) {
 					<Track
 						steps={steps}
 						index={index}
-						renderCard={(step) => <FullscreenFace step={step} />}
+						renderCard={(step, active) => <FullscreenFace step={step} active={active} />}
 					/>
 
 					<div className="
@@ -749,7 +778,7 @@ function Flashcards({ parts }) {
 					<Track
 						steps={steps}
 						index={index}
-						renderCard={(step) => <CardFace step={step} />}
+						renderCard={(step, active) => <CardFace step={step} active={active} />}
 					/>
 					<button
 						type="button"
