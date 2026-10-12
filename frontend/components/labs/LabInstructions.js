@@ -1,7 +1,7 @@
 'use client'
 
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react'
-import { createPortal, flushSync } from 'react-dom'
+import { createPortal } from 'react-dom'
 import { parseInstructions, stepsOf } from '@/lib/labContent'
 
 // The instruction tab of the full lab. Two modes, swapped with the button at
@@ -208,6 +208,10 @@ function Track({ steps, index, renderCard, className = '' }) {
 				style={{
 					transform: `translateX(-${index * 100}%)`,
 					transition: `transform ${SLIDE_MS}ms ${SLIDE_EASE}`,
+					// kept on its own layer all the time: Safari otherwise lifts
+					// it onto one when the slide starts and drops it when it
+					// ends, and the redraw at the end shows as a stop and a snap
+					willChange: 'transform',
 				}}
 			>
 				{steps.map((step, i) => (
@@ -273,69 +277,65 @@ function NavButton({ direction, onClick, disabled, size, chevron }) {
 // `my-auto` rather than `justify-center`, which would push the top of a
 // too-tall block out of reach above the box.
 //
-// While there's more below, the bottom fades out and a "scroll" pill sits
-// over it (a tap on it scrolls on); once there's something above, the top
-// fades too. Phones hide scrollbars until you scroll, so without these a long
-// step would just look cut off. `size` is 'card' or 'full' — the normal deck
-// or the fullscreen one, whose arrows sit along the bottom, so its pill sits
-// above them.
+// The fades at the top and bottom are a mask on the box itself, one band per
+// padding, rather than white overlays switched on by measuring: text fades
+// out as it scrolls into either band. A step that fits never reaches them —
+// the bands are its padding — so the mask is always on and nothing has to
+// work out whether to show it. That's what lets a long card slide in already
+// faded instead of fading up after it lands.
+//
+// The "scroll" pill does need measuring (is there more below?). It's
+// measured as soon as the card is laid out — every card in the deck is, off
+// to the side, before it slides in — appears without a fade, and fades out
+// once you reach the end. A tap on it scrolls on. Phones hide scrollbars
+// until you scroll, so without it a long step would just look cut off.
+//
+// `size` is 'card' or 'full' — the normal deck or the fullscreen one, whose
+// arrows sit along the bottom, so its pill sits above them.
 const SCROLL_SIZES = {
 	card: {
 		box: 'px-[40px] pt-[80px] pb-[56px]',
-		fadeTop: 'h-[80px]',
-		fadeBottom: 'h-[72px]',
+		fade: { top: 80, bottom: 56 },
 		pill: 'bottom-[12px] gap-[4px] px-[10px] py-[4px] text-[11px]',
 		chevron: 'w-[8px] h-[8px]',
 	},
 	full: {
 		box: 'px-[80px] pt-[150px] pb-[170px]',
-		fadeTop: 'h-[150px]',
-		fadeBottom: 'h-[200px]',
+		fade: { top: 150, bottom: 170 },
 		pill: 'bottom-[106px] gap-[8px] px-[20px] py-[8px] text-[22px]',
 		chevron: 'w-[16px] h-[16px]',
 	},
 }
 
+// transparent at each edge, solid from the inside of each band
+function fadeMask({ top, bottom }) {
+	const mask = `linear-gradient(to bottom, transparent 0, #000 ${top}px, #000 calc(100% - ${bottom}px), transparent 100%)`
+	return { maskImage: mask, WebkitMaskImage: mask }
+}
+
 function ScrollingText({ size, children }) {
 	const sizes = SCROLL_SIZES[size]
 	const ref = useRef(null)
-	const [above, setAbove] = useState(false)
 	const [below, setBelow] = useState(false)
-	// Whether the fades animate yet. Not on the way in: a long step has to
-	// arrive with its fade and pill already there — sliding in with the card
-	// rather than fading up after it lands — so they only animate once the
-	// card has been drawn, for scrolling.
-	const [settled, setSettled] = useState(false)
 
 	const measure = useCallback(() => {
 		const el = ref.current
 		if (!el) return
-		setAbove(el.scrollTop > 1)
 		setBelow(el.scrollHeight - el.scrollTop - el.clientHeight > 1)
 	}, [])
 
-	// Measured again whenever the box or the text changes size — the card
-	// turning wider, the web font arriving. The observer reports after layout
-	// and before the browser paints, and flushSync puts the answer on screen
-	// in that same frame, so the card is never drawn without its fade first
-	// (a plain state update would land a frame late). Every card in the deck
-	// is laid out at once, off to the side, so they're all measured before
-	// they slide in.
+	// measured again whenever the box or the text changes size — the card
+	// turning wider, the web font arriving
 	useLayoutEffect(() => {
 		const el = ref.current
 		if (!el) return
 		let live = true
-		const observer = new ResizeObserver(() => flushSync(measure))
+		const observer = new ResizeObserver(measure)
 		observer.observe(el)
 		observer.observe(el.firstElementChild)
 		document.fonts?.ready.then(() => live && measure())
-		// two frames: the first one's callbacks run before the observer's
-		let frame = requestAnimationFrame(() => {
-			frame = requestAnimationFrame(() => live && setSettled(true))
-		})
 		return () => {
 			live = false
-			cancelAnimationFrame(frame)
 			observer.disconnect()
 		}
 	}, [measure])
@@ -360,6 +360,7 @@ function ScrollingText({ size, children }) {
 					text-center
 					${sizes.box}
 				`}
+				style={fadeMask(sizes.fade)}
 			>
 				<div className="
 					my-auto
@@ -371,37 +372,8 @@ function ScrollingText({ size, children }) {
 				</div>
 			</div>
 
-			<div
-				aria-hidden="true"
-				className={`
-					pointer-events-none
-					absolute
-					inset-x-0
-					top-0
-					bg-gradient-to-b
-					from-white
-					to-transparent
-					${settled ? 'transition-opacity duration-200' : ''}
-					${sizes.fadeTop}
-					${above ? 'opacity-100' : 'opacity-0'}
-				`}
-			/>
-			<div
-				aria-hidden="true"
-				className={`
-					pointer-events-none
-					absolute
-					inset-x-0
-					bottom-0
-					bg-gradient-to-t
-					from-white
-					via-white/80
-					to-transparent
-					${settled ? 'transition-opacity duration-200' : ''}
-					${sizes.fadeBottom}
-					${below ? 'opacity-100' : 'opacity-0'}
-				`}
-			/>
+			{/* shows at once (no transition on the way in), fades on the way
+			    out; and only bounces while it's showing */}
 			<button
 				type="button"
 				onClick={scrollOn}
@@ -420,9 +392,10 @@ function ScrollingText({ size, children }) {
 					leading-none
 					text-black
 					cursor-pointer
-					${settled ? 'transition-opacity duration-200' : ''}
 					${sizes.pill}
-					${below ? 'opacity-100' : 'opacity-0 pointer-events-none'}
+					${below
+						? 'opacity-100'
+						: 'opacity-0 pointer-events-none transition-opacity duration-200'}
 				`}
 			>
 				scroll
@@ -432,7 +405,7 @@ function ScrollingText({ size, children }) {
 					className={`
 						${sizes.chevron}
 						rotate-90
-						motion-safe:animate-bounce
+						${below ? 'motion-safe:animate-bounce' : ''}
 					`}
 				/>
 			</button>
