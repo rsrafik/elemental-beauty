@@ -5,7 +5,7 @@ import { useRouter } from 'next/navigation'
 import { useDismiss } from '@/lib/dismiss'
 import DashboardShell from '@/components/dashboards/DashboardShell'
 import { eventCategories, events as eventsApi } from '@/lib/api'
-import { isoDate, prettyTimeRange } from '@/lib/dates'
+import { isoDate, prettyTimeRange, today } from '@/lib/dates'
 import { calendarOnly, capacityField, categoryNameOf, hasMeetingLink } from '@/lib/calendar'
 import HideFromEventsToggle from '@/components/events/HideFromEventsToggle'
 import { LinksField, cleanLinks } from '@/components/events/EventLinks'
@@ -14,10 +14,17 @@ import { MeetingLinkField } from '@/components/events/MeetingLink'
 import { canAddEvents, canChange, hiddenTracks } from '@/lib/roles'
 import { useJboardTeams, useRole } from '@/lib/session'
 import { splitByDate, CompletedDivider, COMPLETED_CARD } from '@/components/CardSections'
+import { RsvpButton } from '@/components/events/MemberEvents'
+import { QrPopup } from '@/components/labs/MemberLabQuiz'
 import { COVER_MAX, shrinkImage } from '@/lib/images'
 
 // /events for officer / treasurer / admin: every event on one sheet. Clicking
 // a card opens its check-in page; the dots in its corner edit it.
+//
+// j-board signs up for and attends events like a member, the same as labs
+// (see OfficerLabs): the rsvp button on an event still to come, and "my QR" on
+// one they hold a spot for, for another officer to scan at the door. One
+// they're signed up for opens the member's page rather than its check-in.
 //
 // Same page as /labs for officers — cards with a dots menu, a + in the header,
 // one dialog serving both — but the dialog is the calendar's new-event form:
@@ -67,6 +74,10 @@ export function toCard(event) {
 		links: event.links ?? [],
 		team: event.team ?? '',
 		meetingUrl: event.meetingUrl ?? '',
+		// seats gone, and where the person looking stands on it — j-board's
+		// rsvp button reads both
+		taken: event.taken ?? 0,
+		mine: event.mine ?? null,
 	}
 }
 
@@ -138,7 +149,8 @@ function CloseIcon({ className = '' }) {
 
 // The member card with one substitution: the corner holds a control instead of
 // a status icon.
-function EventCard({ title, date, time, endTime, location, image, onOpen, onEdit, done = false }) {
+// `action` is j-board's rsvp row under the card (see rsvpFor on the page).
+function EventCard({ title, date, time, endTime, location, image, onOpen, onEdit, action = null, done = false }) {
 	return (
 		<div
 			role="link"
@@ -251,6 +263,16 @@ function EventCard({ title, date, time, endTime, location, image, onOpen, onEdit
 					<DotsIcon className="w-4 h-4" />
 				</button>}
 			</div>
+
+			{action && (
+				<div className="
+					mt-3
+					flex
+					justify-center
+				">
+					{action}
+				</div>
+			)}
 		</div>
 	)
 }
@@ -965,6 +987,11 @@ export default function OfficerEvents({ openNew = false }) {
 	const role = useRole()
 	const changes = canChange(role)
 	const adds = canAddEvents(role, useJboardTeams())
+	const signsUp = role === 'jboard'
+	// events with an rsvp on its way, so a double click can't send two
+	const [rsvping, setRsvping] = useState(() => new Set())
+	// j-board's check-in code, up for an officer to scan
+	const [showQr, setShowQr] = useState(false)
 	const [events, setEvents] = useState([])
 	const [categories, setCategories] = useState([])
 	const [error, setError] = useState(null)
@@ -993,6 +1020,90 @@ export default function OfficerEvents({ openNew = false }) {
 			.catch((err) => live && setError(err.message))
 		return () => { live = false }
 	}, [])
+
+	// j-board's rsvp: signing up, leaving (a seat or the waitlist), or taking
+	// an offered spot — the same calls a member's card makes — then the list
+	// is re-read for where they've landed and the seat count.
+	const toggleRsvp = async (row) => {
+		if (rsvping.has(row.id)) return
+		setRsvping((prev) => new Set(prev).add(row.id))
+		setError(null)
+		try {
+			if (row.mine === 'rsvped' || row.mine === 'waitlisted') await eventsApi.unrsvp(row.id)
+			else await eventsApi.rsvp(row.id)
+			setEvents((await eventsApi.list()).map(toCard))
+		} catch (err) {
+			setError(err.message)
+		} finally {
+			setRsvping((prev) => {
+				const next = new Set(prev)
+				next.delete(row.id)
+				return next
+			})
+		}
+	}
+
+	// j-board's row under a card, as on /labs: the rsvp button on an event
+	// that hasn't reached its day, and "my QR" on one they hold a spot for,
+	// from sign-up through the event's own day (on the day it's the only
+	// button — sign-ups are the door's business by then)
+	const rsvpFor = (row) => {
+		if (!signsUp || row.date < today()) return null
+		const upcoming = row.date > today()
+		const holding = row.mine === 'rsvped' || row.mine === 'offered'
+		if (!upcoming && !holding && row.mine !== 'attended') return null
+		return (
+			<div className="
+				flex
+				flex-wrap
+				items-center
+				justify-center
+				gap-2
+			">
+				{(upcoming || row.mine === 'attended') && (
+					<span onClick={(clicked) => clicked.stopPropagation()}>
+						<RsvpButton
+							going={row.mine === 'rsvped' || row.mine === 'waitlisted'}
+							waitlist={row.mine === 'waitlisted' || (row.mine !== 'rsvped' && row.capacity != null && row.taken >= row.capacity)}
+							offered={row.mine === 'offered'}
+							attended={row.mine === 'attended'}
+							onClick={() => toggleRsvp(row)}
+						/>
+					</span>
+				)}
+				{holding && (
+					<button
+						type="button"
+						onClick={(clicked) => {
+							// the card underneath opens the event's page
+							clicked.stopPropagation()
+							setShowQr(true)
+						}}
+						className="
+							rounded-full
+							border
+							border-black/25
+							px-4
+							py-1.5
+							font-vietnam
+							font-semibold
+							text-sm
+							text-[#FF7C45]
+							cursor-pointer
+							transition-all
+							duration-200
+							ease-out
+							hover:-translate-y-0.5
+							hover:border-black/60
+							active:translate-y-0
+						"
+					>
+						my QR
+					</button>
+				)}
+			</div>
+		)
+	}
 
 	// Confirming a delete takes the event out and closes both layers at once,
 	// since the dialog it was opened from no longer has anything to edit.
@@ -1143,6 +1254,7 @@ export default function OfficerEvents({ openNew = false }) {
 						image={row.image}
 						onOpen={() => router.push(`/events/view?id=${row.id}`)}
 						onEdit={changes ? () => setEditing({ event: row }) : null}
+						action={rsvpFor(row)}
 					/>
 				))}
 			</div>
@@ -1167,6 +1279,13 @@ export default function OfficerEvents({ openNew = false }) {
 						))}
 					</div>
 				</>
+			)}
+
+			{showQr && (
+				<QrPopup
+					note="Show this to another officer at the door to check you in."
+					onClose={() => setShowQr(false)}
+				/>
 			)}
 
 			{editing && (

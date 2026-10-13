@@ -78,7 +78,7 @@ function CheckIcon({ className = '' }) {
 // of offering a toggle the API would refuse.
 // `offered` is a spot come free off the waitlist and held for you — the
 // button accepts it (see src/offers.js).
-function RsvpButton({ going, waitlist, attended, offered = false, onClick }) {
+export function RsvpButton({ going, waitlist, attended, offered = false, onClick }) {
 	if (attended) {
 		return (
 			<span

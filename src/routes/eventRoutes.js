@@ -4,7 +4,7 @@ import prisma from '../prismaClient.js'
 import requireRole from '../middleware/requireRole.js'
 import { onTreasuryTeam } from '../middleware/treasury.js'
 import { eventPoints } from '../points.js'
-import { mountRoster } from './roster.js'
+import { mountRoster, requireNotAttendee } from './roster.js'
 import { acceptOffer, confirmSpot, expireOffers, lockParent, offerNext, startsAt } from '../offers.js'
 import { log } from '../activity.js'
 import { readEndTime } from '../clubTime.js'
@@ -633,7 +633,7 @@ router.delete('/:eventId/rsvp', async (req, res) => {
 // A members-only event asks after dues the way a lab does: someone unpaid
 // comes back DUES_UNPAID, and the officer's answer is the same scan with
 // `dues` set (see src/dues.js). Body: { qrToken, dues? }
-router.post('/:eventId/checkin', requireRole('officer'), async (req, res) => {
+router.post('/:eventId/checkin', requireRole('officer'), requireNotAttendee('eventId', 'event'), async (req, res) => {
     const eventId = parseInt(req.params.eventId)
     if (isNaN(eventId)) { return res.status(400).json({ message: 'Invalid event id' }) }
 
