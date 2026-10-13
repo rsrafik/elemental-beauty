@@ -3,7 +3,7 @@
 import { useEffect, useState } from 'react'
 import Sidebar from '@/components/dashboards/Sidebar'
 import WaiverPopup from '@/components/dashboards/WaiverPopup'
-import { useRole, useSession, useSignOut } from '@/lib/session'
+import { useJboardTeams, useRole, useSession, useSignOut } from '@/lib/session'
 import { navFor, showInstagramFor } from '@/lib/nav'
 import { auth } from '@/lib/api'
 
@@ -112,6 +112,7 @@ const ACTION_OFF = 'bg-black/10 text-black/35 cursor-not-allowed'
 
 export default function OnboardingDashboard() {
 	const role = useRole()
+	const teams = useJboardTeams()
 	const signOut = useSignOut()
 	const { user, refresh } = useSession()
 
@@ -190,7 +191,7 @@ export default function OnboardingDashboard() {
 			lg:gap-6
 		">
 			<Sidebar
-				items={navFor(role)}
+				items={navFor(role, teams)}
 				showInstagram={showInstagramFor(role)}
 				onLogout={signOut}
 			/>

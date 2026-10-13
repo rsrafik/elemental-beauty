@@ -12,7 +12,7 @@ import TeamField from '@/components/events/TeamField'
 import { JoinMeetingButton, MeetingLinkField } from '@/components/events/MeetingLink'
 import { COVER_MAX, shrinkImage } from '@/lib/images'
 import { prettyTimeRange, thisMonth } from '@/lib/dates'
-import { canChange, canEditLab, defaultOffTracks, hiddenTracks, tracksChangedFrom } from '@/lib/roles'
+import { canAddEvents, canChange, canEditLab, defaultOffTracks, hiddenTracks, tracksChangedFrom } from '@/lib/roles'
 import { useRole, useSession } from '@/lib/session'
 import { useCalendarEventDialogs } from '@/components/calendar/CalendarEventDialogs'
 
@@ -1277,6 +1277,8 @@ export default function OfficerCalendar() {
 	// no adding or removing tags (events open read-only — the API's canEdit)
 	const changes = canChange(role)
 	const { user } = useSession()
+	// nor does j-board's treasury team add events (canAddEvents)
+	const adds = canAddEvents(role, user?.jboardTeams)
 	const router = useRouter()
 	// Which month is on screen. Stepping goes through Date so December rolls
 	// into January of the next year on its own.
@@ -1570,7 +1572,7 @@ export default function OfficerCalendar() {
 						</div>
 					</div>
 
-					{changes && <button
+					{adds && <button
 						type="button"
 						onClick={() => setDialogOpen(true)}
 						className="

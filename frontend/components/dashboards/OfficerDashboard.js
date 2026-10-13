@@ -3,7 +3,7 @@
 import { useEffect, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import Sidebar from '@/components/dashboards/Sidebar'
-import { useRole, useSession, useSignOut } from '@/lib/session'
+import { useJboardTeams, useRole, useSession, useSignOut } from '@/lib/session'
 import { navFor, showInstagramFor } from '@/lib/nav'
 import { announcements as announcementsApi, eventCategories, events as eventsApi, labs as labsApi, members } from '@/lib/api'
 import EmailAllPopup from '@/components/EmailAllPopup'
@@ -12,7 +12,7 @@ import { useCalendarEventDialogs } from '@/components/calendar/CalendarEventDial
 import { VideoIcon } from '@/components/events/MeetingLink'
 import { calendarOnly, hasMeetingLink } from '@/lib/calendar'
 import { isoDate, prettyTimeRange, shortDate, today } from '@/lib/dates'
-import { canChange, canManageLabs, onLeaderboard } from '@/lib/roles'
+import { canAddEvents, canChange, canManageLabs, onLeaderboard } from '@/lib/roles'
 
 // Shown to officer / treasurer / admin.
 // Sidebar + a 2x2 grid (quick actions / upcoming / announcement / leaderboard)
@@ -246,11 +246,14 @@ function LeaderRow({ place, name }) {
 
 export default function OfficerDashboard() {
 	const role = useRole()
+	const teams = useJboardTeams()
 	// adding labs is for officers and up, not j-board (canManageLabs)
 	const labEditor = canManageLabs(useSession().user)
 	// The advisor sees this dashboard as it is and can only use "Email All":
 	// new event, new lab and the announcement box are greyed for them.
 	const changes = canChange(role)
+	// and j-board's treasury team doesn't add events (canAddEvents)
+	const addsEvents = canAddEvents(role, teams)
 	const signOut = useSignOut()
 	const router = useRouter()
 
@@ -410,7 +413,7 @@ export default function OfficerDashboard() {
 			lg:gap-6
 		">
 			<Sidebar
-				items={navFor(role)}
+				items={navFor(role, teams)}
 				showInstagram={showInstagramFor(role)}
 				onLogout={signOut}
 			/>
@@ -502,8 +505,10 @@ export default function OfficerDashboard() {
 					<button
 						type="button"
 						onClick={() => router.push('/events?new=1')}
-						disabled={!changes}
-						title={changes ? undefined : 'Advisors can view everything but can’t make changes'}
+						disabled={!addsEvents}
+						title={addsEvents ? undefined : changes
+							? 'J-board’s treasury team doesn’t add events'
+							: 'Advisors can view everything but can’t make changes'}
 						className="
 						w-full
 						rounded-full

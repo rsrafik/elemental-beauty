@@ -13,7 +13,7 @@ import grantRoutes from './routes/grantRoutes.js'
 import reimbursementRoutes from './routes/reimbursementRoutes.js'
 import transactionRoutes from './routes/transactionRoutes.js'
 import authMiddleware from './middleware/authMiddleware.js'
-import requireRole, { denyRole } from './middleware/requireRole.js'
+import requireRole, { booksAccess } from './middleware/requireRole.js'
 import { sweepAbsences } from './sweepAbsences.js'
 import { expireOffers } from './offers.js'
 import offerRoutes from './routes/offerRoutes.js'
@@ -131,16 +131,18 @@ app.use('/api/announcements', authMiddleware, requireRole('member'), announcemen
 // sees, set by the treasurer alone (enforced inside the router)
 //
 // J-board outranks an officer but the books aren't theirs, so every finance
-// route turns them away (see denyRole).
-app.use('/api/year-targets', authMiddleware, requireRole('officer'), denyRole('jboard'), yearTargetRoutes)
-app.use('/api/reimbursements', authMiddleware, requireRole('officer'), denyRole('jboard'), reimbursementRoutes)
-app.use('/api/transactions', authMiddleware, requireRole('officer'), denyRole('jboard'), transactionRoutes)
+// route turns them away — bar j-board's treasury team, who read them all and
+// change only grants and sponsorships (see booksAccess).
+app.use('/api/year-targets', authMiddleware, requireRole('officer'), booksAccess, yearTargetRoutes)
+app.use('/api/reimbursements', authMiddleware, requireRole('officer'), booksAccess, reimbursementRoutes)
+app.use('/api/transactions', authMiddleware, requireRole('officer'), booksAccess, transactionRoutes)
 // Same split as transactions: every officer reads the books — the grant
 // tracker is on the analytics page they all see — and only the treasurer
 // writes to them. The write gate is inside the router.
-app.use('/api/grants', authMiddleware, requireRole('officer'), denyRole('jboard'), grantRoutes)
-// dues are the treasurer's to keep — reading as well as writing
-app.use('/api/dues', authMiddleware, requireRole('treasurer'), duesRoutes)
+app.use('/api/grants', authMiddleware, requireRole('officer'), booksAccess, grantRoutes)
+// dues are the treasurer's to keep — reading as well as writing (the
+// treasury team reads them, see booksAccess)
+app.use('/api/dues', authMiddleware, requireRole('treasurer'), booksAccess, duesRoutes)
 // the staff activity log: who changed whose role, points, membership, dues.
 // Every officer reads it (j-board without the dues lines — see the router).
 app.use('/api/activity', authMiddleware, requireRole('officer'), activityRoutes)

@@ -2,6 +2,7 @@ import express from 'express'
 import jwt from 'jsonwebtoken'
 import prisma from '../prismaClient.js'
 import requireRole from '../middleware/requireRole.js'
+import { onTreasuryTeam } from '../middleware/treasury.js'
 import { eventPoints } from '../points.js'
 import { mountRoster } from './roster.js'
 import { acceptOffer, confirmSpot, expireOffers, lockParent, offerNext, startsAt } from '../offers.js'
@@ -273,6 +274,10 @@ router.get('/:id', async (req, res) => {
 // ---- officer+ event management ----
 
 router.post('/', requireRole('officer'), async (req, res) => {
+    // j-board's treasury team keeps the books, not the calendar (treasury.js)
+    if (onTreasuryTeam(req)) {
+        return res.status(403).json({ message: 'J-board\u2019s treasury team can\u2019t add events' })
+    }
     const { title, type, track, categoryId, description, date, startTime, location, image, capacity, hideFromEvents } = req.body
     const { links, error: linksError } = readLinks(req.body.links ?? null)
     if (linksError) { return res.status(400).json({ message: linksError }) }

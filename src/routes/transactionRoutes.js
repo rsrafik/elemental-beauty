@@ -3,10 +3,14 @@ import prisma from '../prismaClient.js'
 import requireRole from '../middleware/requireRole.js'
 import { csvCell } from '../csv.js'
 import { log } from '../activity.js'
+import { SPONSORS_ONLY, isSponsorship, onTreasuryTeam } from '../middleware/treasury.js'
 
 const router = express.Router()
 // mounted behind requireRole('officer') — officers get the read/analytics
-// tier; every write below raises the floor to treasurer
+// tier; every write below raises the floor to treasurer. J-board's treasury
+// team gets past that floor for sponsorships alone: each write checks the row
+// it would leave behind (and, for a change, the one it starts from) is
+// sponsorship income (see treasury.js).
 
 // An awarded grant's income row is the grant — written and kept in step by
 // the grant triggers (see the fees_links_payouts_grant_income migration) — so
@@ -157,6 +161,9 @@ router.post('/', requireRole('treasurer'), async (req, res) => {
     if (type === 'income' && grantId !== undefined && grantId !== null) {
         return res.status(400).json({ message: 'An awarded grant writes its own income row' })
     }
+    if (onTreasuryTeam(req) && !isSponsorship({ type, category, grantId })) {
+        return res.status(403).json({ message: SPONSORS_ONLY })
+    }
 
     const data = { type, source, amount: parsedAmount, category }
     if (date !== undefined) {
@@ -220,10 +227,13 @@ router.put('/:id', requireRole('treasurer'), async (req, res) => {
     }
 
     try {
-        const existing = await prisma.transaction.findUnique({ where: { transactionId }, select: { type: true, grantId: true } })
+        const existing = await prisma.transaction.findUnique({ where: { transactionId }, select: { type: true, category: true, grantId: true } })
         if (!existing) { return res.status(404).json({ message: 'Transaction not found' }) }
         if (existing.type === 'income' && existing.grantId != null) {
             return res.status(409).json({ message: GRANT_ROW })
+        }
+        if (onTreasuryTeam(req) && !(isSponsorship(existing) && isSponsorship({ ...existing, ...data }))) {
+            return res.status(403).json({ message: SPONSORS_ONLY })
         }
         if ((data.type ?? existing.type) === 'income' && (data.grantId ?? existing.grantId) != null) {
             return res.status(400).json({ message: 'An awarded grant writes its own income row' })
@@ -268,6 +278,9 @@ router.delete('/:id', requireRole('treasurer'), async (req, res) => {
         if (!existing) { return res.status(404).json({ message: 'Transaction not found' }) }
         if (existing.type === 'income' && existing.grantId != null) {
             return res.status(409).json({ message: GRANT_ROW })
+        }
+        if (onTreasuryTeam(req) && !isSponsorship(existing)) {
+            return res.status(403).json({ message: SPONSORS_ONLY })
         }
 
         await prisma.$transaction(async (tx) => {

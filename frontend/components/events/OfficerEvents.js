@@ -11,8 +11,8 @@ import HideFromEventsToggle from '@/components/events/HideFromEventsToggle'
 import { LinksField, cleanLinks } from '@/components/events/EventLinks'
 import TeamField from '@/components/events/TeamField'
 import { MeetingLinkField } from '@/components/events/MeetingLink'
-import { canChange, hiddenTracks } from '@/lib/roles'
-import { useRole } from '@/lib/session'
+import { canAddEvents, canChange, hiddenTracks } from '@/lib/roles'
+import { useJboardTeams, useRole } from '@/lib/session'
 import { splitByDate, CompletedDivider, COMPLETED_CARD } from '@/components/CardSections'
 import { COVER_MAX, shrinkImage } from '@/lib/images'
 
@@ -960,15 +960,18 @@ const GRID = `
 
 export default function OfficerEvents({ openNew = false }) {
 	const router = useRouter()
-	// the advisor sees every event and edits none: no +, no dots
-	const changes = canChange(useRole())
+	// the advisor sees every event and edits none: no +, no dots. J-board's
+	// treasury team doesn't get the + either (canAddEvents).
+	const role = useRole()
+	const changes = canChange(role)
+	const adds = canAddEvents(role, useJboardTeams())
 	const [events, setEvents] = useState([])
 	const [categories, setCategories] = useState([])
 	const [error, setError] = useState(null)
 
 	// null = closed. { event: null } opens an empty dialog, { event } loads that
 	// row into it — one dialog serving both the + and the dots.
-	const [editing, setEditing] = useState(openNew && changes ? { event: null } : null)
+	const [editing, setEditing] = useState(openNew && adds ? { event: null } : null)
 
 	// Closing the form takes `?new` back off the URL, so a refresh doesn't
 	// reopen something you just dismissed. Done on close rather than on arrival
@@ -1094,7 +1097,7 @@ export default function OfficerEvents({ openNew = false }) {
 						{error}
 					</span>
 				)}
-				{changes && <button
+				{adds && <button
 					type="button"
 					onClick={() => setEditing({ event: null })}
 					aria-label="New event"

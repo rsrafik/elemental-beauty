@@ -4,7 +4,7 @@ import { useEffect, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import Sidebar from '@/components/dashboards/Sidebar'
 import ElementistPass from '@/components/dashboards/ElementistPass'
-import { useRole, useSession, useSignOut } from '@/lib/session'
+import { useJboardTeams, useRole, useSession, useSignOut } from '@/lib/session'
 import { navFor, showInstagramFor } from '@/lib/nav'
 import { announcements as announcementsApi, members, labs as labsApi, events as eventsApi } from '@/lib/api'
 import { isoDate, today } from '@/lib/dates'
@@ -305,6 +305,7 @@ function buildWeek(labs, events) {
 
 export default function MemberDashboard() {
 	const role = useRole()
+	const teams = useJboardTeams()
 	const signOut = useSignOut()
 	const { user } = useSession()
 
@@ -375,7 +376,7 @@ export default function MemberDashboard() {
 			2xl:gap-15
 		">
 			<Sidebar
-				items={navFor(role)}
+				items={navFor(role, teams)}
 				showInstagram={showInstagramFor(role)}
 				onLogout={signOut}
 			/>

@@ -33,12 +33,15 @@ async function authMiddleware(req, res, next) {
         // and a user with no members row gets role = null (blocked by requireRole)
         const user = await prisma.user.findUnique({
             where: { userId: decoded.id },
-            select: { userId: true, member: { select: { role: true } } }
+            select: { userId: true, member: { select: { role: true, jboardTeams: true } } }
         })
         if (!user) { return res.status(401).json({ message: 'Invalid token' }) }
 
         req.userId = user.userId
         req.role = user.member?.role ?? null
+        // which j-board teams they're on — the treasury team gets the books
+        // (see treasury.js)
+        req.jboardTeams = user.member?.jboardTeams ?? []
 
         // an advisor reads everything and changes nothing (see advisor.js)
         if (req.role === 'advisor' && !advisorMayDo(req.method, req.originalUrl)) {

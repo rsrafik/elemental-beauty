@@ -44,11 +44,28 @@ export function onLeaderboard(role) {
 	return !OFF_THE_BOARD.includes(role)
 }
 
+// J-board's treasury team: a j-board member with 'treasury' among their teams
+// (`teams` is the session's jboardTeams). They get the treasurer's analytics
+// with only the grants and the sponsorship income editable — the rest of it is
+// theirs to read. Mirrors src/middleware/treasury.js, which is the one that
+// counts.
+export function onTreasuryTeam(role, teams) {
+	return role === 'jboard' && (teams ?? []).includes('treasury')
+}
+
+// Adding events: officers and up, bar the advisor (who changes nothing) and
+// j-board's treasury team (who keep the books, not the calendar). Mirrors the
+// check on POST /events in src/routes/eventRoutes.js.
+export function canAddEvents(role, teams) {
+	return canChange(role) && !onTreasuryTeam(role, teams)
+}
+
 // /analytics — the club's books — is every officer's except j-board's: j-board
-// outranks an officer everywhere else, but the money isn't theirs to see. The
-// server refuses them the same data (see server.js).
-export function canSeeAnalytics(role) {
-	return hasRole('officer', role) && role !== 'jboard'
+// outranks an officer everywhere else, but the money isn't theirs to see —
+// bar the treasury team's (onTreasuryTeam). The server refuses them the same
+// data (see server.js).
+export function canSeeAnalytics(role, teams) {
+	return hasRole('officer', role) && (role !== 'jboard' || onTreasuryTeam(role, teams))
 }
 
 // Event tracks a role never sees — the page side of the rule the API enforces

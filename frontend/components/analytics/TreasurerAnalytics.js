@@ -4,8 +4,8 @@ import { useEffect, useState } from 'react'
 import DashboardShell from '@/components/dashboards/DashboardShell'
 import DuesCard from '@/components/analytics/DuesCard'
 import { ReceiptDialog as SubmitReceiptDialog, ReceiptsCard } from '@/components/analytics/OfficerAnalytics'
-import { useCurrentUser, useRole } from '@/lib/session'
-import { canChange } from '@/lib/roles'
+import { useCurrentUser, useJboardTeams, useRole } from '@/lib/session'
+import { canChange, onTreasuryTeam } from '@/lib/roles'
 import { useDismiss } from '@/lib/dismiss'
 import {
 	Card,
@@ -98,6 +98,11 @@ import {
 //   the years — the picker's last entry adds one, and a year with nothing in
 //     it can be taken back off (YearsDialog).
 //   export — the year's ledger as a CSV, from the button by the year picker.
+//
+// J-board's treasury team gets this page too, to read: the grants (tracker and
+// tab) and the income filed under 'sponsors' are theirs to add, edit and
+// delete, and nothing else is — no expenses, targets, years, queue, dues or
+// receipts of their own (onTreasuryTeam in lib/roles).
 //
 // Everything follows the year picker — the summaries, the balance line, the
 // grant tracker and all three tabs of the books — and its "all years" shows
@@ -367,7 +372,9 @@ function RowButton({ label, onClick, tone = 'plain', children }) {
 // again, so picking a tab makes the whole card drop out and rise back in as if
 // the route had just opened. Swapping the table under a card that's already
 // there is what the click actually is.
-function LedgerCard({ tab, onTab, rows, year, onAdd, onEdit, onDelete }) {
+// `editable` says which rows get the pencil and bin — every one, unless it's
+// the treasury team looking (see the page).
+function LedgerCard({ tab, onTab, rows, year, onAdd, onEdit, onDelete, editable = () => true }) {
 	const ledger = LEDGERS[tab]
 	const [sort, setSort] = useState(ledger.defaultSort)
 	const [picked, setPicked] = useState([])
@@ -590,14 +597,14 @@ function LedgerCard({ tab, onTab, rows, year, onAdd, onEdit, onDelete }) {
 										justify-end
 										gap-2
 									">
-										{onEdit && (
+										{onEdit && editable(row) && (
 											<RowButton label={row.grantId ? 'Edit the grant' : 'Edit'} onClick={() => onEdit(row)}>
 												<PencilIcon className="w-4 h-4" />
 											</RowButton>
 										)}
 										{/* a grant's row goes when the grant is un-awarded or
 										    deleted, from the tracker — not from here */}
-										{onDelete && !row.grantId && (
+										{onDelete && !row.grantId && editable(row) && (
 											<RowButton label="Delete" tone="danger" onClick={() => onDelete(row)}>
 												<TrashIcon className="w-4 h-4" />
 											</RowButton>
@@ -637,13 +644,14 @@ function LedgerCard({ tab, onTab, rows, year, onAdd, onEdit, onDelete }) {
 
 // Income and expenses are the same four fields under different names, so
 // they're the same form. `entry` null means adding; anything else is the row
-// being corrected, and the form opens on what it currently says.
-function EntryDialog({ kind, entry, onClose, onSave }) {
+// being corrected, and the form opens on what it currently says. `only` narrows
+// the categories offered — the treasury team's copy is sponsors alone.
+function EntryDialog({ kind, entry, only, onClose, onSave }) {
 	const { closing, dismiss } = useDismiss()
 	const close = () => dismiss(onClose)
 
 	const income = kind === 'income'
-	const categories = income ? INCOME_CATEGORIES : EXPENSE_CATEGORIES
+	const categories = only ?? (income ? INCOME_CATEGORIES : EXPENSE_CATEGORIES)
 	const field = income ? 'source' : 'title'
 
 	const [form, setForm] = useState({
@@ -1745,11 +1753,20 @@ function YearsDialog({ years, current, contentsOf, onAdd, onRemove, onClose }) {
 
 // ---- page ------------------------------------------------------------------
 
+// all the treasury team can file income under
+const SPONSORS = INCOME_CATEGORIES.filter((category) => category.key === 'sponsors')
+
 export default function TreasurerAnalytics() {
 	// The advisor gets this page — every ledger, the whole queue, dues — with
 	// every control for keeping the books taken off: no adding, editing,
 	// deleting, settling, targets or years (canChange). The CSV still exports.
-	const changes = canChange(useRole())
+	//
+	// J-board's treasury team gets the same read-only page, except that the
+	// grants and the sponsorship income are theirs to keep (`treasury`).
+	const role = useRole()
+	const treasury = onTreasuryTeam(role, useJboardTeams())
+	const changes = canChange(role) && !treasury
+	const keepsGrants = changes || treasury
 	const [income, setIncome] = useState([])
 	const [expenses, setExpenses] = useState([])
 	const [grants, setGrants] = useState([])
@@ -1767,6 +1784,11 @@ export default function TreasurerAnalytics() {
 	const [year, setYear] = useState(null)
 
 	const [tab, setTab] = useState('income')
+	// the ledger rows that get a pencil and bin: all of them for the
+	// treasurer; for the treasury team, the grants and the sponsorships (an
+	// awarded grant's income row edits as its grant)
+	const editable = (row) =>
+		changes || (treasury && (tab === 'grants' || (tab === 'income' && (row.grantId || row.category === 'sponsors'))))
 	// null = closed. Otherwise the kind being worked on and the row it's opened
 	// against — `row` null means adding a new one.
 	const [editing, setEditing] = useState(null)
@@ -2180,8 +2202,8 @@ export default function TreasurerAnalytics() {
 
 					<GrantTracker
 						grants={yearGrants}
-						onEdit={changes ? (grant) => setEditing({ kind: 'grants', row: grant }) : undefined}
-						onAdd={changes ? () => setEditing({ kind: 'grants', row: null }) : undefined}
+						onEdit={keepsGrants ? (grant) => setEditing({ kind: 'grants', row: grant }) : undefined}
+						onAdd={keepsGrants ? () => setEditing({ kind: 'grants', row: null }) : undefined}
 					/>
 				</div>
 
@@ -2225,13 +2247,14 @@ export default function TreasurerAnalytics() {
 					onTab={setTab}
 					rows={rows}
 					year={shownYear}
-					onAdd={changes ? () => setEditing({ kind: tab, row: null }) : undefined}
-					onEdit={changes ? (row) => {
+					onAdd={changes || (treasury && tab !== 'expenses') ? () => setEditing({ kind: tab, row: null }) : undefined}
+					onEdit={keepsGrants ? (row) => {
 						// a grant's income row is edited as the grant it is
 						const grant = row.grantId && grants.find((entry) => entry.id === row.grantId)
 						setEditing(grant ? { kind: 'grants', row: grant } : { kind: tab, row })
 					} : undefined}
-					onDelete={changes ? (row) => setDeleting({ kind: tab, row }) : undefined}
+					onDelete={keepsGrants ? (row) => setDeleting({ kind: tab, row }) : undefined}
+					editable={editable}
 				/>
 
 				{/* their own receipts beside everyone's — the queue only gets
@@ -2288,6 +2311,7 @@ export default function TreasurerAnalytics() {
 				<EntryDialog
 					kind={editing.kind}
 					entry={editing.row}
+					only={treasury ? SPONSORS : undefined}
 					onClose={() => setEditing(null)}
 					onSave={save}
 				/>

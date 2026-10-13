@@ -21,19 +21,20 @@ const OFFICER_ONLY = [
 	{ label: 'students', href: '/students' },
 ]
 
-// every officer's but j-board's — see canSeeAnalytics
+// every officer's but j-board's (bar its treasury team) — see canSeeAnalytics
 const ANALYTICS = [
 	{ label: 'analytics', href: '/analytics' },
 ]
 
-export function navFor(role) {
+// `teams` is the session's jboardTeams — only j-board's say anything
+export function navFor(role, teams) {
 	if (!hasRole('member', role)) return BASE
 	if (!hasRole('officer', role)) return [...BASE, ...MEMBER_ONLY]
 	return [
 		...BASE,
 		...MEMBER_ONLY,
 		...OFFICER_ONLY,
-		...(canSeeAnalytics(role) ? ANALYTICS : []),
+		...(canSeeAnalytics(role, teams) ? ANALYTICS : []),
 	]
 }
 

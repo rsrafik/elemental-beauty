@@ -1,11 +1,13 @@
 import express from 'express'
 import prisma from '../prismaClient.js'
 import { ACTIONS } from '../activity.js'
+import { onTreasuryTeam } from '../middleware/treasury.js'
 
 const router = express.Router()
 
-// Dues are the treasurer's books, which j-board doesn't get (see denyRole in
-// server.js) — so their lines are left out of the log j-board reads.
+// Dues are the treasurer's books, which j-board doesn't get (see booksAccess in
+// server.js) — so their lines are left out of the log j-board reads. The
+// treasury team reads the dues, so they get the lines too.
 const BOOKS = ['dues_paid', 'dues_cleared', 'dues_waived', 'fee_paid', 'dues_reset']
 
 // The activity log, newest first — /students' "activity" popup.
@@ -29,7 +31,7 @@ router.get('/', async (req, res) => {
     if (before !== undefined) { where.activityId = { lt: before } }
     if (targetId !== undefined) { where.targetId = targetId }
     if (action !== undefined) { where.action = action }
-    if (req.role === 'jboard') {
+    if (req.role === 'jboard' && !onTreasuryTeam(req)) {
         where.action = action !== undefined && BOOKS.includes(action) ? '__none__' : (action ?? { notIn: BOOKS })
     }
 

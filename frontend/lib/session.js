@@ -124,6 +124,13 @@ export function useRole() {
 	return user?.role ?? 'user'
 }
 
+// The j-board teams they're on ([] for anyone not on j-board) — what puts
+// /analytics in the treasury team's menu (see onTreasuryTeam in lib/roles).
+export function useJboardTeams() {
+	const { user } = useSession()
+	return user?.jboardTeams ?? []
+}
+
 // What the sidebar's logout button does. Clearing the token is the whole of it
 // — the JWT is stateless, so there's nothing on the server to tell. replace()
 // rather than push() so the back button doesn't walk into a page that will only

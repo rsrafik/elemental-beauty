@@ -7,6 +7,8 @@
 //   officer / officer       adds /students and /analytics (the read-only books)
 //   jboard / jboard         everything an officer has — a rank only an admin
 //                           can give
+//   treasury / treasury     j-board on the treasury team: the treasurer's
+//                           /analytics to read, grants and sponsorships to edit
 //   treasurer / treasurer   the same pages, with /analytics as the full ledger
 //   admin / admin           outranks everyone; the only role that can change
 //                           other people's roles or remove staff
@@ -40,6 +42,7 @@ const ACCOUNTS = [
     { username: 'member', firstName: 'Mina', lastName: 'Reyes', role: 'member', points: 155 },
     { username: 'officer', firstName: 'Ola', lastName: 'Harris', role: 'officer', points: 240 },
     { username: 'jboard', firstName: 'Jada', lastName: 'Brooks', role: 'jboard', points: 180 },
+    { username: 'treasury', firstName: 'Theo', lastName: 'Park', role: 'jboard', points: 120, jboardTeams: ['treasury'] },
     { username: 'treasurer', firstName: 'Tess', lastName: 'Nelson', role: 'treasurer', points: 130 },
     { username: 'admin', firstName: 'Ada', lastName: 'White', role: 'admin', points: 310 },
     { username: 'advisor', firstName: 'Avery', lastName: 'Lowe', role: 'advisor', points: 0 }
@@ -83,7 +86,7 @@ async function wipe() {
     await prisma.user.deleteMany()
 }
 
-async function createAccount({ username, firstName, lastName, role, points }) {
+async function createAccount({ username, firstName, lastName, role, points, jboardTeams = [] }) {
     const passwordHash = await hashPassword(username)
 
     const user = await prisma.user.create({
@@ -107,7 +110,7 @@ async function createAccount({ username, firstName, lastName, role, points }) {
     })
 
     if (role) {
-        await prisma.member.create({ data: { userId: user.userId, role, points } })
+        await prisma.member.create({ data: { userId: user.userId, role, points, jboardTeams } })
     }
     return user
 }
