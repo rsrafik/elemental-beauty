@@ -5,7 +5,7 @@ import Link from 'next/link'
 import DashboardShell from '@/components/dashboards/DashboardShell'
 import { events as eventsApi } from '@/lib/api'
 import { isoDate, longDate, prettyTimeRange, today } from '@/lib/dates'
-import { priceText } from '@/components/labs/LabViewParts'
+import { PriceBadge, priceText } from '@/components/labs/LabViewParts'
 import { calendarOnly } from '@/lib/calendar'
 
 // /events for a user or member: browse what's running now and rsvp to what's
@@ -258,9 +258,9 @@ function panels(rows) {
 
 // `availability` is optional: pass it and it rides on the title's line, pinned
 // to the right edge of the card. The current section has no seat count and no
-// action, so its cards are just the photo, the name and the date. `price` rides
-// on the title's line too — the non-member price, for someone who hasn't paid
-// the year's dues.
+// action, so its cards are just the photo, the name and the date. `price` — the
+// non-member price, for someone who hasn't paid the year's dues — sits at the
+// card's bottom right, beside the rsvp button, as a sticker (PriceBadge).
 //
 // The whole card opens the event's own page (`href`): a link stretched over it,
 // with the action row lifted above the link so the rsvp button still presses
@@ -339,35 +339,16 @@ function EventCard({ title, lines, image, action, availability, price, href }) {
 					">
 						{title}
 					</p>
-					{(price || availability) && (
+					{availability && (
 						<span className="
-							flex
-							items-baseline
-							gap-2
 							shrink-0
 							whitespace-nowrap
+							font-vietnam
+							font-semibold
+							text-blue-med
+							text-sm
 						">
-							{/* what it costs someone who hasn't paid dues, set like
-							    the date and room under it */}
-							{price && (
-								<span className="
-									font-vietnam
-									text-black/70
-									text-sm
-								">
-									{price}
-								</span>
-							)}
-							{availability && (
-								<span className="
-									font-vietnam
-									font-semibold
-									text-blue-med
-									text-sm
-								">
-									{availability}
-								</span>
-							)}
+							{availability}
 						</span>
 					)}
 				</div>
@@ -389,17 +370,29 @@ function EventCard({ title, lines, image, action, availability, price, href }) {
 					))}
 				</div>
 
-				{/* an action gets its own centered row under the date, so the card can
-				    grow downward instead of fighting the date for the corner */}
-				{action && (
+				{/* an action gets its own row under the date, so the card can
+				    grow downward instead of fighting the date for the corner. The
+				    button stays centred; the price (PriceBadge), for someone who
+				    hasn't paid dues, takes the right-hand column — its own
+				    column, so the two can't overlap on a narrow card. Both side
+				    columns are the sticker's width, and the row its height, so the
+				    button sits at the same spot on every card, priced or not */}
+				{(action || price) && (
 					<div className="
 						relative
 						z-10
 						mt-3
-						flex
-						justify-center
+						grid
+						grid-cols-[3rem_1fr_3rem]
+						min-h-12
+						items-center
+						gap-2
 					">
-						{action}
+						<span />
+						<div className="flex justify-center">{action}</div>
+						<div className="flex justify-end">
+							{price && <PriceBadge price={price} />}
+						</div>
 					</div>
 				)}
 			</div>

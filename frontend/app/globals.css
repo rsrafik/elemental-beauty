@@ -230,6 +230,29 @@
   }
 }
 
+/* the non-member price on a lab or event card (PriceBadge): a little scalloped
+   sticker, tilted, with a soft shadow, that gives a wiggle every few seconds
+   so someone who hasn't paid dues notices it. Held still (and still tilted)
+   for anyone who's asked for less motion. */
+@keyframes price-sticker {
+  0%, 72%, 100% { transform: rotate(-10deg); }
+  78% { transform: rotate(6deg) scale(1.06); }
+  84% { transform: rotate(-14deg); }
+  90% { transform: rotate(-6deg); }
+}
+
+.price-sticker {
+  transform: rotate(-10deg);
+  filter: drop-shadow(0 2px 3px rgba(179, 64, 46, 0.35));
+  animation: price-sticker 3.2s ease-in-out infinite;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .price-sticker {
+    animation: none;
+  }
+}
+
 /* ---- panels that live against the right edge -------------------------------
  *
  * The stacked panels — upcoming behind, current in front — and the dashboard's
