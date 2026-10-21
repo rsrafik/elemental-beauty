@@ -41,6 +41,9 @@ function Offer() {
 			} else if (result.status === 'already') {
 				title = 'already confirmed'
 				body = `Your spot in ${what} was already confirmed. Nothing else to do.`
+			} else if (result.status === 'waitlisted') {
+				title = 'back on the waitlist'
+				body = `The confirmation deadline for ${what} passed, so your spot went to someone waiting and you've moved to the back of the waitlist. You'll get an email if a spot opens up again.`
 			} else {
 				title = 'this spot has ended'
 				body = `You're no longer signed up for ${what} — the spot may have gone to someone on the waitlist.`
@@ -51,6 +54,9 @@ function Offer() {
 		} else if (result.status === 'already') {
 			title = 'already yours'
 			body = `You'd already accepted your spot in ${what}. Nothing else to do.`
+		} else if (result.status === 'waitlisted') {
+			title = 'back on the waitlist'
+			body = `The offer for ${what} ran out, so you've moved to the back of the waitlist. You'll get an email if a spot opens up again.`
 		} else {
 			title = 'this offer has ended'
 			body = `The spot in ${what} isn't being held for you any more — it may have gone to the next person on the waitlist.`

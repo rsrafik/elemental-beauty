@@ -115,7 +115,7 @@ export default function ConfirmationPopup({ count, what, prelab, startsAt, onSen
 									? 'That time has already passed — pick one ahead.'
 									: afterStart
 										? `That’s after ${what} starts, so nobody would lose their spot before it.`
-										: `Anyone who hasn’t confirmed by then loses their spot, and it’s offered to the next person on the waitlist.`}
+										: `Anyone who hasn’t confirmed by then may lose their spot to the next person on the waitlist, and moves to the back of it.`}
 							</p>
 							<p className={`${line} ${prelab ? 'text-green-dark font-semibold' : ''}`}>
 								{prelab

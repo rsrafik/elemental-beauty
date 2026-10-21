@@ -14,10 +14,10 @@ import { clubFormat, startsAt } from './clubTime.js'
 // them `rsvped`, officially signed up.
 //
 // An offer lapses when it's gone 48 hours unanswered since the email AND the
-// lab or event is still more than 48 hours off: they're dropped, and the next
-// person on the waitlist is offered the spot in their place (waiting for an
-// officer to send them their envelope). Inside those last 48 hours an
-// unanswered offer is left alone — the officers at the door handle it.
+// lab or event is still more than 48 hours off: they go to the back of the
+// waitlist, and the next person on it is offered the spot in their place
+// (waiting for an officer to send them their envelope). Inside those last 48
+// hours an unanswered offer is left alone — the officers at the door handle it.
 //
 // People are moved off a waitlist three ways, and all three land here as an
 // offer: an officer's yellow button, a seat freed by someone un-RSVPing or
@@ -28,12 +28,29 @@ import { clubFormat, startsAt } from './clubTime.js'
 // "Confirm my spot" button (with a lab's prelab PDF attached) and a deadline
 // the officer picks in its popup. Missing it only costs someone their spot
 // when the waitlist needs it: then just enough of those who missed it are
-// picked at random, and their spots offered on down the waitlist. With nobody
-// waiting, the deadline isn't enforced (see enforceConfirmations). Once a confirmation round has gone out, accepting an offer counts
-// as confirming, and a lab's prelab is emailed to whoever accepts.
+// picked at random, moved to the back of the waitlist, and their spots offered
+// on down it. With nobody waiting, the deadline isn't enforced (see
+// enforceConfirmations). Once a confirmation round has gone out, accepting an
+// offer counts as confirming, and a lab's prelab is emailed to whoever accepts.
+//
+// Nobody is dropped for not answering — only moved to the back of the line.
 
 export const OFFER_HOURS = 48
 const HOUR = 60 * 60 * 1000
+
+// waitlisted -> offered. Any confirmation left over from a spot they lost is
+// cleared: they start fresh with this one.
+export const OFF_WAITLIST = {
+    attendanceStatus: 'offered', waitlistedAt: null, offerSentAt: null,
+    confirmSentAt: null, confirmBy: null, confirmedAt: null
+}
+
+// A lapsed offer or a missed confirmation: to the back of the waitlist. A
+// missed confirmation keeps its `confirmBy`, which is how enforceConfirmations
+// tells them apart from people who joined the waitlist themselves.
+const BACK_OF_WAITLIST = {
+    attendanceStatus: 'waitlisted', offerSentAt: null, confirmSentAt: null, confirmedAt: null
+}
 
 export const KINDS = {
     lab: {
@@ -86,7 +103,7 @@ export async function offerNext(tx, kindName, parentId) {
     if (!next) { return null }
     await junction.update({
         where: where(kind, parentId, next.memberId),
-        data: { attendanceStatus: 'offered', waitlistedAt: null, offerSentAt: null }
+        data: OFF_WAITLIST
     })
     return next.memberId
 }
@@ -137,7 +154,7 @@ export async function sendOffer(kindName, parentId, memberId) {
             ],
             button: { label: 'Accept my spot', url: `${APP_URL}/offer?token=${token}` },
             after: [
-                `Please accept within ${OFFER_HOURS} hours — after that the spot may go to the next person on the waitlist.`
+                `Please accept within ${OFFER_HOURS} hours — after that the spot may go to the next person on the waitlist, and you’ll move to the back of it.`
             ],
             reason: `You’re getting this because you joined the waitlist for ${parent.title}.`
         })
@@ -150,7 +167,7 @@ export async function sendOffer(kindName, parentId, memberId) {
 }
 
 // offered -> rsvped. Anything else is left as it is and said back: already
-// accepted, already checked in, or the offer's gone.
+// accepted, already checked in, back on the waitlist, or the offer's gone.
 export async function acceptOffer(kindName, parentId, memberId) {
     const kind = KINDS[kindName]
     const row = await prisma[kind.link].findUnique({
@@ -162,6 +179,7 @@ export async function acceptOffer(kindName, parentId, memberId) {
     if (row.attendanceStatus === 'rsvped' || row.attendanceStatus === 'attended') {
         return { status: 'already', title }
     }
+    if (row.attendanceStatus === 'waitlisted') { return { status: 'waitlisted', title } }
     if (row.attendanceStatus !== 'offered') { return { status: 'gone', title } }
     // once a confirmation round has gone out, taking a spot counts as
     // confirming it — and the prelab follows them
@@ -204,7 +222,10 @@ export async function expireOffers() {
             const parentId = row[kind.key]
             await prisma.$transaction(async (tx) => {
                 await lockParent(tx, kindName, parentId)
-                await tx[kind.link].delete({ where: where(kind, parentId, row.memberId) })
+                await tx[kind.link].update({
+                    where: where(kind, parentId, row.memberId),
+                    data: { ...BACK_OF_WAITLIST, waitlistedAt: new Date() }
+                })
                 // the freed seat goes on down the waitlist, if there's room
                 // under the cap for it
                 if (parent.capacity == null) { return }
@@ -226,10 +247,13 @@ export async function expireOffers() {
 //   nobody waiting   the deadline isn't enforced — everyone who missed it
 //                    keeps their spot, until someone joins the waitlist
 //   people waiting   just enough of those who missed it are picked, at
-//                    random, to make room for them: each is removed and their
-//                    spot offered to the top of the waitlist. With 10 seats
-//                    all taken, 2 who missed it and 1 waiting, one of the 2
-//                    goes.
+//                    random, to make room for them: each is moved to the back
+//                    of the waitlist and their spot offered to the top of it.
+//                    With 10 seats all taken, 2 who missed it and 1 waiting,
+//                    one of the 2 goes.
+//
+// Someone already moved back for missing the deadline doesn't count as
+// waiting — otherwise two who both missed it would keep swapping places.
 //
 // No cap means no queue for seats, so there's nothing to enforce.
 async function enforceConfirmations(kindName, now) {
@@ -252,7 +276,9 @@ async function enforceConfirmations(kindName, now) {
             await lockParent(tx, kindName, parentId)
             const parent = await tx[kind.parent].findUnique({ where: { [kind.key]: parentId }, select: { capacity: true } })
             if (!parent || parent.capacity == null) { return }
-            const waiting = await tx[kind.link].count({ where: { [kind.key]: parentId, attendanceStatus: 'waitlisted' } })
+            const waiting = await tx[kind.link].count({
+                where: { [kind.key]: parentId, attendanceStatus: 'waitlisted', confirmBy: null }
+            })
             if (waiting === 0) { return }
             const taken = await tx[kind.link].count({ where: { [kind.key]: parentId, attendanceStatus: HELD } })
 
@@ -260,10 +286,15 @@ async function enforceConfirmations(kindName, now) {
             // than missed the deadline, and none if there's already room
             const needed = Math.min(memberIds.length, Math.max(0, taken + waiting - parent.capacity))
             const out = shuffle(memberIds).slice(0, needed)
+            const back = new Date()
             for (const memberId of out) {
-                await tx[kind.link].delete({ where: where(kind, parentId, memberId) })
+                await tx[kind.link].update({
+                    where: where(kind, parentId, memberId),
+                    data: { ...BACK_OF_WAITLIST, waitlistedAt: back }
+                })
             }
-            // hand every free seat on, one per person waiting
+            // hand every free seat on, one per person waiting — never more
+            // than were already waiting, so those just moved back stay there
             let free = parent.capacity - (taken - out.length)
             while (free > 0 && await offerNext(tx, kindName, parentId)) { free-- }
             removed += out.length
@@ -353,7 +384,7 @@ export async function sendConfirmations(kindName, parentId, deadline) {
                 ],
                 button: { label: 'Confirm my spot', url: `${APP_URL}/offer?token=${token}` },
                 after: [
-                    `Please confirm by ${deadlineText(deadline)} — if we don’t hear back by then, your spot may go to someone on the waitlist.`,
+                    `Please confirm by ${deadlineText(deadline)} — if we don’t hear back by then, your spot may go to someone on the waitlist, and you’ll move to the back of it.`,
                     ...(prelab ? ['The prelab is attached — please read through it before the lab.'] : [])
                 ],
                 reason: `You’re getting this because you signed up for ${parent.title}.`
@@ -380,6 +411,7 @@ export async function confirmSpot(kindName, parentId, memberId) {
     const title = row?.[kind.parent]?.title ?? null
     if (!row) { return { status: 'gone', title } }
     if (row.attendanceStatus === 'attended' || row.confirmedAt) { return { status: 'already', title } }
+    if (row.attendanceStatus === 'waitlisted') { return { status: 'waitlisted', title } }
     if (row.attendanceStatus !== 'rsvped') { return { status: 'gone', title } }
     await prisma[kind.link].update({
         where: where(kind, parentId, memberId),

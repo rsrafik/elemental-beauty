@@ -104,7 +104,7 @@ Mail goes out through Resend or Gmail. The server also runs a few scheduled jobs
 |---|---|
 | Day-before reminders | Emails everyone signed up for tomorrow's labs and events |
 | Absence sweep | Once a day has ended, marks anyone still RSVP'd as absent |
-| Offer expiry | An offer that goes 48 hours without an answer passes to the next person on the waitlist |
+| Offer expiry | An offer that goes 48 hours without an answer passes to the next person on the waitlist, and the person who didn't answer moves to the back of it |
 | Reimbursement updates | Tells the treasurer when a receipt comes in, and the officer when it's approved, denied or paid |
 
 ## Points
