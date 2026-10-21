@@ -120,15 +120,21 @@ test('accepting an offer signs you up, and says so if it is already done or gone
     assert.equal((await offers.acceptOffer('lab', id, await member())).status, 'gone')
 })
 
-test('an offer unanswered for 48 hours lapses and moves on down the waitlist', { skip }, async () => {
+test('an offer unanswered for 48 hours moves on down the waitlist, and its holder to the back', { skip }, async () => {
     const id = await lab({ capacity: 1, hoursOut: 24 * 10 })
-    const [slow, next] = [await member(), await member()]
+    const [slow, next, last] = [await member(), await member(), await member()]
     await join(id, slow, 'offered', { offerSentAt: new Date(Date.now() - 49 * HOUR) })
-    await join(id, next, 'waitlisted')
+    await join(id, next, 'waitlisted', { waitlistedAt: new Date(Date.now() - 60_000) })
+    await join(id, last, 'waitlisted')
 
     await offers.expireOffers()
-    assert.equal(await statusOf(id, slow), null)
+    assert.equal(await statusOf(id, slow), 'waitlisted')
     assert.equal(await statusOf(id, next), 'offered')
+    // behind everyone who was already waiting
+    const queue = await prisma.memberLab.findMany({ where: { labId: id, attendanceStatus: 'waitlisted' }, orderBy: { waitlistedAt: 'asc' } })
+    assert.deepEqual(queue.map((r) => r.memberId), [last, slow])
+    // the old link says where they stand
+    assert.equal((await offers.acceptOffer('lab', id, slow)).status, 'waitlisted')
 })
 
 test('inside the last 48 hours an unanswered offer is left for the door', { skip }, async () => {
@@ -156,8 +162,36 @@ test('missing the confirmation deadline costs exactly as many spots as the waitl
     await offers.expireOffers()
     const statuses = await Promise.all([a, b, c].map((m) => statusOf(id, m)))
     assert.equal(statuses[0], 'rsvped', 'whoever confirmed keeps their spot')
-    assert.equal(statuses.filter((s) => s === null).length, 1, 'one of the two who missed it goes')
+    assert.equal(statuses.filter((s) => s === 'waitlisted').length, 1, 'one of the two who missed it goes to the back of the waitlist')
+    assert.equal(statuses.filter((s) => s === 'rsvped').length, 2)
     assert.equal(await statusOf(id, waiting), 'offered')
+
+    const moved = [b, c][statuses.slice(1).indexOf('waitlisted')]
+    assert.equal((await offers.confirmSpot('lab', id, moved)).status, 'waitlisted')
+
+    // the one moved back doesn't then bump the other who missed it
+    await offers.expireOffers()
+    assert.deepEqual(
+        await Promise.all([b, c].map((m) => statusOf(id, m))),
+        statuses.slice(1)
+    )
+})
+
+test('someone moved back for a missed confirmation starts fresh when offered again', { skip }, async () => {
+    const id = await lab({ capacity: 1 })
+    const [late, waiting] = [await member(), await member()]
+    const past = new Date(Date.now() - HOUR)
+    await join(id, late, 'rsvped', { confirmSentAt: past, confirmBy: past })
+    await join(id, waiting, 'waitlisted')
+
+    await offers.expireOffers()
+    assert.equal(await statusOf(id, late), 'waitlisted')
+    // the seat frees up again: back to them, with the old deadline gone
+    await prisma.memberLab.delete({ where: { memberId_labId: { memberId: waiting, labId: id } } })
+    await prisma.$transaction((tx) => offers.offerNext(tx, 'lab', id))
+    const row = await prisma.memberLab.findUnique({ where: { memberId_labId: { memberId: late, labId: id } } })
+    assert.equal(row.attendanceStatus, 'offered')
+    assert.equal(row.confirmBy, null)
 })
 
 test('with nobody waiting, a missed deadline is not enforced', { skip }, async () => {

@@ -1,6 +1,6 @@
 import prisma from '../prismaClient.js'
 import requireRole from '../middleware/requireRole.js'
-import { expireOffers, lockParent, offerNext, sendConfirmations, sendOffer } from '../offers.js'
+import { OFF_WAITLIST, expireOffers, lockParent, offerNext, sendConfirmations, sendOffer } from '../offers.js'
 import { emailAll, readMessage } from '../emailAll.js'
 import { log } from '../activity.js'
 import { csvCell } from '../csv.js'
@@ -371,7 +371,7 @@ export function mountRoster(router, kind) {
                 if (status !== 'waitlisted') { return res.status(409).json({ message: 'That member is not on the waitlist' }) }
                 await link.update({
                     where: where(parentId, memberId),
-                    data: { attendanceStatus: 'offered', waitlistedAt: null, offerSentAt: null }
+                    data: OFF_WAITLIST
                 })
                 return res.json({ message: 'Moved off the waitlist — send them their offer' })
             }
