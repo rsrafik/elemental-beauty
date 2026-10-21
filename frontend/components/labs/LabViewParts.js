@@ -254,7 +254,7 @@ export function priceText(amount) {
 // paid the year's dues: what it'll cost them at the door. `dues` is the API's
 // { schoolYear, amount, price } (see src/dues.js) — null when they've paid,
 // or it's open to all, and then there's nothing to say. `noun` is 'lab' or
-// 'event'.
+// 'event'. Red, like the price on their cards: it's something they owe.
 export function DuesNotice({ dues, noun }) {
 	if (!dues) return null
 	const { schoolYear, amount, price } = dues
@@ -272,14 +272,14 @@ export function DuesNotice({ dues, noun }) {
 				mt-5
 				max-w-[420px]
 				rounded-[12px]
-				bg-yellow-light
+				bg-red/10
 				px-4
 				py-3
 				font-vietnam
 				font-semibold
 				text-[14px]
 				leading-[1.4]
-				text-black/80
+				text-red
 				text-center
 			"
 		>

@@ -15,7 +15,8 @@ import { roleLabel } from '@/lib/roles'
 // "paid", and stored with the year's other targets. What someone who hasn't
 // paid is charged for a single lab or members-only event isn't set here — each
 // lab and event has its own, in its form (see src/dues.js). "waive" records
-// the year as settled with no money moving (and no ledger row).
+// the year as settled with no money moving (and no ledger row). Anyone not
+// marked reads "unpaid" in red, so who still owes stands out.
 //
 // Taking a payment back deletes its ledger row too (src/routes/duesRoutes.js).
 // "clear" is the other way round: everyone reads as unpaid again, a fresh
@@ -303,20 +304,14 @@ export default function DuesCard({ year, onChange, readOnly = false }) {
 									)}
 								</div>
 							) : readOnly ? (
-								<span className="
-									font-vietnam
-									text-xs
-									font-semibold
-									text-black/40
-								">
-									unpaid
-								</span>
+								<UnpaidLabel />
 							) : (
 								<div className="
 									flex
 									items-center
 									gap-2
 								">
+									<UnpaidLabel />
 									<SmallButton
 										tone="green"
 										onClick={() => pay(member, owed)}
@@ -357,6 +352,21 @@ export default function DuesCard({ year, onChange, readOnly = false }) {
 				/>
 			)}
 		</Card>
+	)
+}
+
+// Beside anyone not marked paid or waived: red, so who still owes stands out
+// against the green "paid" rows.
+function UnpaidLabel() {
+	return (
+		<span className="
+			font-vietnam
+			text-xs
+			font-semibold
+			text-red
+		">
+			unpaid
+		</span>
 	)
 }
 
