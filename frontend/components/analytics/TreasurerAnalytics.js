@@ -93,8 +93,8 @@ import {
 //     Approving says the club owes it; reimbursing says it's been paid, and
 //     writes the expense row that says where the money went.
 //   dues — who's paid for the year, marked here (DuesCard); paying writes an
-//     income row under 'dues'. The non-member price for a lab or members-only
-//     event is set there too.
+//     income row under 'dues'. (The non-member price for a lab or
+//     members-only event isn't — each one sets its own, in its form.)
 //   the years — the picker's last entry adds one, and a year with nothing in
 //     it can be taken back off (YearsDialog).
 //   export — the year's ledger as a CSV, from the button by the year picker.

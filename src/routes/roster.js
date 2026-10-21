@@ -324,7 +324,7 @@ export function mountRoster(router, kind) {
                 }
                 // labs and members-only events ask; one open to all doesn't
                 const owed = asksDues(kindName, row)
-                    ? await duesOwed(prisma, memberId, row.date?.toISOString().slice(0, 10))
+                    ? await duesOwed(prisma, memberId, row.date?.toISOString().slice(0, 10), row.nonmemberPrice)
                     : null
                 if (owed && !dues) { return duesUnpaid(res, memberId, owed) }
                 const problem = owed && duesAnswerProblem(owed, dues)

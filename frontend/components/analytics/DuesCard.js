@@ -12,11 +12,10 @@ import { roleLabel } from '@/lib/roles'
 // it — which is why it calls `onChange` (the page re-reads the books).
 //
 // The amount at the top is what a member owes that year; it's the default for
-// "paid", and stored with the year's other targets. Beside it is what someone
-// who hasn't paid is charged for a single lab or members-only event — the
-// price their cards show, and what the door takes as an entry fee (see
-// src/dues.js). "waive" records the year as settled with no money moving (and
-// no ledger row).
+// "paid", and stored with the year's other targets. What someone who hasn't
+// paid is charged for a single lab or members-only event isn't set here — each
+// lab and event has its own, in its form (see src/dues.js). "waive" records
+// the year as settled with no money moving (and no ledger row).
 //
 // Taking a payment back deletes its ledger row too (src/routes/duesRoutes.js).
 // "clear" is the other way round: everyone reads as unpaid again, a fresh
@@ -68,9 +67,8 @@ export default function DuesCard({ year, onChange, readOnly = false }) {
 	const [busy, setBusy] = useState(null)
 	const [query, setQuery] = useState('')
 	const [filter, setFilter] = useState('all')
-	// the two amounts as typed, before they're saved
+	// the amount as typed, before it's saved
 	const [amountDraft, setAmountDraft] = useState('')
-	const [priceDraft, setPriceDraft] = useState('')
 	// the clear, while it's being asked about
 	const [clearing, setClearing] = useState(false)
 
@@ -83,7 +81,6 @@ export default function DuesCard({ year, onChange, readOnly = false }) {
 				if (!live) return
 				setData(reply)
 				setAmountDraft(reply.duesAmount ? String(reply.duesAmount) : '')
-				setPriceDraft(reply.nonmemberPrice ? String(reply.nonmemberPrice) : '')
 				setError(null)
 			})
 			.catch((err) => live && setError(err.message))
@@ -97,15 +94,14 @@ export default function DuesCard({ year, onChange, readOnly = false }) {
 
 	const owed = data?.duesAmount ?? 0
 
-	// either figure, saved as it's left — `field` is its name on the year's
-	// targets and on this card's data
-	const saveFigure = (field, draft) => async () => {
-		const amount = Number(draft)
-		if (!Number.isFinite(amount) || amount < 0 || amount === (data?.[field] ?? 0)) return
+	// the year's dues, saved as it's left
+	const saveAmount = async () => {
+		const amount = Number(amountDraft)
+		if (!Number.isFinite(amount) || amount < 0 || amount === (data?.duesAmount ?? 0)) return
 		setError(null)
 		try {
-			await yearTargets.set(year, { [field]: amount })
-			setData((previous) => ({ ...previous, [field]: amount }))
+			await yearTargets.set(year, { duesAmount: amount })
+			setData((previous) => ({ ...previous, duesAmount: amount }))
 		} catch (err) {
 			setError(err.message)
 		}
@@ -165,32 +161,14 @@ export default function DuesCard({ year, onChange, readOnly = false }) {
 					</CardNote>
 				</div>
 
-				<div className="
-					flex
-					flex-col
-					items-end
-					gap-2
-				">
-					<MoneyField
-						label="dues per member"
-						value={amountDraft}
-						onChange={setAmountDraft}
-						onSave={saveFigure('duesAmount', amountDraft)}
-						disabled={readOnly}
-						aria={`Dues owed per member for ${year}`}
-					/>
-					{/* what someone unpaid is charged for one lab or members-only
-					    event — on their cards, and taken at the door */}
-					<MoneyField
-						label="non-member price"
-						title="What someone who hasn't paid dues is charged for each lab or members-only event"
-						value={priceDraft}
-						onChange={setPriceDraft}
-						onSave={saveFigure('nonmemberPrice', priceDraft)}
-						disabled={readOnly}
-						aria={`Non-member price per lab or members-only event for ${year}`}
-					/>
-				</div>
+				<MoneyField
+					label="dues per member"
+					value={amountDraft}
+					onChange={setAmountDraft}
+					onSave={saveAmount}
+					disabled={readOnly}
+					aria={`Dues owed per member for ${year}`}
+				/>
 			</div>
 
 			<div className="
@@ -382,12 +360,11 @@ export default function DuesCard({ year, onChange, readOnly = false }) {
 	)
 }
 
-// One of the two figures at the top: a label, then a dollar box saved when
-// it's left (or on enter).
-function MoneyField({ label, title, value, onChange, onSave, aria, disabled = false }) {
+// The figure at the top: a label, then a dollar box saved when it's left (or
+// on enter).
+function MoneyField({ label, value, onChange, onSave, aria, disabled = false }) {
 	return (
 		<label
-			title={title}
 			className="
 				flex
 				items-center

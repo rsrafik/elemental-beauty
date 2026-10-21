@@ -5,7 +5,8 @@ import { clubToday, dateColumn } from './clubTime.js'
 // and event lists (which show what someone unpaid will be charged), and the
 // door, where an officer scanning someone into a lab or a members-only event
 // can take their dues — or the non-member price — on the spot. See
-// DuesPayment and YearTarget in schema.prisma.
+// DuesPayment and YearTarget in schema.prisma. The year sets the dues; each
+// lab and event sets its own non-member price (nonmemberPrice on both).
 
 // Only members and j-board pay dues. Officers, the treasurer, admins and the
 // advisor don't: they're left off the treasurer's dues card and never asked at
@@ -59,35 +60,51 @@ export function asksDues(kindName, row) {
     return kindName === 'lab' || row.track === 'members'
 }
 
+// A lab's or event's non-member price as a request sent it: a number, or the
+// string a form's box hands back, of zero or more with at most two places
+// after the point. Blank or null is 0 — nothing extra to pay. Returns
+// { price } (absent when the body didn't carry one) or { error }.
+const PRICE = /^\d{1,8}(\.\d{1,2})?$/
+
+export function readPrice(value) {
+    if (value === undefined) return {}
+    if (value === null || value === '') return { price: 0 }
+    if (!PRICE.test(String(value).trim())) {
+        return { error: 'nonmemberPrice must be an amount of zero or more, like 5 or 5.50' }
+    }
+    return { price: Number(value) }
+}
+
 // What `memberId` owes, for as many days as the caller likes — the lab and
 // event lists ask about every card at once. Returns a function of a day
-// ('YYYY-MM-DD', or null for today) that gives { schoolYear, amount, price } —
-// the year's dues and the non-member price for one lab or event — or null when
-// they've paid (or waived) that year, when their role is exempt (DUES_EXEMPT),
-// or when nobody owes anything because neither figure is set yet (both 0).
+// ('YYYY-MM-DD', or null for today) and the lab's or event's own non-member
+// price that gives { schoolYear, amount, price } — the year's dues and that
+// price — or null when they've paid (or waived) that year, when their role is
+// exempt (DUES_EXEMPT), or when nobody owes anything because neither figure is
+// set (both 0).
 export async function duesLookup(db, memberId) {
     const [member, targets, paid] = await Promise.all([
         db.member.findUnique({ where: { userId: memberId }, select: { role: true } }),
-        db.yearTarget.findMany({ select: { schoolYear: true, duesAmount: true, nonmemberPrice: true } }),
+        db.yearTarget.findMany({ select: { schoolYear: true, duesAmount: true } }),
         db.duesPayment.findMany({ where: { memberId }, select: { schoolYear: true } })
     ])
     if (!member || DUES_EXEMPT.includes(member.role)) return () => null
     const years = new Map(targets.map((target) => [target.schoolYear, target]))
     const settled = new Set(paid.map((payment) => payment.schoolYear))
-    return (day) => {
+    return (day, nonmemberPrice = 0) => {
         const schoolYear = schoolYearOf(day ?? clubToday())
         if (settled.has(schoolYear)) return null
-        const target = years.get(schoolYear)
-        const amount = Number(target?.duesAmount ?? 0)
-        const price = Number(target?.nonmemberPrice ?? 0)
+        const amount = Number(years.get(schoolYear)?.duesAmount ?? 0)
+        const price = Number(nonmemberPrice ?? 0)
         return amount > 0 || price > 0 ? { schoolYear, amount, price } : null
     }
 }
 
-// The same for one day, with the member's name for the ledger row and the
-// popup: { schoolYear, amount, price, user }, or null.
-export async function duesOwed(db, memberId, day) {
-    const owed = (await duesLookup(db, memberId))(day)
+// The same for one lab or event — its day and its price — with the member's
+// name for the ledger row and the popup: { schoolYear, amount, price, user },
+// or null.
+export async function duesOwed(db, memberId, day, nonmemberPrice) {
+    const owed = (await duesLookup(db, memberId))(day, nonmemberPrice)
     if (!owed) return null
     const user = await db.user.findUnique({ where: { userId: memberId }, select: { firstName: true, lastName: true, username: true } })
     return { ...owed, user }
@@ -115,7 +132,7 @@ export const DUES_ANSWERS = ['paid', 'fee', 'waive']
 // check-in's transaction, so a refusal changes nothing.
 export function duesAnswerProblem(owed, dues) {
     if (dues === 'paid' && owed.amount <= 0) return `No dues amount is set for ${owed.schoolYear}`
-    if (dues === 'fee' && owed.price <= 0) return `No non-member price is set for ${owed.schoolYear}`
+    if (dues === 'fee' && owed.price <= 0) return 'No non-member price is set on this one'
     return null
 }
 

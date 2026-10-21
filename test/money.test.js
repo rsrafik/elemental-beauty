@@ -44,8 +44,8 @@ before(async () => {
     }
     await prisma.yearTarget.upsert({
         where: { schoolYear: YEAR },
-        update: { duesAmount: 20, nonmemberPrice: 5 },
-        create: { schoolYear: YEAR, incomeGoal: 0, expenseBudget: 0, duesAmount: 20, nonmemberPrice: 5 }
+        update: { duesAmount: 20 },
+        create: { schoolYear: YEAR, incomeGoal: 0, expenseBudget: 0, duesAmount: 20 }
     })
 })
 
@@ -84,9 +84,11 @@ async function person(role) {
     return user.userId
 }
 
+// every one charges $5 to someone unpaid unless told otherwise — the price
+// is the event's own, not the year's
 async function event(track, fields = {}) {
     const row = await prisma.event.create({
-        data: { title: `${tag} ${track}`, date: new Date(DAY), track, ...fields }
+        data: { title: `${tag} ${track}`, date: new Date(DAY), track, nonmemberPrice: 5, ...fields }
     })
     made.events.push(row.eventId)
     return row.eventId
@@ -158,7 +160,7 @@ test('lists carry the non-member price for someone unpaid, and nothing once they
     const officer = await person('officer')
     const members = await event('members')
     const open = await event('open')
-    const lab = await prisma.lab.create({ data: { title: `${tag} lab`, date: new Date(DAY) } })
+    const lab = await prisma.lab.create({ data: { title: `${tag} lab`, date: new Date(DAY), nonmemberPrice: 7.5 } })
     made.labs.push(lab.labId)
 
     const pick = (rows, key, id) => rows.find((row) => row[key] === id)
@@ -169,7 +171,8 @@ test('lists carry the non-member price for someone unpaid, and nothing once they
         assert.equal((await (await fetch(`${base}/${members}`)).json()).dues.price, 5)
     })
     await as(member, 'member', 'labs', async (base) => {
-        assert.equal(pick(await (await fetch(base)).json(), 'labId', lab.labId).dues.price, 5)
+        assert.equal(pick(await (await fetch(base)).json(), 'labId', lab.labId).dues.price, 7.5)
+        assert.equal((await (await fetch(`${base}/${lab.labId}`)).json()).dues.price, 7.5)
     })
     await as(officer, 'officer', 'events', async (base) => {
         assert.equal(pick(await (await fetch(base)).json(), 'eventId', members).dues, null)
@@ -178,6 +181,64 @@ test('lists carry the non-member price for someone unpaid, and nothing once they
     await prisma.duesPayment.create({ data: { memberId: member, schoolYear: YEAR, amount: 0 } })
     await as(member, 'member', 'events', async (base) => {
         assert.equal(pick(await (await fetch(base)).json(), 'eventId', members).dues, null)
+    })
+})
+
+test('each lab and event charges its own price at the door, and none set means no fee to take', { skip }, async () => {
+    const officer = await person('officer')
+    const member = await person('member')
+    const pricey = await event('members', { nonmemberPrice: 12 })
+    const free = await event('members', { nonmemberPrice: 0 })
+    for (const eventId of [pricey, free]) {
+        await prisma.memberEvent.create({ data: { memberId: member, eventId } })
+    }
+
+    await as(officer, 'officer', 'events', async (base) => {
+        const asked = await (await send(`${base}/${pricey}/roster`, 'POST', { action: 'checkin', memberId: member })).json()
+        assert.equal(asked.price, 12)
+        // the dues are still the year's
+        assert.equal(asked.amount, 20)
+        assert.equal((await send(`${base}/${free}/roster`, 'POST', { action: 'checkin', memberId: member, dues: 'fee' })).status, 400)
+        assert.equal((await send(`${base}/${pricey}/roster`, 'POST', { action: 'checkin', memberId: member, dues: 'fee' })).status, 200)
+    })
+    const fee = await prisma.transaction.findFirst({ where: { category: 'fees', source: { contains: tag }, amount: 12 } })
+    assert.ok(fee, 'a $12 fees row')
+})
+
+test('the price is set when a lab or event is made and edited, and junk is refused', { skip }, async () => {
+    const officer = await person('officer')
+    await as(officer, 'officer', 'labs', async (base) => {
+        const created = await send(base, 'POST', { title: `${tag} priced lab`, date: DAY, nonmemberPrice: '6.50' })
+        assert.equal(created.status, 201)
+        const lab = await created.json()
+        made.labs.push(lab.labId)
+        assert.equal(Number(lab.nonmemberPrice), 6.5)
+
+        assert.equal(Number((await (await send(`${base}/${lab.labId}`, 'PUT', { nonmemberPrice: 8 })).json()).nonmemberPrice), 8)
+        // blank is no price at all
+        assert.equal(Number((await (await send(`${base}/${lab.labId}`, 'PUT', { nonmemberPrice: '' })).json()).nonmemberPrice), 0)
+        for (const junk of [-1, 'five', 1.234]) {
+            assert.equal((await send(`${base}/${lab.labId}`, 'PUT', { nonmemberPrice: junk })).status, 400, String(junk))
+        }
+        // a draft on a live lab parks the price with the rest
+        await send(`${base}/${lab.labId}`, 'PUT', { nonmemberPrice: 9, published: false })
+        const row = await prisma.lab.findUnique({ where: { labId: lab.labId }, select: { nonmemberPrice: true, draft: true } })
+        assert.equal(Number(row.nonmemberPrice), 0)
+        assert.equal(row.draft.nonmemberPrice, 9)
+    })
+
+    await as(officer, 'officer', 'events', async (base) => {
+        const created = await (await send(base, 'POST', { title: `${tag} priced event`, type: 'social', track: 'members', date: DAY, nonmemberPrice: 4 })).json()
+        made.events.push(created.eventId)
+        assert.equal(Number(created.nonmemberPrice), 4)
+        assert.equal(Number((await (await send(`${base}/${created.eventId}`, 'PUT', { nonmemberPrice: 3 })).json()).nonmemberPrice), 3)
+        assert.equal((await send(`${base}/${created.eventId}`, 'PUT', { nonmemberPrice: -2 })).status, 400)
+        // open to all charges nobody, so it keeps no price
+        assert.equal(Number((await (await send(`${base}/${created.eventId}`, 'PUT', { track: 'open' })).json()).nonmemberPrice), 0)
+
+        const open = await (await send(base, 'POST', { title: `${tag} open priced`, type: 'social', track: 'open', date: DAY, nonmemberPrice: 4 })).json()
+        made.events.push(open.eventId)
+        assert.equal(Number(open.nonmemberPrice), 0)
     })
 })
 

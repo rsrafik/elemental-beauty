@@ -5,12 +5,13 @@ import { useRouter } from 'next/navigation'
 import { useDismiss } from '@/lib/dismiss'
 import DashboardShell from '@/components/dashboards/DashboardShell'
 import { eventCategories, events as eventsApi, labs as labsApi } from '@/lib/api'
-import { STAFF_TRACKS, buildMonths, calendarOnly, capacityField, categoryNameOf, dayBadge, hasMeetingLink, teamLabel, typesIn } from '@/lib/calendar'
+import { STAFF_TRACKS, buildMonths, calendarOnly, capacityField, categoryNameOf, dayBadge, hasMeetingLink, hasNonmemberPrice, teamLabel, typesIn } from '@/lib/calendar'
 import HideFromEventsToggle from '@/components/events/HideFromEventsToggle'
 import { LinksField, cleanLinks } from '@/components/events/EventLinks'
 import TeamField from '@/components/events/TeamField'
 import { JoinMeetingButton, MeetingLinkField } from '@/components/events/MeetingLink'
 import { COVER_MAX, shrinkImage } from '@/lib/images'
+import { priceBody, priceOk } from '@/lib/finances'
 import { prettyTimeRange, thisMonth } from '@/lib/dates'
 import { canAddEvents, canChange, canEditLab, defaultOffTracks, hiddenTracks, tracksChangedFrom } from '@/lib/roles'
 import { useRole, useSession } from '@/lib/session'
@@ -828,6 +829,7 @@ function EventDialog({ categories, onClose, onSave }) {
 		track: 'members',
 		description: '',
 		spots: '',
+		price: '',
 		location: '',
 		hideFromEvents: false,
 		team: '',
@@ -863,7 +865,9 @@ function EventDialog({ categories, onClose, onSave }) {
 	const spotsOk = capacityField(form.track) !== 'spots' || form.spots.trim() === '' || (Number.isInteger(Number(form.spots)) && Number(form.spots) > 0)
 	// blank, or after the start (the API holds it to the same)
 	const endOk = form.endTime === '' || (form.time !== '' && form.endTime > form.time)
-	const ready = form.title.trim() !== '' && form.date !== '' && spotsOk && endOk
+	// blank, or dollars and cents (only a members-only event asks)
+	const priceFine = !hasNonmemberPrice(form.track) || priceOk(form.price)
+	const ready = form.title.trim() !== '' && form.date !== '' && spotsOk && endOk && priceFine
 
 	const submit = (event) => {
 		event.preventDefault()
@@ -1108,6 +1112,23 @@ function EventDialog({ categories, onClose, onSave }) {
 									onChange={set('spots')}
 									placeholder="blank = unlimited"
 									className={`${FIELD} ${spotsOk ? '' : 'border-red focus:border-red'}`}
+								/>
+							</label>
+						)}
+						{/* a members-only event charges someone who hasn't paid dues
+						    this at the door (hasNonmemberPrice) — blank for nothing */}
+						{hasNonmemberPrice(form.track) && (
+							<label className="block">
+								<Label>non-member price</Label>
+								<input
+									type="number"
+									min="0"
+									step="0.01"
+									inputMode="decimal"
+									value={form.price}
+									onChange={set('price')}
+									placeholder="$ — blank = free"
+									className={`${FIELD} ${priceFine ? '' : 'border-red focus:border-red'}`}
 								/>
 							</label>
 						)}
@@ -1400,7 +1421,7 @@ export default function OfficerCalendar() {
 	// `type` — official or social, which is what attendance is scored on — isn't
 	// on this form, so a new event takes 'social'. Change it from /events, where
 	// the same event has a full editor.
-	const saveEvent = async ({ title, date, time, endTime, categoryId, track, description, image, spots, location, hideFromEvents, links, team, meetingUrl }) => {
+	const saveEvent = async ({ title, date, time, endTime, categoryId, track, description, image, spots, price, location, hideFromEvents, links, team, meetingUrl }) => {
 		setError(null)
 		try {
 			await eventsApi.create({
@@ -1420,6 +1441,8 @@ export default function OfficerCalendar() {
 				links,
 				// the link only where the form asks for one
 				meetingUrl: hasMeetingLink(track) ? meetingUrl.trim() || null : null,
+				// and a door price only on a members-only one
+				nonmemberPrice: hasNonmemberPrice(track) ? priceBody(price) : 0,
 				type: 'social',
 			})
 			await load()

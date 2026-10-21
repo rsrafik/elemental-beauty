@@ -8,7 +8,7 @@ import { mountRoster, requireNotAttendee } from './roster.js'
 import { acceptOffer, confirmSpot, expireOffers, lockParent, offerNext, startsAt } from '../offers.js'
 import { log } from '../activity.js'
 import { readEndTime } from '../clubTime.js'
-import { DUES_ANSWERS, asksDues, duesAnswerProblem, duesLookup, duesOwed, duesUnpaid, settleDues } from '../dues.js'
+import { DUES_ANSWERS, asksDues, duesAnswerProblem, duesLookup, duesOwed, duesUnpaid, readPrice, settleDues } from '../dues.js'
 
 const router = express.Router()
 
@@ -157,10 +157,10 @@ function readLinks(value) {
     return { links: links.length ? links : null }
 }
 
-// What someone who hasn't paid dues is charged for it: the year's non-member
-// price on a members-only event (`owe` is from duesLookup). Null when they
-// owe nothing, or it's open to all.
-const duesFor = (event, owe) => asksDues('event', event) ? owe(event.date.toISOString().slice(0, 10)) : null
+// What someone who hasn't paid dues is charged for it: the event's own
+// non-member price, on a members-only one (`owe` is from duesLookup). Null
+// when they owe nothing, or it's open to all.
+const duesFor = (event, owe) => asksDues('event', event) ? owe(event.date.toISOString().slice(0, 10), event.nonmemberPrice) : null
 
 // Seats spoken for. A waitlisted row is NOT one of them — that's the whole
 // point of the waitlist — so the count is what fills the cap and nothing else.
@@ -285,6 +285,8 @@ router.post('/', requireRole('officer'), async (req, res) => {
     if (teamError) { return res.status(400).json({ message: teamError }) }
     const { meetingUrl, error: meetingError } = readMeetingUrl(req.body.meetingUrl)
     if (meetingError) { return res.status(400).json({ message: meetingError }) }
+    const { price, error: priceError } = readPrice(req.body.nonmemberPrice)
+    if (priceError) { return res.status(400).json({ message: priceError }) }
     const forJboard = track === 'jboard'
     const viewer = await viewerOf(req)
     // j-board files for their own team or all of j-board — another team's
@@ -342,6 +344,9 @@ router.post('/', requireRole('officer'), async (req, res) => {
                 team: forJboard ? team ?? null : null,
                 // a meeting link only where one's asked for (MEETING_TRACKS)
                 meetingUrl: MEETING_TRACKS.includes(track) ? meetingUrl ?? null : null,
+                // only a members-only event charges anyone at the door
+                // (asksDues) — the column's default 'members' counts too
+                nonmemberPrice: (track ?? 'members') === 'members' ? price ?? 0 : 0,
                 hideFromEvents: hideFromEvents ?? false,
                 links,
                 createdById: req.userId
@@ -400,6 +405,9 @@ router.put('/:id', requireRole('officer'), async (req, res) => {
     const meetingRead = readMeetingUrl(req.body.meetingUrl)
     if (meetingRead.error) { return res.status(400).json({ message: meetingRead.error }) }
     if (meetingRead.meetingUrl !== undefined) { data.meetingUrl = meetingRead.meetingUrl }
+    const priceRead = readPrice(req.body.nonmemberPrice)
+    if (priceRead.error) { return res.status(400).json({ message: priceRead.error }) }
+    if (priceRead.price !== undefined) { data.nonmemberPrice = priceRead.price }
     if (req.body.startTime !== undefined) {
         if (req.body.startTime && !TIME.test(req.body.startTime)) {
             return res.status(400).json({ message: 'startTime must be HH:MM' })
@@ -440,6 +448,8 @@ router.put('/:id', requireRole('officer'), async (req, res) => {
         if (UNCAPPED_TRACKS.includes(track)) { data.capacity = null }
         if (track !== 'jboard') { data.team = null }
         if (!MEETING_TRACKS.includes(track)) { data.meetingUrl = null }
+        // and a non-member price only on a members-only one
+        if (track !== 'members') { data.nonmemberPrice = 0 }
         // the end time against the start it'll have after this edit: one
         // sent is checked; one left alone goes if the start went, or moved
         // past it
@@ -683,7 +693,7 @@ router.post('/:eventId/checkin', requireRole('officer'), requireNotAttendee('eve
         }
 
         const owed = asksDues('event', event)
-            ? await duesOwed(prisma, decoded.id, event.date.toISOString().slice(0, 10))
+            ? await duesOwed(prisma, decoded.id, event.date.toISOString().slice(0, 10), event.nonmemberPrice)
             : null
         if (owed && !dues) { return duesUnpaid(res, decoded.id, owed) }
         const problem = owed && duesAnswerProblem(owed, dues)

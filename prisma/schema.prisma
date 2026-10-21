@@ -258,6 +258,10 @@ model Lab {
   // null = unlimited seats, same as events.capacity — the edit page's
   // "seats available" is optional
   capacity     Int?
+  // What someone who hasn't paid the year's dues is charged at the door for
+  // it — shown on the cards they see, and taken as income under 'fees' (see
+  // src/dues.js). Set on the edit page; 0 = nothing extra.
+  nonmemberPrice Decimal @default(0) @map("nonmember_price") @db.Decimal(10, 2)
   description  String?
   image        String?
   ingredients  String?
@@ -390,6 +394,10 @@ model Event {
   location    String?
   image       String?
   capacity    Int? // null = unlimited seats
+  // The same door charge a lab has, for someone who hasn't paid dues. Only
+  // a members-only event asks (asksDues in src/dues.js), so anything else
+  // keeps 0.
+  nonmemberPrice Decimal @default(0) @map("nonmember_price") @db.Decimal(10, 2)
   // The j-board team it's for — only on a j-board event, where the form asks
   // for this in place of a seat cap (so a j-board event's capacity is null).
   // Null = the whole of j-board.
@@ -515,10 +523,8 @@ model YearTarget {
   // What a member owes in dues that year — the dues card's default when the
   // treasurer marks someone paid. 0 = not set yet.
   duesAmount    Decimal @default(0) @map("dues_amount") @db.Decimal(10, 2)
-  // What someone who hasn't paid that year's dues is charged at the door for
-  // a lab or a members-only event — shown on the cards they see, and taken as
-  // income under 'fees' (see src/dues.js). 0 = not set.
-  nonmemberPrice Decimal @default(0) @map("nonmember_price") @db.Decimal(10, 2)
+  // (The non-member price used to be here too, one for the whole year. It's
+  // on each lab and event now — Lab.nonmemberPrice, Event.nonmemberPrice.)
 
   @@map("year_targets")
 }

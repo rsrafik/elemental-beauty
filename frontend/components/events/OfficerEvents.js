@@ -6,7 +6,8 @@ import { useDismiss } from '@/lib/dismiss'
 import DashboardShell from '@/components/dashboards/DashboardShell'
 import { eventCategories, events as eventsApi } from '@/lib/api'
 import { isoDate, prettyTimeRange, today } from '@/lib/dates'
-import { calendarOnly, capacityField, categoryNameOf, hasMeetingLink } from '@/lib/calendar'
+import { calendarOnly, capacityField, categoryNameOf, hasMeetingLink, hasNonmemberPrice } from '@/lib/calendar'
+import { priceBody, priceInput, priceOk } from '@/lib/finances'
 import HideFromEventsToggle from '@/components/events/HideFromEventsToggle'
 import { LinksField, cleanLinks } from '@/components/events/EventLinks'
 import TeamField from '@/components/events/TeamField'
@@ -69,6 +70,8 @@ export function toCard(event) {
 		image: event.image,
 		description: event.description ?? '',
 		capacity: event.capacity ?? null,
+		// what someone unpaid is charged at the door (a Decimal, so a string)
+		nonmemberPrice: Number(event.nonmemberPrice ?? 0),
 		location: event.location ?? '',
 		hideFromEvents: event.hideFromEvents ?? false,
 		links: event.links ?? [],
@@ -465,6 +468,7 @@ export function EventDialog({ event, categories, onClose, onSave, onDelete }) {
 		track: event?.track ?? 'members',
 		description: event?.description ?? '',
 		spots: event?.capacity == null ? '' : String(event.capacity),
+		price: priceInput(event?.nonmemberPrice),
 		location: event?.location ?? '',
 		hideFromEvents: event?.hideFromEvents ?? false,
 		team: event?.team ?? '',
@@ -508,7 +512,9 @@ export function EventDialog({ event, categories, onClose, onSave, onDelete }) {
 	const spotsOk = capacityField(form.track) !== 'spots' || form.spots.trim() === '' || (Number.isInteger(Number(form.spots)) && Number(form.spots) > 0)
 	// blank, or after the start (the API holds it to the same)
 	const endOk = form.endTime === '' || (form.time !== '' && form.endTime > form.time)
-	const ready = form.title.trim() !== '' && form.date !== '' && spotsOk && endOk
+	// blank, or dollars and cents (only a members-only event asks)
+	const priceFine = !hasNonmemberPrice(form.track) || priceOk(form.price)
+	const ready = form.title.trim() !== '' && form.date !== '' && spotsOk && endOk && priceFine
 
 	const submit = (submitted) => {
 		submitted.preventDefault()
@@ -754,6 +760,23 @@ export function EventDialog({ event, categories, onClose, onSave, onDelete }) {
 									onChange={set('spots')}
 									placeholder="blank = unlimited"
 									className={`${FIELD} ${spotsOk ? '' : 'border-red focus:border-red'}`}
+								/>
+							</label>
+						)}
+						{/* a members-only event charges someone who hasn't paid dues
+						    this at the door (hasNonmemberPrice) — blank for nothing */}
+						{hasNonmemberPrice(form.track) && (
+							<label className="block">
+								<Label>non-member price</Label>
+								<input
+									type="number"
+									min="0"
+									step="0.01"
+									inputMode="decimal"
+									value={form.price}
+									onChange={set('price')}
+									placeholder="$ — blank = free"
+									className={`${FIELD} ${priceFine ? '' : 'border-red focus:border-red'}`}
 								/>
 							</label>
 						)}
@@ -1146,6 +1169,8 @@ export default function OfficerEvents({ openNew = false }) {
 			links: values.links,
 			// the link only where the form asks for one
 			meetingUrl: hasMeetingLink(values.track) ? values.meetingUrl.trim() || null : null,
+			// and a door price only on a members-only one
+			nonmemberPrice: hasNonmemberPrice(values.track) ? priceBody(values.price) : 0,
 		}
 
 		setError(null)

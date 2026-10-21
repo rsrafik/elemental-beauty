@@ -29,7 +29,7 @@ router.get('/', async (req, res) => {
 
     try {
         const [target, members] = await Promise.all([
-            prisma.yearTarget.findUnique({ where: { schoolYear }, select: { duesAmount: true, nonmemberPrice: true } }),
+            prisma.yearTarget.findUnique({ where: { schoolYear }, select: { duesAmount: true } }),
             prisma.member.findMany({
                 where: { role: { notIn: DUES_EXEMPT } },
                 select: {
@@ -54,7 +54,6 @@ router.get('/', async (req, res) => {
         res.json({
             schoolYear,
             duesAmount: Number(target?.duesAmount ?? 0),
-            nonmemberPrice: Number(target?.nonmemberPrice ?? 0),
             members: rows
         })
     } catch (err) {
