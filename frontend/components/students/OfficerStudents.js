@@ -35,6 +35,16 @@ import ActivityLog from '@/components/students/ActivityLog'
 //     API enforces on PUT /members/:id/role. For everyone else the pill is a
 //     label rather than a button.
 //
+// VIP is a role: a member who's paid this school year's dues. The dues switch
+// it — marking someone paid on analytics makes them VIP, taking it back makes
+// them a member again — and picking VIP from the pill here is the same as
+// "mark paid" there: this year's dues go in the ledger (PUT /members/:id/role,
+// syncVipRoles in src/dues.js). Taking VIP off someone who's paid is refused;
+// that's the dues card's undo.
+//
+// The filter also takes where someone stands on this year's dues, paid or
+// unpaid — the same check the door makes (duesStandings).
+//
 // The "+" beside someone's points gives points by hand for the things
 // check-in can't see (an instagram follow, joining the discord) or sets a
 // total outright. J-board doesn't get it — they can't alter points, which the
@@ -45,10 +55,21 @@ import ActivityLog from '@/components/students/ActivityLog'
 
 // What a role can be changed to, or added as. 'user' isn't one — it's the
 // absence of a member row, which only the waiver or deleting the row changes.
-const ROLES = ['member', 'officer', 'jboard', 'treasurer', 'admin', 'advisor']
+const ROLES = ['member', 'vip', 'officer', 'jboard', 'treasurer', 'admin', 'advisor']
 
 // What the filter offers: every role on the sheet, 'user' included.
 const FILTER_ROLES = ['user', ...ROLES]
+
+// The dues filter. `dues` on a row is the API's 'paid' | 'unpaid', or null for
+// someone who never pays.
+const DUES_FILTERS = [
+	{ key: 'paid', label: 'paid' },
+	{ key: 'unpaid', label: 'unpaid' },
+]
+
+// The roles that never pay dues — no "unpaid" on them, ever. Mirrors
+// DUES_EXEMPT in src/dues.js.
+const DUES_EXEMPT = ['officer', 'treasurer', 'admin', 'advisor']
 
 // Sorting roles alphabetically would put admin above officer for no reason —
 // rank is the order anyone actually means by "sort by role". Mirrors RANK in
@@ -56,16 +77,18 @@ const FILTER_ROLES = ['user', ...ROLES]
 const ROLE_ORDER = {
 	user: 0,
 	member: 1,
-	officer: 2,
-	jboard: 3,
-	treasurer: 4,
-	admin: 5,
-	advisor: 6,
+	vip: 2,
+	officer: 3,
+	jboard: 4,
+	treasurer: 5,
+	admin: 6,
+	advisor: 7,
 }
 
 const ROLE_PILL = {
 	user: 'bg-black/[0.06] text-black/55',
 	member: 'bg-salmon-lightest text-salmon-dark',
+	vip: 'bg-[#FFD6EC] text-[#B0287A]',
 	officer: 'bg-blue-light text-blue-med',
 	jboard: 'bg-[#E8DEFF] text-[#6B4FBF]',
 	treasurer: 'bg-yellow-light text-yellow-dark',
@@ -91,6 +114,8 @@ function toRow(row) {
 		username: row.user?.email || row.user?.username || '',
 		handle: row.user?.username ?? '',
 		role: row.role,
+		// this year's dues — 'paid', 'unpaid', or null (the dues filter)
+		dues: row.dues ?? null,
 		// j-board only: the teams they're on (see the role menu's side list)
 		teams: row.jboardTeams ?? [],
 		points: row.points,
@@ -1191,8 +1216,9 @@ function AddStudentDialog({ roles, onClose, onSave }) {
 // ---- filter ----------------------------------------------------------------
 
 // Ticking nothing means every role, which is also what the funnel starts as —
-// so "clear" is just untick everything.
-function RoleFilter({ roles, onChange }) {
+// so "clear" is just untick everything. The dues labels (VIP, unpaid) sit
+// under the roles and work the same way: tick one and only those rows stay.
+function RoleFilter({ roles, onChange, dues, onDuesChange }) {
 	const [open, setOpen] = useState(false)
 	const wrapper = useRef(null)
 
@@ -1219,7 +1245,14 @@ function RoleFilter({ roles, onChange }) {
 				: [...roles, role]
 		)
 
-	const filtering = roles.length > 0
+	const toggleDues = (key) =>
+		onDuesChange(
+			dues.includes(key)
+				? dues.filter((kept) => kept !== key)
+				: [...dues, key]
+		)
+
+	const filtering = roles.length > 0 || dues.length > 0
 
 	return (
 		<div ref={wrapper} className="relative">
@@ -1313,9 +1346,60 @@ function RoleFilter({ roles, onChange }) {
 						))}
 					</div>
 
+					<p className="
+						font-vietnam
+						text-[11px]
+						uppercase
+						tracking-[0.12em]
+						text-black/50
+						px-1
+						pt-3
+						pb-2
+					">
+						dues
+					</p>
+
+					<div className="
+						flex
+						flex-col
+						gap-0.5
+					">
+						{DUES_FILTERS.map(({ key, label }) => (
+							<label
+								key={key}
+								className="
+									flex
+									items-center
+									gap-2.5
+									rounded-[8px]
+									px-2
+									py-1.5
+									font-vietnam
+									text-sm
+									text-black
+									cursor-pointer
+									transition-colors
+									duration-150
+									ease-out
+									hover:bg-cream
+								"
+							>
+								<Checkbox
+									checked={dues.includes(key)}
+									onChange={() => toggleDues(key)}
+									label={label}
+								/>
+								{label}
+							</label>
+						))}
+					</div>
+
 					<button
 						type="button"
-						onClick={() => onChange([])}
+						onClick={() => {
+							onChange([])
+							onDuesChange([])
+						}}
 						disabled={!filtering}
 						className={`
 							mt-2
@@ -1333,7 +1417,7 @@ function RoleFilter({ roles, onChange }) {
 								: 'text-black/25 cursor-not-allowed'}
 						`}
 					>
-						show all roles
+						show everyone
 					</button>
 				</div>
 			)}
@@ -1377,6 +1461,8 @@ export default function OfficerStudents() {
 	const [error, setError] = useState(null)
 	const [query, setQuery] = useState('')
 	const [roles, setRoles] = useState([])
+	// 'paid' / 'unpaid' ticked in the filter (DUES_FILTERS)
+	const [duesFilter, setDuesFilter] = useState([])
 	const [sort, setSort] = useState({ key: 'id', dir: 'asc' })
 	const [selected, setSelected] = useState([])
 	const [page, setPage] = useState(1)
@@ -1421,6 +1507,11 @@ export default function OfficerStudents() {
 		setPage(1)
 	}
 
+	const filterDues = (value) => {
+		setDuesFilter(value)
+		setPage(1)
+	}
+
 	// A second click on the sorted column flips it; a first click on any other
 	// starts that one ascending.
 	const sortBy = (key) =>
@@ -1433,6 +1524,7 @@ export default function OfficerStudents() {
 	const needle = query.trim().toLowerCase()
 	const rows = students
 		.filter((student) => roles.length === 0 || roles.includes(student.role))
+		.filter((student) => duesFilter.length === 0 || duesFilter.includes(student.dues))
 		.filter((student) =>
 			needle === '' ||
 			[student.first, student.last, student.username, student.handle, student.role, String(student.id)]
@@ -1508,7 +1600,7 @@ export default function OfficerStudents() {
 	const canRemove = (student) =>
 		changes &&
 		student.id !== user?.userId &&
-		(isAdmin || student.role === 'member' || student.role === 'user')
+		(isAdmin || ['member', 'vip', 'user'].includes(student.role))
 
 	const isSelected = (id) => selected.includes(id)
 	const toggleRow = (id) =>
@@ -1622,7 +1714,21 @@ export default function OfficerStudents() {
 		)
 
 		try {
-			await membersApi.setRole(id, next)
+			// The server has the last word on the role: making someone a
+			// member who's already paid this year leaves them VIP. And VIP
+			// means paid — picking it marked their dues paid.
+			const saved = await membersApi.setRole(id, next)
+			setStudents((prev) =>
+				prev.map((student) => (student.id === id
+					? {
+						...student,
+						role: saved.role,
+						dues: saved.role === 'vip'
+							? 'paid'
+							: DUES_EXEMPT.includes(saved.role) ? null : before.dues ?? 'unpaid',
+					}
+					: student))
+			)
 		} catch (err) {
 			setStudents((prev) =>
 				prev.map((student) =>
@@ -1813,7 +1919,7 @@ export default function OfficerStudents() {
 							</button>
 						)}
 
-						<RoleFilter roles={roles} onChange={filterRoles} />
+						<RoleFilter roles={roles} onChange={filterRoles} dues={duesFilter} onDuesChange={filterDues} />
 
 						<button
 							type="button"

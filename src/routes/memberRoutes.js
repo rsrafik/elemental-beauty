@@ -10,10 +10,12 @@ import { STAFF, wantsEmail } from '../emailPrefs.js'
 import { emailAll, readMessage } from '../emailAll.js'
 import { hashPassword, passwordProblem } from '../passwords.js'
 import { log } from '../activity.js'
+import { duesStandings, payForVip, schoolYearOf, syncVipRoles } from '../dues.js'
+import { clubToday } from '../clubTime.js'
 
 const router = express.Router()
 
-const ROLES = ['member', 'officer', 'jboard', 'treasurer', 'admin', 'advisor']
+const ROLES = ['member', 'vip', 'officer', 'jboard', 'treasurer', 'admin', 'advisor']
 
 // Anyone on staff can only be handled by an admin; officers and treasurers are
 // left with plain members. The roster puts this gate on the row's checkbox so
@@ -24,9 +26,10 @@ const ROLES = ['member', 'officer', 'jboard', 'treasurer', 'admin', 'advisor']
 // who could add an admin could add themselves a second account and log into it.
 //
 // An account with no member row yet ('user' — signed up, still short of the
-// email link or the waiver) is on the same footing as a plain member.
+// email link or the waiver) is on the same footing as a plain member, and so
+// is a VIP (a member who's paid this year's dues).
 function canManage(actorRole, targetRole) {
-    return actorRole === 'admin' || targetRole === 'member' || targetRole === 'user'
+    return actorRole === 'admin' || ['member', 'vip', 'user'].includes(targetRole)
 }
 
 // Roster — whitelisted fields only; passwordHash never leaves the server, and
@@ -60,12 +63,16 @@ router.get('/', async (req, res) => {
         })
         // Staff get each address and whether the dashboard's "Email All" may
         // include it (their choice, or their role's default); nobody else
-        // sees either.
+        // sees either. The same goes for where someone stands on this year's
+        // dues — /students filters on paid and unpaid (duesStandings in
+        // src/dues.js).
         const staff = STAFF.includes(req.role)
+        const standing = staff ? await duesStandings(prisma) : null
         res.json(members.map(({ user, ...row }) => {
             const { email, emailClub, ...rest } = user
             return {
                 ...row,
+                ...(staff ? { dues: standing(row) } : {}),
                 user: staff
                     ? { ...rest, email, emailClub: wantsEmail(emailClub, row.role) }
                     : rest
@@ -516,10 +523,13 @@ router.post('/', requireRole('admin'), async (req, res) => {
                     waiverSigned: true       // vouched for in person by the officer adding them
                 }
             })
-            const member = await tx.member.create({
+            await tx.member.create({
                 data: { userId: user.userId, role }
             })
             await log({ actorId: req.userId, action: 'member_added', targetId: user.userId, details: { role } }, tx)
+            // added as VIP: their dues are marked paid, as on the role pill
+            if (role === 'vip') { await payForVip(tx, { memberId: user.userId, actorId: req.userId }) }
+            const member = await tx.member.findUnique({ where: { userId: user.userId } })
             return { user, member }
         })
 
@@ -539,6 +549,7 @@ router.post('/', requireRole('admin'), async (req, res) => {
         if (err.code === 'P2002') {
             return res.status(409).json({ message: takenMessage(err, handle) })
         }
+        if (err.code === 'NO_DUES_AMOUNT') { return res.status(400).json({ message: err.message }) }
         console.error(err.message)
         res.sendStatus(500)
     }
@@ -616,6 +627,13 @@ router.put('/:id/teams', requireRole('admin'), async (req, res) => {
     }
 })
 
+// VIP is a member who's paid this year's dues, and the dues decide it
+// (syncVipRoles in dues.js). So picking it here is the dues card's "mark paid":
+// this year's dues go in the ledger and they're VIP (payForVip). Taking it
+// away from someone who's paid is refused — the payment would only make them
+// VIP again — and points at the dues card's undo, which is where money comes
+// back out. Any other change re-syncs too: someone made a member who's already
+// paid this year comes out VIP.
 router.put('/:id/role', requireRole('admin'), async (req, res) => {
     const targetId = parseInt(req.params.id)
     if (isNaN(targetId)) { return res.status(400).json({ message: 'Invalid member id' }) }
@@ -649,9 +667,19 @@ router.put('/:id/role', requireRole('admin'), async (req, res) => {
                     where: { userId: targetId },
                     data: { emailVerified: true, waiverSigned: true, ...optOut }
                 })
-                const member = await tx.member.create({ data: { userId: targetId, role } })
+                await tx.member.create({ data: { userId: targetId, role } })
                 await log({ actorId: req.userId, action: 'role_changed', targetId, details: { from: 'user', to: role } }, tx)
-                return member
+                if (role === 'vip') { await payForVip(tx, { memberId: targetId, actorId: req.userId }) }
+                await syncVipRoles(tx)
+                return tx.member.findUnique({ where: { userId: targetId } })
+            }
+
+            if (before.role === 'vip' && role === 'member') {
+                const schoolYear = schoolYearOf(clubToday())
+                const paid = await tx.duesPayment.findUnique({ where: { memberId_schoolYear: { memberId: targetId, schoolYear } } })
+                if (paid) {
+                    throw Object.assign(new Error(`They’ve paid their ${schoolYear} dues, so they stay VIP — take the payment back on analytics’ dues card (“undo”) to make them a member`), { code: 'STILL_PAID' })
+                }
             }
 
             const member = await tx.member.update({
@@ -665,11 +693,15 @@ router.put('/:id/role', requireRole('admin'), async (req, res) => {
             if (before.role !== role) {
                 await log({ actorId: req.userId, action: 'role_changed', targetId, details: { from: before.role, to: role } }, tx)
             }
-            return member
+            if (role === 'vip') { await payForVip(tx, { memberId: targetId, actorId: req.userId }) }
+            await syncVipRoles(tx)
+            return tx.member.findUnique({ where: { userId: targetId } })
         })
         res.json(updated)
     } catch (err) {
         if (err.code === 'P2025') { return res.status(404).json({ message: 'Member not found' }) }
+        if (err.code === 'NO_DUES_AMOUNT') { return res.status(400).json({ message: err.message }) }
+        if (err.code === 'STILL_PAID') { return res.status(409).json({ message: err.message }) }
         // two admins promoting the same account at once: the second finds the
         // member row already made
         if (err.code === 'P2002') { return res.status(409).json({ message: 'They were just made a member — reload to see it' }) }

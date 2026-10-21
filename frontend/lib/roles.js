@@ -10,11 +10,13 @@
 // someone who has an account but no member row yet.
 
 // j-board sits just above officer: everything an officer has, not the
-// treasurer's books. The advisor ranks with admin, so every page an admin can
+// treasurer's books. A VIP is a member who's paid this year's dues — the same
+// rank as a member, so the same pages (syncVipRoles in src/dues.js). The advisor ranks with admin, so every page an admin can
 // open is open to them — but they can't change anything there (canChange).
 export const RANK = {
 	user: 0,
 	member: 1,
+	vip: 1,
 	officer: 2,
 	jboard: 3,
 	treasurer: 4,
@@ -74,6 +76,7 @@ export function canSeeAnalytics(role, teams) {
 const HIDDEN_TRACKS = {
 	user: ['officers', 'board', 'jboard'],
 	member: ['officers', 'board', 'jboard'],
+	vip: ['officers', 'board', 'jboard'],
 	jboard: ['officers'],
 }
 export function hiddenTracks(role) {
@@ -101,7 +104,7 @@ export function tracksChangedFrom(role, offTracks) {
 // database has to spell without the hyphen.
 // What a role is called on the page. 'officer' is the e-board — the stored
 // name stays 'officer' (the database, the API and the code all use it).
-const ROLE_LABELS = { officer: 'e-board', jboard: 'j-board' }
+const ROLE_LABELS = { officer: 'e-board', jboard: 'j-board', vip: 'VIP' }
 export function roleLabel(role) {
 	return ROLE_LABELS[role] ?? role
 }

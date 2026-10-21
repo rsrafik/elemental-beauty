@@ -3,6 +3,7 @@ import prisma from '../prismaClient.js'
 import requireRole from '../middleware/requireRole.js'
 import { csvCell } from '../csv.js'
 import { log } from '../activity.js'
+import { syncVipRoles } from '../dues.js'
 import { SPONSORS_ONLY, isSponsorship, onTreasuryTeam } from '../middleware/treasury.js'
 
 const router = express.Router()
@@ -265,7 +266,8 @@ router.put('/:id', requireRole('treasurer'), async (req, res) => {
 //                    reimbursed again writes a fresh row (the trigger fires on
 //                    the move into 'reimbursed').
 //   a dues payment   the payment goes with it (the foreign key cascades), so
-//                    that member reads as unpaid for the year again
+//                    that member reads as unpaid for the year again — and
+//                    stops being VIP (syncVipRoles in dues.js)
 router.delete('/:id', requireRole('treasurer'), async (req, res) => {
     const transactionId = parseInt(req.params.id)
     if (isNaN(transactionId)) { return res.status(400).json({ message: 'Invalid transaction id' }) }
@@ -296,6 +298,8 @@ router.delete('/:id', requireRole('treasurer'), async (req, res) => {
                     actorId: req.userId, action: 'dues_cleared', targetId: existing.dues.memberId,
                     details: { schoolYear: existing.dues.schoolYear, amount: Number(existing.dues.amount) }
                 }, tx)
+                // the payment went with the row, so a VIP is a member again
+                await syncVipRoles(tx)
             }
         })
         res.json({

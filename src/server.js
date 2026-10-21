@@ -20,6 +20,8 @@ import offerRoutes from './routes/offerRoutes.js'
 import duesRoutes from './routes/duesRoutes.js'
 import activityRoutes from './routes/activityRoutes.js'
 import { sendReminders } from './reminders.js'
+import prisma from './prismaClient.js'
+import { syncVipRoles } from './dues.js'
 
 // Refuse to boot misconfigured — a missing secret must crash here, loudly,
 // not surface later as broken tokens or leaked reset codes.
@@ -170,6 +172,17 @@ setInterval(
     () => sendReminders().catch(err => console.error('Reminder sweep failed:', err.message)),
     60 * 60 * 1000
 )
+
+// VIP follows this school year's dues (see dues.js). Every payment change
+// already re-syncs it; this is for the turn of the year, when last year's VIPs
+// have nothing paid for the new one — on boot, then hourly.
+const syncVip = () => syncVipRoles(prisma)
+    .then(({ promoted, lapsed }) => {
+        if (promoted || lapsed) { console.log(`VIP sync: ${promoted} made VIP, ${lapsed} back to member`) }
+    })
+    .catch(err => console.error('VIP sync failed:', err.message))
+syncVip()
+setInterval(syncVip, 60 * 60 * 1000)
 
 app.listen(PORT, () => {
     console.log(`Server has started on port: ${PORT}`)

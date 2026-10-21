@@ -20,6 +20,11 @@ datasource db {
 // and change nothing, bar emailing everyone (src/middleware/advisor.js).
 enum MemberRole {
   member
+  // A member who has paid this school year's dues. Same footing as a member
+  // in everything they can do; it's switched on and off by the dues
+  // themselves (syncVipRoles in src/dues.js), and picking it on /students
+  // records the payment.
+  vip
   officer
   jboard
   treasurer

@@ -50,7 +50,51 @@ export async function recordDues(tx, { memberId, user, schoolYear, amount, day, 
         }
     })
     await log({ actorId, action: 'dues_paid', targetId: memberId, details: { schoolYear, amount } }, tx)
+    await syncVipRoles(tx)
     return created
+}
+
+// VIP is the role of a member who has paid this school year's dues, and the
+// dues are what decide it: anyone 'member' with a payment for the year (paid,
+// or waived on the dues card) becomes 'vip', and any 'vip' without one goes
+// back to 'member'. Run inside every change that adds or removes a payment —
+// paying (recordDues), taking one back, clearing the year, deleting its ledger
+// row — and hourly (server.js), which is what turns last year's VIPs back into
+// members when August starts a new year. Only plain members are touched:
+// j-board who've paid stay j-board, and staff never pay.
+//
+// Everything is in one place on purpose, so no path can leave someone VIP
+// without a payment behind it, or paid and still a plain member.
+export async function syncVipRoles(db, day) {
+    const schoolYear = schoolYearOf(day ?? clubToday())
+    const promoted = await db.member.updateMany({
+        where: { role: 'member', dues: { some: { schoolYear } } },
+        data: { role: 'vip' }
+    })
+    const lapsed = await db.member.updateMany({
+        where: { role: 'vip', dues: { none: { schoolYear } } },
+        data: { role: 'member' }
+    })
+    return { promoted: promoted.count, lapsed: lapsed.count }
+}
+
+// Picking VIP for someone on /students is the dues card's "mark paid": this
+// year's dues, at the year's amount, into the ledger dated today. Nothing to
+// do when they've already paid (or been waived) this year. Inside the role
+// change's `tx`, after their member row exists. Throws with code
+// 'NO_DUES_AMOUNT' when the year has no amount set — there's nothing to mark
+// them paid with, the same reason the dues card greys its button out.
+export async function payForVip(tx, { memberId, actorId }) {
+    const schoolYear = schoolYearOf(clubToday())
+    const paid = await tx.duesPayment.findUnique({ where: { memberId_schoolYear: { memberId, schoolYear } } })
+    if (paid) return null
+    const target = await tx.yearTarget.findUnique({ where: { schoolYear }, select: { duesAmount: true } })
+    const amount = Number(target?.duesAmount ?? 0)
+    if (amount <= 0) {
+        throw Object.assign(new Error(`Set the ${schoolYear} dues amount on analytics first — making someone VIP marks their dues paid`), { code: 'NO_DUES_AMOUNT' })
+    }
+    const user = await tx.user.findUnique({ where: { userId: memberId }, select: { firstName: true, lastName: true, username: true } })
+    return recordDues(tx, { memberId, user, schoolYear, amount, day: dateColumn(clubToday()), actorId })
 }
 
 // Checking someone into a lab or a members-only event asks after their dues
@@ -97,6 +141,21 @@ export async function duesLookup(db, memberId) {
         const amount = Number(years.get(schoolYear)?.duesAmount ?? 0)
         const price = Number(nonmemberPrice ?? 0)
         return amount > 0 || price > 0 ? { schoolYear, amount, price } : null
+    }
+}
+
+// Where everyone stands on this school year's dues, for the students tab's
+// paid / unpaid filter: 'paid', 'unpaid', or null for a role that never pays
+// (DUES_EXEMPT). The same rule duesLookup and the door use — a DuesPayment
+// row for the year settles it, waived included — so the filter and the door
+// can't disagree. Returns a function of a member's { userId, role }.
+export async function duesStandings(db, day) {
+    const schoolYear = schoolYearOf(day ?? clubToday())
+    const paid = await db.duesPayment.findMany({ where: { schoolYear }, select: { memberId: true } })
+    const settled = new Set(paid.map((payment) => payment.memberId))
+    return ({ userId, role }) => {
+        if (DUES_EXEMPT.includes(role)) return null
+        return settled.has(userId) ? 'paid' : 'unpaid'
     }
 }
 
