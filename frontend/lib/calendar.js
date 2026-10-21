@@ -156,6 +156,14 @@ export function capacityField(track) {
 	return 'spots'
 }
 
+// Whether an event form asks for a non-member price — what someone who hasn't
+// paid dues is charged at the door. Only a members-only event asks for dues at
+// all (asksDues in src/dues.js), so only it has one; the API keeps 0 on
+// anything else.
+export function hasNonmemberPrice(track) {
+	return track === 'members'
+}
+
 // Whether an event form asks for a meeting link (the "join" pill's): online
 // events, and the meetings — officers, EB board, j-board. Mirrors
 // MEETING_TRACKS in src/routes/eventRoutes.js.

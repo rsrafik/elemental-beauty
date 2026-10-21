@@ -45,7 +45,7 @@ async function contentsOf(schoolYear, target) {
         prisma.duesPayment.count({ where: { schoolYear } }),
         prisma.reimbursement.count({ where: { date: range } })
     ])
-    const figures = target && [target.incomeGoal, target.expenseBudget, target.duesAmount, target.nonmemberPrice]
+    const figures = target && [target.incomeGoal, target.expenseBudget, target.duesAmount]
         .some((value) => Number(value) > 0)
 
     const reasons = []
@@ -100,9 +100,9 @@ router.put('/:schoolYear', requireRole('treasurer'), async (req, res) => {
         return res.status(400).json({ message: 'schoolYear must look like 2025–26' })
     }
 
-    const { incomeGoal, expenseBudget, duesAmount, nonmemberPrice } = req.body ?? {}
-    if ([incomeGoal, expenseBudget, duesAmount, nonmemberPrice].every((value) => value === undefined)) {
-        return res.status(400).json({ message: 'incomeGoal, expenseBudget, duesAmount or nonmemberPrice is required' })
+    const { incomeGoal, expenseBudget, duesAmount } = req.body ?? {}
+    if ([incomeGoal, expenseBudget, duesAmount].every((value) => value === undefined)) {
+        return res.status(400).json({ message: 'incomeGoal, expenseBudget or duesAmount is required' })
     }
 
     const update = {}
@@ -124,14 +124,6 @@ router.put('/:schoolYear', requireRole('treasurer'), async (req, res) => {
         update.duesAmount = amount
     }
 
-    // what someone who hasn't paid that year's dues is charged for a lab or
-    // a members-only event (see src/dues.js)
-    if (nonmemberPrice !== undefined) {
-        const { amount, error } = parseAmount(nonmemberPrice, 'nonmemberPrice')
-        if (error) { return res.status(400).json({ message: error }) }
-        update.nonmemberPrice = amount
-    }
-
     try {
         const target = await prisma.yearTarget.upsert({
             where: { schoolYear },
@@ -140,8 +132,7 @@ router.put('/:schoolYear', requireRole('treasurer'), async (req, res) => {
                 schoolYear,
                 incomeGoal: update.incomeGoal ?? 0,
                 expenseBudget: update.expenseBudget ?? 0,
-                duesAmount: update.duesAmount ?? 0,
-                nonmemberPrice: update.nonmemberPrice ?? 0
+                duesAmount: update.duesAmount ?? 0
             }
         })
         res.json(target)

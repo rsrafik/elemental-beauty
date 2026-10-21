@@ -2,7 +2,8 @@
 
 import { useState } from 'react'
 import { events as eventsApi } from '@/lib/api'
-import { STAFF_TRACKS, capacityField, hasMeetingLink } from '@/lib/calendar'
+import { STAFF_TRACKS, capacityField, hasMeetingLink, hasNonmemberPrice } from '@/lib/calendar'
+import { priceBody } from '@/lib/finances'
 import EventDetailsDialog from '@/components/events/EventDetailsDialog'
 import { EventDialog as EditEventDialog, toCard } from '@/components/events/OfficerEvents'
 
@@ -50,6 +51,7 @@ export function useCalendarEventDialogs({ categories, onChanged, onError }) {
 				hideFromEvents: values.hideFromEvents,
 				links: values.links,
 				meetingUrl: hasMeetingLink(values.track) ? values.meetingUrl.trim() || null : null,
+				nonmemberPrice: hasNonmemberPrice(values.track) ? priceBody(values.price) : 0,
 			})
 			await onChanged?.()
 		} catch (err) {

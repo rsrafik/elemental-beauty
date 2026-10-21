@@ -22,6 +22,7 @@ import {
 import DateTimeField from '@/components/labs/DateTimeField'
 import { labs as labsApi } from '@/lib/api'
 import { isoDate } from '@/lib/dates'
+import { priceBody, priceInput, priceOk } from '@/lib/finances'
 import { parseInstructions } from '@/lib/labContent'
 import { pastedSteps } from '@/lib/pasteSteps'
 // cover photos are shrunk before they're sent — see lib/images.js
@@ -29,8 +30,8 @@ import { shrinkImage } from '@/lib/images'
 
 // /labs/edit (a new lab) and /labs/edit?id=N — the officer's lab editor.
 //
-//   middle   the cover image, date, room, seats, title, description and the
-//            lesson PDF. It stays put.
+//   middle   the cover image, date, room, seats, the non-member price, title,
+//            description and the lesson PDF. It stays put.
 //   right    publish / save draft / discard, the materials and equipment
 //            boxes, and the instructions as sections, each a title and its
 //            steps. It scrolls on its own.
@@ -113,6 +114,7 @@ function toForm(lab) {
 		ends: source.endTime ?? '',
 		location: source.location ?? '',
 		seats: source.capacity == null ? '' : String(source.capacity),
+		price: priceInput(source.nonmemberPrice),
 		title: source.title ?? '',
 		description: source.description ?? '',
 		materials: source.ingredients ?? '',
@@ -128,6 +130,7 @@ function blankForm() {
 		ends: '',
 		location: '',
 		seats: '',
+		price: '',
 		title: '',
 		description: '',
 		materials: '',
@@ -160,6 +163,8 @@ function toBody(form) {
 		endTime: time && time !== '00:00' && form.ends ? form.ends : null,
 		location: form.location.trim(),
 		capacity: form.seats.trim() === '' ? null : Number(form.seats),
+		// what someone who hasn't paid dues pays at the door (blank = nothing)
+		nonmemberPrice: priceBody(form.price),
 		description: form.description.trim(),
 		ingredients: form.materials.trim(),
 		equipment: form.equipment.trim(),
@@ -176,6 +181,7 @@ function missingFor(form, hasLesson, publishing) {
 	if (form.seats.trim() !== '' && !(Number.isInteger(Number(form.seats)) && Number(form.seats) > 0)) {
 		missing.add('seats')
 	}
+	if (!priceOk(form.price)) missing.add('price')
 	// an end time needs a start time to come after
 	const start = form.when.split('T')[1]
 	if (form.ends && !(start && start !== '00:00' && form.ends > start)) missing.add('ends')
@@ -254,7 +260,7 @@ function Cover({ image, onRemove }) {
 	)
 }
 
-// A label and its box on one line — date, location, seats available.
+// A label and its box on one line — date, location, seats available, price.
 function InlineField({ id, label, required, invalid, className = '', children }) {
 	return (
 		<div className={`
@@ -594,13 +600,16 @@ export default function LabEditor({ id }) {
 		const gaps = missingFor(form, hasLesson, publishing)
 		setMissing(gaps)
 		if (gaps.size) {
+			const only = gaps.size === 1 ? [...gaps][0] : null
 			setStatus({
 				error: true,
-				text: gaps.size === 1 && gaps.has('ends')
+				text: only === 'ends'
 					? 'The end time has to be after the start time'
-					: publishing
-						? 'Fill in everything marked * to publish'
-						: 'A draft needs at least a title',
+					: only === 'price'
+						? 'The non-member price has to be an amount like 5 or 5.50'
+						: publishing
+							? 'Fill in everything marked * to publish'
+							: 'A draft needs at least a title',
 			})
 			return
 		}
@@ -826,6 +835,30 @@ export default function LabEditor({ id }) {
 								aria-invalid={flagged.has('seats')}
 								className={`
 									${fieldClass('orange', flagged.has('seats'))}
+									h-[26.4px]
+									px-[8px]
+									text-[13px]
+									placeholder:italic
+									placeholder:text-[11.5px]
+									[appearance:textfield]
+									[&::-webkit-inner-spin-button]:appearance-none
+								`}
+							/>
+						</InlineField>
+
+						{/* what someone who hasn't paid the year's dues is charged at
+						    the door — shown on the cards they see. Blank = nothing */}
+						<InlineField id="lab-price" label="non-member price" className="mt-[14.4px]">
+							<input
+								type="number"
+								min="0"
+								step="0.01"
+								inputMode="decimal"
+								placeholder="$ — don’t add if free"
+								{...field('price')}
+								aria-invalid={flagged.has('price')}
+								className={`
+									${fieldClass('orange', flagged.has('price'))}
 									h-[26.4px]
 									px-[8px]
 									text-[13px]

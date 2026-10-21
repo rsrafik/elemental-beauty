@@ -7,7 +7,7 @@ import { mountRoster, requireNotAttendee } from './roster.js'
 import { acceptOffer, confirmSpot, expireOffers, lockParent, offerNext, startsAt } from '../offers.js'
 import { log } from '../activity.js'
 import { readEndTime } from '../clubTime.js'
-import { DUES_ANSWERS, duesAnswerProblem, duesLookup, duesOwed, duesUnpaid, settleDues } from '../dues.js'
+import { DUES_ANSWERS, duesAnswerProblem, duesLookup, duesOwed, duesUnpaid, readPrice, settleDues } from '../dues.js'
 
 const router = express.Router()
 // the advisor is in both lists below so they see what staff see — drafts,
@@ -55,7 +55,9 @@ const PREVIEW_SELECT = {
     description: true, image: true, capacity: true, published: true,
     // whether it's taking sign-ups — the card and page leave the rsvp
     // button off when it isn't
-    acceptingRsvps: true
+    acceptingRsvps: true,
+    // what someone unpaid is charged at the door — read into `dues` below
+    nonmemberPrice: true
 }
 
 // 'HH:MM' — what <input type="time"> hands back, same rule as events.
@@ -135,7 +137,7 @@ router.get('/', async (req, res) => {
             quizPassed: members[0]?.quizPassed ?? null,
             // unpaid dues: { schoolYear, amount, price } — the card shows the
             // price, the page warns about it (see src/dues.js)
-            dues: owe(lab.date?.toISOString().slice(0, 10))
+            dues: owe(lab.date?.toISOString().slice(0, 10), lab.nonmemberPrice)
         })))
     } catch (err) {
         console.error(err.message)
@@ -214,7 +216,7 @@ router.get('/:id', async (req, res) => {
             confirmPending: link?.attendanceStatus === 'rsvped' && Boolean(link.confirmSentAt) && !link.confirmedAt,
             confirmBy: link?.confirmBy ?? null,
             waitlistPosition,
-            dues: owe(lab.date?.toISOString().slice(0, 10)),
+            dues: owe(lab.date?.toISOString().slice(0, 10), lab.nonmemberPrice),
             // the prelab the confirmation email attaches, for anyone holding
             // a spot — so it's never only in an inbox (GET /:id/prelab)
             prelabPdfName: officer || HOLDS_SPOT.includes(link?.attendanceStatus)
@@ -359,6 +361,10 @@ function labData(body) {
         }
         data.capacity = body.capacity
     }
+    // what someone who hasn't paid dues is charged at the door (blank = 0)
+    const { price, error: priceError } = readPrice(body.nonmemberPrice)
+    if (priceError) { return { error: priceError } }
+    if (price !== undefined) { data.nonmemberPrice = price }
     return { data }
 }
 
@@ -539,7 +545,7 @@ router.put('/:id', requireRole('officer'), requireLabEditor('id'), async (req, r
             update = current.published
                 // stored as the body was sent, so the editor can load it back
                 ? { draft: Object.fromEntries(
-                    [...TEXT_FIELDS, 'startTime', 'endTime', 'date', 'capacity']
+                    [...TEXT_FIELDS, 'startTime', 'endTime', 'date', 'capacity', 'nonmemberPrice']
                         .filter((field) => req.body[field] !== undefined)
                         .map((field) => [field, req.body[field]])
                 ) }
@@ -914,7 +920,7 @@ router.post('/:labId/checkin', requireRole('officer'), requireNotAttendee('labId
     }
 
     try {
-        const lab = await prisma.lab.findUnique({ where: { labId }, select: { title: true, date: true } })
+        const lab = await prisma.lab.findUnique({ where: { labId }, select: { title: true, date: true, nonmemberPrice: true } })
         if (!lab) { return res.status(404).json({ message: 'Lab not found' }) }
         const existing = await prisma.memberLab.findUnique({
             where: { memberId_labId: { memberId: decoded.id, labId } }
@@ -945,7 +951,7 @@ router.post('/:labId/checkin', requireRole('officer'), requireNotAttendee('labId
         }
 
         // owes dues for the lab's year (today's, for one with no date)?
-        const owed = await duesOwed(prisma, decoded.id, lab.date?.toISOString().slice(0, 10))
+        const owed = await duesOwed(prisma, decoded.id, lab.date?.toISOString().slice(0, 10), lab.nonmemberPrice)
         if (owed && !dues) { return duesUnpaid(res, decoded.id, owed) }
         const problem = owed && duesAnswerProblem(owed, dues)
         if (problem) { return res.status(400).json({ message: problem }) }

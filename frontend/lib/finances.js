@@ -26,6 +26,30 @@ const MONTH_NAMES = [
 	'july', 'august', 'september', 'october', 'november', 'december',
 ]
 
+// ---- the non-member price --------------------------------------------------
+
+// What someone who hasn't paid dues is charged at the door for one lab or
+// members-only event. Each lab and event sets its own, in its form (see
+// src/dues.js). The box holds it as typed: blank is no charge at all.
+
+// a stored price (a number, or the string a Decimal comes back as) -> the box
+export function priceInput(value) {
+	const amount = Number(value ?? 0)
+	return amount > 0 ? String(amount) : ''
+}
+
+// blank, or dollars with at most two places — what the API takes (readPrice)
+export function priceOk(typed) {
+	const trimmed = String(typed ?? '').trim()
+	return trimmed === '' || /^\d{1,8}(\.\d{1,2})?$/.test(trimmed)
+}
+
+// the box -> the body's `nonmemberPrice`
+export function priceBody(typed) {
+	const trimmed = String(typed ?? '').trim()
+	return trimmed === '' ? 0 : Number(trimmed)
+}
+
 // Where money comes from, in slice order. The colours are the donut's and the
 // ledger's dots — one place, so a category can't be green in one card and
 // yellow in the other.
