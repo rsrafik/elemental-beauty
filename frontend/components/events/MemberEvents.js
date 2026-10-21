@@ -169,9 +169,10 @@ export function RsvpButton({ going, waitlist, attended, offered = false, onClick
 // ---- data ------------------------------------------------------------------
 
 // GET /api/events hands back every event this member is allowed to see —
-// officers-only ones are filtered out server-side, not here — each with two
-// extras: `taken`, the seats gone, and `mine`, this member's own attendance row
-// (null when they have nothing to do with it).
+// officers-only ones are filtered out server-side, not here — each with
+// extras: `taken`, the seats gone, `waitlistCount`, who's queued behind them,
+// and `mine`, this member's own attendance row (null when they have nothing to
+// do with it).
 //
 // One list in state, both panels derived from it. That's what makes an RSVP
 // show up in "current" the instant you press the button: the same row feeds
@@ -188,6 +189,8 @@ function toCard(event) {
 		location: event.location ?? '',
 		image: event.image,
 		taken: event.taken,
+		// queued behind those seats — the card's count adds them on ('25/20')
+		waitlistCount: event.waitlistCount ?? 0,
 		capacity: event.capacity,
 		mine: event.mine,
 		// what a members-only one costs at the door when they haven't paid
@@ -437,10 +440,13 @@ function EventGrid({ items, renderAction }) {
 						image={event.image}
 						href={`/events/view?id=${event.id}`}
 						action={renderAction?.(event)}
+						/* seats gone plus everyone waiting for one, over the
+						   seats there are — so a full event with 5 queued reads
+						   '25/20' */
 						availability={
 							event.capacity == null
 								? null
-								: `${event.taken}/${event.capacity}`
+								: `${event.taken + event.waitlistCount}/${event.capacity}`
 						}
 						price={event.price > 0 ? priceText(event.price) : null}
 					/>
@@ -561,7 +567,8 @@ export default function MemberEvents() {
 	//
 	// Whether the seat taken is a real one or a waitlist place is the server's
 	// call: `code` in the reply says which. A waitlist place is not a seat, so
-	// it neither moves the counter nor puts the event in "current".
+	// it doesn't put the event in "current" — but it does go on the card's
+	// count, which adds the waitlist to the seats ('25/20').
 	const toggleRsvp = async (event) => {
 		if (busy.has(event.id)) return
 		setBusy((prev) => new Set(prev).add(event.id))
@@ -574,7 +581,7 @@ export default function MemberEvents() {
 			)
 
 		// what the row said before, to put back if the call is refused
-		const before = { mine: event.mine, taken: event.taken }
+		const before = { mine: event.mine, taken: event.taken, waitlistCount: event.waitlistCount }
 
 		// accepting an offer: the seat's already counted, it just becomes yours
 		if (event.offered) {
@@ -596,7 +603,12 @@ export default function MemberEvents() {
 
 		patch(
 			leaving
-				? { mine: null, taken: event.taken - (event.going ? 1 : 0) }
+				? {
+					mine: null,
+					taken: event.taken - (event.going ? 1 : 0),
+					// off the waitlist too, if that's where they were
+					waitlistCount: event.waitlistCount - (event.waitlisted ? 1 : 0),
+				}
 				: { mine: 'rsvped', taken: event.taken + 1 }
 		)
 
@@ -605,7 +617,11 @@ export default function MemberEvents() {
 				await eventsApi.unrsvp(event.id)
 			} else {
 				const reply = await eventsApi.rsvp(event.id)
-				if (reply?.code === 'WAITLISTED' || reply?.code === 'ALREADY_WAITLISTED') {
+				// a waitlist place isn't a seat, but it does go on the count —
+				// one more than there was, unless they were already on it
+				if (reply?.code === 'WAITLISTED') {
+					patch({ mine: 'waitlisted', taken: event.taken, waitlistCount: event.waitlistCount + 1 })
+				} else if (reply?.code === 'ALREADY_WAITLISTED') {
 					patch({ mine: 'waitlisted', taken: event.taken })
 				}
 			}

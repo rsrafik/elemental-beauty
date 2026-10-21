@@ -287,9 +287,10 @@ export function RsvpButton({ going, waitlist, attended, offered = false, onClick
 
 // ---- data ------------------------------------------------------------------
 
-// GET /api/labs hands back every lab with two extras worked out server-side:
-// `taken`, the seats gone, and `mine`, this member's own attendance row on it
-// (null when they have nothing to do with it).
+// GET /api/labs hands back every lab with extras worked out server-side:
+// `taken`, the seats gone, `waitlistCount`, who's queued behind them, and
+// `mine`, this member's own attendance row on it (null when they have nothing
+// to do with it).
 //
 // One list in state, both panels derived from it. That's what makes an RSVP
 // show up in "current" the instant you press the button: the same row feeds
@@ -306,6 +307,8 @@ function toCard(lab) {
 		location: lab.location ?? '',
 		image: lab.image,
 		taken: lab.taken,
+		// queued behind those seats — the card's count adds them on ('25/20')
+		waitlistCount: lab.waitlistCount ?? 0,
 		capacity: lab.capacity,
 		mine: lab.mine,
 		// off: no rsvp button unless you're already on it
@@ -580,8 +583,11 @@ function LabGrid({ items, icons, renderAction }) {
 						image={lab.image}
 						icon={icons?.[lab.status]}
 						action={renderAction?.(lab)}
+						/* seats gone plus everyone waiting for one, over the
+						   seats there are — so a full lab with 5 queued reads
+						   '25/20' */
 						availability={
-							lab.capacity == null ? null : `${lab.taken}/${lab.capacity}`
+							lab.capacity == null ? null : `${lab.taken + lab.waitlistCount}/${lab.capacity}`
 						}
 						price={lab.price > 0 ? priceText(lab.price) : null}
 						onOpen={() => router.push(`/labs/view?id=${lab.id}`)}
@@ -701,7 +707,8 @@ export default function MemberLabs() {
 	//
 	// Whether the seat taken is a real one or a waitlist place is the server's
 	// call, not this page's: `code` in the reply says which. A waitlist place is
-	// not a seat, so it neither moves the counter nor puts the lab in "current".
+	// not a seat, so it doesn't put the lab in "current" — but it does go on the
+	// card's count, which adds the waitlist to the seats ('25/20').
 	//
 	// Leaving a lab that isn't taking sign-ups can't be undone, so that asks
 	// first (LeaveClosedLabPopup) and comes back here with `confirmed`.
@@ -721,7 +728,7 @@ export default function MemberLabs() {
 			)
 
 		// what the row said before, to put back if the call is refused
-		const before = { mine: lab.mine, taken: lab.taken }
+		const before = { mine: lab.mine, taken: lab.taken, waitlistCount: lab.waitlistCount }
 
 		// accepting an offer: the seat's already counted, it just becomes yours
 		if (lab.offered) {
@@ -743,7 +750,12 @@ export default function MemberLabs() {
 
 		patch(
 			leaving
-				? { mine: null, taken: lab.taken - (lab.going ? 1 : 0) }
+				? {
+					mine: null,
+					taken: lab.taken - (lab.going ? 1 : 0),
+					// off the waitlist too, if that's where they were
+					waitlistCount: lab.waitlistCount - (lab.waitlisted ? 1 : 0),
+				}
 				: { mine: 'rsvped', taken: lab.taken + 1 }
 		)
 
@@ -752,7 +764,11 @@ export default function MemberLabs() {
 				await labsApi.unrsvp(lab.id)
 			} else {
 				const reply = await labsApi.rsvp(lab.id)
-				if (reply?.code === 'WAITLISTED' || reply?.code === 'ALREADY_WAITLISTED') {
+				// a waitlist place isn't a seat, but it does go on the count —
+				// one more than there was, unless they were already on it
+				if (reply?.code === 'WAITLISTED') {
+					patch({ mine: 'waitlisted', taken: lab.taken, waitlistCount: lab.waitlistCount + 1 })
+				} else if (reply?.code === 'ALREADY_WAITLISTED') {
 					patch({ mine: 'waitlisted', taken: lab.taken })
 				}
 			}
