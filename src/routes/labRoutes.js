@@ -84,6 +84,11 @@ const QUIZ_SELECT = {
 // An open waitlist offer holds a seat too (see src/offers.js).
 const TAKEN = { attendanceStatus: { in: ['rsvped', 'attended', 'offered'] } }
 
+// Who's queued for a seat once the cap's reached. Not seats, so not in TAKEN —
+// but the cards show them on top of the seats ('25/20': 20 seats gone, 5
+// waiting), so the lists count them too.
+const WAITING = { attendanceStatus: 'waitlisted' }
+
 // Who counts as signed up for the prelab: a spot that's theirs, or held for
 // them. Not the waitlist.
 const HOLDS_SPOT = ['rsvped', 'attended', 'offered']
@@ -91,9 +96,11 @@ const HOLDS_SPOT = ['rsvped', 'attended', 'offered']
 // List labs. Always preview fields — full content is unlocked per-lab.
 // ?when=upcoming|past derived against today at query time, never stored.
 //
-// Every row carries two things the cards can't work out for themselves: how
-// many seats are gone, and where the person asking stands on it. Both come off
-// the junction table in the same query rather than as a request per card.
+// Every row carries the things the cards can't work out for themselves: how
+// many seats are gone, how many are waiting behind them, and where the person
+// asking stands on it. All come off the junction table — the seats and their
+// own row in the same query, the waitlist in one grouped count — rather than
+// as a request per card.
 router.get('/', async (req, res) => {
     const { when } = req.query
 
@@ -123,6 +130,12 @@ router.get('/', async (req, res) => {
             },
             orderBy: { date: when === 'past' ? 'desc' : 'asc' }
         })
+        const queues = await prisma.memberLab.groupBy({
+            by: ['labId'],
+            where: { ...WAITING, labId: { in: labs.map((lab) => lab.labId) } },
+            _count: true
+        })
+        const waiting = new Map(queues.map((queue) => [queue.labId, queue._count]))
 
         res.json(labs.map(({ members, _count, draft, ...lab }) => ({
             ...lab,
@@ -132,6 +145,8 @@ router.get('/', async (req, res) => {
             // the true total, this person included — the card doesn't have to
             // add itself back in
             taken: _count.members,
+            // on the waitlist behind those seats
+            waitlistCount: waiting.get(lab.labId) ?? 0,
             // null when they have nothing to do with it
             mine: members[0]?.attendanceStatus ?? null,
             quizPassed: members[0]?.quizPassed ?? null,
@@ -177,8 +192,9 @@ router.get('/:id', async (req, res) => {
             })
         if (!lab || (!lab.published && !officer)) { return res.status(404).json({ message: 'Lab not found' }) }
 
-        const [taken, owe, prelab] = await Promise.all([
+        const [taken, waitlistCount, owe, prelab] = await Promise.all([
             prisma.memberLab.count({ where: { labId, ...TAKEN } }),
+            prisma.memberLab.count({ where: { labId, ...WAITING } }),
             duesLookup(prisma, req.userId),
             prisma.lab.findUnique({ where: { labId }, select: { prelabPdfName: true } })
         ])
@@ -209,6 +225,7 @@ router.get('/:id', async (req, res) => {
             ...(officer ? { lessonPdfName } : {}),
             hasLesson: Boolean(lessonPdfName),
             taken,
+            waitlistCount,
             mine: link?.attendanceStatus ?? null,
             quizPassed: link?.quizPassed ?? null,
             // asked to confirm their spot (the check-in page's "confirmation")

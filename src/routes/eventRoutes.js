@@ -167,6 +167,10 @@ const duesFor = (event, owe) => asksDues('event', event) ? owe(event.date.toISOS
 // An open waitlist offer holds a seat too (see src/offers.js).
 const TAKEN = { attendanceStatus: { in: ['rsvped', 'attended', 'offered'] } }
 
+// Who's queued behind those seats — shown on top of them on the cards ('25/20'),
+// as on a lab's (labRoutes.js).
+const WAITING = { attendanceStatus: 'waitlisted' }
+
 // ---- member-visible reads ----
 
 // ?when=upcoming|past and ?type=official|social both optional, combinable.
@@ -204,12 +208,19 @@ router.get('/', async (req, res) => {
             },
             orderBy: [{ date: when === 'past' ? 'desc' : 'asc' }, { startTime: 'asc' }]
         })
+        const queues = await prisma.memberEvent.groupBy({
+            by: ['eventId'],
+            where: { ...WAITING, eventId: { in: events.map((event) => event.eventId) } },
+            _count: true
+        })
+        const waiting = new Map(queues.map((queue) => [queue.eventId, queue._count]))
 
-        // Same two extras the lab list carries: how many seats are gone, and
-        // where the person asking stands on it.
+        // Same extras the lab list carries: how many seats are gone, how many
+        // are waiting behind them, and where the person asking stands on it.
         res.json(events.map(({ members, _count, ...event }) => ({
             ...withCreator(event, req.role),
             taken: _count.members,
+            waitlistCount: waiting.get(event.eventId) ?? 0,
             mine: members[0]?.attendanceStatus ?? null,
             // unpaid dues: { schoolYear, amount, price } — the card shows the
             // price, the page warns about it (see src/dues.js)
@@ -240,9 +251,10 @@ router.get('/:id', async (req, res) => {
         // Where the person asking stands on it — what /events/view switches
         // on, the same extras a lab's page gets: their status, seats gone,
         // whether they've been asked to confirm, and their place in the queue.
-        const [link, taken, owe] = await Promise.all([
+        const [link, taken, waitlistCount, owe] = await Promise.all([
             prisma.memberEvent.findUnique({ where: { memberId_eventId: { memberId: req.userId, eventId } } }),
             prisma.memberEvent.count({ where: { eventId, ...TAKEN } }),
+            prisma.memberEvent.count({ where: { eventId, ...WAITING } }),
             duesLookup(prisma, req.userId)
         ])
         let waitlistPosition = null
@@ -256,6 +268,7 @@ router.get('/:id', async (req, res) => {
         res.json({
             ...withCreator(event, req.role),
             taken,
+            waitlistCount,
             mine: link?.attendanceStatus ?? null,
             confirmPending: link?.attendanceStatus === 'rsvped' && Boolean(link.confirmSentAt) && !link.confirmedAt,
             confirmBy: link?.confirmBy ?? null,

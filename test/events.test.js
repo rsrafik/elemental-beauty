@@ -395,3 +395,29 @@ test('an event takes an end time after its start, and loses it with the start', 
         assert.equal((await (await send(`/${created.eventId}`, 'PUT', { startTime: null })).json()).endTime, null)
     })
 })
+
+test('a full event counts its waitlist alongside the seats, and joining or leaving it moves the count', { skip }, async () => {
+    const first = await person('member')
+    const second = await person('member')
+    const third = await person('member')
+    const eventId = await event('members')
+    await prisma.event.update({ where: { eventId }, data: { capacity: 1 } })
+
+    const counts = async (who) => as(who, 'member', async (base) => {
+        const listed = (await (await fetch(base)).json()).find((row) => row.eventId === eventId)
+        const viewed = await (await fetch(`${base}/${eventId}`)).json()
+        assert.deepEqual([viewed.taken, viewed.waitlistCount], [listed.taken, listed.waitlistCount])
+        return [listed.taken, listed.waitlistCount]
+    })
+    const rsvp = (who, method) => as(who, 'member', (base) => fetch(`${base}/${eventId}/rsvp`, { method }))
+
+    await rsvp(first, 'POST')
+    assert.deepEqual(await counts(first), [1, 0])
+    // the seat's gone, so the next two queue — the card would read 3/1
+    await rsvp(second, 'POST')
+    await rsvp(third, 'POST')
+    assert.deepEqual(await counts(first), [1, 2])
+    // leaving the waitlist takes one off it
+    await rsvp(third, 'DELETE')
+    assert.deepEqual(await counts(first), [1, 1])
+})
