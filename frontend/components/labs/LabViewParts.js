@@ -250,6 +250,62 @@ export function priceText(amount) {
 	})
 }
 
+// The same price on a lab or event card, at its bottom right beside the rsvp
+// button: a little scalloped sticker — salmon, a stitched white ring — so it's
+// the first thing someone unpaid sees. The price itself is in the plain bold
+// face, not the handwritten one: a handwritten '$' doesn't read as one. The card places
+// it (the button row's right-hand column). It lets clicks through to the card
+// underneath — on an event card that's the link stretched over it.
+//
+// A longer price ('$12.50') steps the text down a size and leaves the stitched
+// ring off, so it has the whole disc rather than running over the stitching.
+
+// the scalloped edge: twelve bumps around a disc, all one fill
+const SCALLOPS = Array.from({ length: 12 }, (_, i) => {
+	const angle = (i / 12) * Math.PI * 2
+	return { cx: 24 + Math.cos(angle) * 18.5, cy: 24 + Math.sin(angle) * 18.5 }
+})
+
+export function PriceBadge({ price }) {
+	return (
+		<span className="
+			price-sticker
+			pointer-events-none
+			relative
+			flex
+			items-center
+			justify-center
+			w-12
+			h-12
+		">
+			<svg viewBox="0 0 48 48" aria-hidden="true" className="absolute inset-0 w-full h-full">
+				<g className="fill-salmon-med">
+					<circle cx="24" cy="24" r="19" />
+					{SCALLOPS.map(({ cx, cy }, i) => (
+						<circle key={i} cx={cx} cy={cy} r="5.2" />
+					))}
+				</g>
+				{price.length <= 4 && (
+					<circle cx="24" cy="24" r="15.5" fill="none" stroke="white" strokeWidth="1.2" strokeDasharray="2.4 2" strokeLinecap="round" />
+				)}
+			</svg>
+			<span className={`
+				relative
+				font-vietnam
+				font-bold
+				leading-none
+				tracking-tight
+				${price.length > 4 ? 'text-[9px]' : 'text-[12px]'}
+				text-white
+				whitespace-nowrap
+			`}>
+				<span className="sr-only">non-member price </span>
+				{price}
+			</span>
+		</span>
+	)
+}
+
 // The warning a lab's or members-only event's page gives someone who hasn't
 // paid the year's dues: what it'll cost them at the door. `dues` is the API's
 // { schoolYear, amount, price } (see src/dues.js) — null when they've paid,
