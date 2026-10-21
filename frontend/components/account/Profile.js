@@ -66,6 +66,8 @@ function toBoard(rows) {
 const ROLE_INK = {
 	user: 'text-black/45 border-black/25',
 	member: 'text-salmon-dark border-salmon-dark/60',
+	// paid this year's dues — the VIP pill's pink on /students
+	vip: 'text-[#B0287A] border-[#B0287A]/60',
 	officer: 'text-blue-med border-blue-med/60',
 	jboard: 'text-[#6B4FBF] border-[#6B4FBF]/60',
 	treasurer: 'text-yellow-dark border-yellow-dark/60',

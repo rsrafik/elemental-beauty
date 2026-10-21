@@ -1,7 +1,7 @@
 import express from 'express'
 import prisma from '../prismaClient.js'
 import { log } from '../activity.js'
-import { DUES_EXEMPT, recordDues } from '../dues.js'
+import { DUES_EXEMPT, recordDues, syncVipRoles } from '../dues.js'
 
 // Dues, for the treasurer (mounted behind requireRole('treasurer') in
 // server.js). One payment per member per school year; marking one paid writes
@@ -116,6 +116,8 @@ router.delete('/', async (req, res) => {
             if (count > 0) {
                 await log({ actorId: req.userId, action: 'dues_reset', details: { schoolYear, count } }, tx)
             }
+            // this year's VIPs are members again until they're marked anew
+            await syncVipRoles(tx)
             return count
         })
         res.json({ message: `Cleared ${cleared} ${cleared === 1 ? 'payment' : 'payments'}`, cleared })
@@ -146,6 +148,8 @@ router.delete('/:duesId', async (req, res) => {
                 actorId: req.userId, action: 'dues_cleared', targetId: payment.memberId,
                 details: { schoolYear: payment.schoolYear, amount: Number(payment.amount) }
             }, tx)
+            // unpaid again, so no longer VIP
+            await syncVipRoles(tx)
         })
         res.json({ message: 'Payment removed' })
     } catch (err) {

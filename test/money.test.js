@@ -370,3 +370,106 @@ test('a year can only be deleted once there is nothing in it', { skip }, async (
         assert.equal((await send(year(EMPTY_YEAR), 'DELETE')).status, 200)
     })
 })
+
+// ---- VIP -------------------------------------------------------------------
+//
+// VIP follows this school year's dues, so these run against the real current
+// year. Its dues amount is set for the tests and put back as it was after.
+
+async function thisYear(duesAmount) {
+    const { schoolYearOf } = await import('../src/dues.js')
+    const { clubToday } = await import('../src/clubTime.js')
+    const schoolYear = schoolYearOf(clubToday())
+    const before = await prisma.yearTarget.findUnique({ where: { schoolYear } })
+    await prisma.yearTarget.upsert({
+        where: { schoolYear },
+        update: { duesAmount },
+        create: { schoolYear, incomeGoal: 0, expenseBudget: 0, duesAmount }
+    })
+    const restore = () => before
+        ? prisma.yearTarget.update({ where: { schoolYear }, data: { duesAmount: before.duesAmount } })
+        : prisma.yearTarget.delete({ where: { schoolYear } })
+    return { schoolYear, restore }
+}
+
+const roleOf = async (userId) => (await prisma.member.findUnique({ where: { userId }, select: { role: true } })).role
+
+test('paying this year makes a member VIP, and taking it back makes them a member again; j-board stays j-board', { skip }, async () => {
+    const { schoolYear, restore } = await thisYear(20)
+    try {
+        const treasurer = await person('treasurer')
+        const member = await person('member')
+        const jboard = await person('jboard')
+        await as(treasurer, 'treasurer', 'dues', async (base) => {
+            const paid = await (await send(base, 'POST', { memberId: member, schoolYear, amount: 20 })).json()
+            assert.equal(await roleOf(member), 'vip')
+            await send(base, 'POST', { memberId: jboard, schoolYear, amount: 20 })
+            assert.equal(await roleOf(jboard), 'jboard')
+
+            await send(`${base}/${paid.duesId}`, 'DELETE')
+            assert.equal(await roleOf(member), 'member')
+
+            // last year's payment doesn't make anyone VIP this year
+            await send(base, 'POST', { memberId: member, schoolYear: YEAR, amount: 20 })
+            assert.equal(await roleOf(member), 'member')
+        })
+    } finally {
+        await restore()
+    }
+})
+
+test('picking VIP on /students marks their dues paid; taking VIP back off is refused while they have paid', { skip }, async () => {
+    const { schoolYear, restore } = await thisYear(0)
+    try {
+        const admin = await person('admin')
+        const member = await person('member')
+        await as(admin, 'admin', 'members', async (base) => {
+            // no dues amount set for the year: nothing to mark them paid with
+            assert.equal((await send(`${base}/${member}/role`, 'PUT', { role: 'vip' })).status, 400)
+            assert.equal(await roleOf(member), 'member')
+
+            await prisma.yearTarget.update({ where: { schoolYear }, data: { duesAmount: 25 } })
+            const made = await send(`${base}/${member}/role`, 'PUT', { role: 'vip' })
+            assert.equal(made.status, 200)
+            assert.equal((await made.json()).role, 'vip')
+            const payment = await prisma.duesPayment.findUnique({
+                where: { memberId_schoolYear: { memberId: member, schoolYear } },
+                include: { transaction: true }
+            })
+            assert.equal(Number(payment.amount), 25)
+            assert.equal(payment.transaction.category, 'dues')
+
+            assert.equal((await send(`${base}/${member}/role`, 'PUT', { role: 'member' })).status, 409)
+            assert.equal(await roleOf(member), 'vip')
+        })
+    } finally {
+        await restore()
+    }
+})
+
+test('a new school year turns last year’s VIPs back into members', { skip }, async () => {
+    const { syncVipRoles } = await import('../src/dues.js')
+    const { schoolYear, restore } = await thisYear(20)
+    try {
+        const member = await person('member')
+        await prisma.duesPayment.create({ data: { memberId: member, schoolYear, amount: 0 } })
+        await syncVipRoles(prisma)
+        assert.equal(await roleOf(member), 'vip')
+        // a day in the next school year, with nothing paid for it
+        const next = Number(schoolYear.slice(0, 4)) + 1
+        await syncVipRoles(prisma, `${next}-09-01`)
+        assert.equal(await roleOf(member), 'member')
+    } finally {
+        await restore()
+    }
+})
+
+test('a VIP sees exactly the events a member does', { skip }, async () => {
+    const vip = await person('vip')
+    const tracks = ['members', 'open', 'officers', 'board', 'jboard']
+    const ids = await Promise.all(tracks.map((track) => event(track)))
+    await as(vip, 'vip', 'events', async (base) => {
+        const seen = (await (await fetch(base)).json()).filter((row) => ids.includes(row.eventId)).map((row) => row.track).sort()
+        assert.deepEqual(seen, ['members', 'open'])
+    })
+})

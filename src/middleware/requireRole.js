@@ -1,11 +1,13 @@
 import { TREASURY_REFUSAL, onTreasuryTeam, treasuryMayDo } from './treasury.js'
 
 // j-board sits just above officer: everything an officer can do, but not the
-// treasurer's books. The advisor ranks with admin — they can open everything
+// treasurer's books. A VIP is a member who's paid this year's dues — the same
+// rank, so the same everything (see syncVipRoles in dues.js). The advisor ranks with admin — they can open everything
 // an admin can — but every change they'd make is refused before it gets this
 // far (authMiddleware, see advisor.js).
 const RANK = {
     member: 1,
+    vip: 1,
     officer: 2,
     jboard: 3,
     treasurer: 4,

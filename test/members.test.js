@@ -33,6 +33,7 @@ after(async () => {
     await prisma.activityLog.deleteMany({
         where: { OR: [{ targetId: { in: made } }, { actorId: { in: made } }] }
     })
+    await prisma.duesPayment.deleteMany({ where: { memberId: { in: made } } })
     await prisma.user.deleteMany({ where: { userId: { in: made } } })
     await prisma.$disconnect()
 })
@@ -219,4 +220,34 @@ test('following on instagram and joining the discord are given once, and can be 
     assert.equal(row.points, 4)
     const undone = await prisma.activityLog.findFirst({ where: { targetId: member, points: -2 } })
     assert.deepEqual(undone.details, { reason: 'instagram_follow', undone: true })
+})
+
+test("staff see who's paid this year's dues and who hasn't; members see neither", { skip }, async () => {
+    const { schoolYearOf } = await import('../src/dues.js')
+    const { clubToday } = await import('../src/clubTime.js')
+    const schoolYear = schoolYearOf(clubToday())
+    const officer = await person('officer')
+    const paid = await person('member')
+    const waived = await person('jboard')
+    const unpaid = await person('member')
+    await prisma.duesPayment.create({ data: { memberId: paid, schoolYear, amount: 20 } })
+    // waiving settles the year just as paying does — the door doesn't ask again
+    await prisma.duesPayment.create({ data: { memberId: waived, schoolYear, amount: 0 } })
+    // last year's payment doesn't count for this one
+    const [start] = schoolYear.split('–').map(Number)
+    await prisma.duesPayment.create({ data: { memberId: unpaid, schoolYear: `${start - 1}–${String(start).slice(2)}`, amount: 20 } })
+
+    const standing = (rows, id) => rows.find((row) => row.userId === id).dues
+    await as(officer, 'officer', async (base) => {
+        const rows = await (await fetch(base)).json()
+        assert.equal(standing(rows, paid), 'paid')
+        assert.equal(standing(rows, waived), 'paid')
+        assert.equal(standing(rows, unpaid), 'unpaid')
+        // staff never owe dues, so they're neither
+        assert.equal(standing(rows, officer), null)
+    })
+    await as(paid, 'member', async (base) => {
+        const rows = await (await fetch(base)).json()
+        assert.ok(rows.every((row) => !('dues' in row)))
+    })
 })

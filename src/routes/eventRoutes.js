@@ -39,6 +39,8 @@ function readTeam(value) {
 // pages in frontend/lib/roles.js (hiddenTracks).
 const HIDDEN_TRACKS = {
     member: ['officers', 'board', 'jboard'],
+    // a member who's paid — sees exactly what a member sees
+    vip: ['officers', 'board', 'jboard'],
     jboard: ['officers'],
 }
 const hiddenTracks = (role) => HIDDEN_TRACKS[role] ?? []
