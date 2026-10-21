@@ -568,7 +568,8 @@ export default function CheckInView({ kind, id }) {
 				// paid / fee / waive: scan them again with the answer
 				answer: async (dues) => resolve(await flashFor(await api.checkin(id, token, dues), reply.memberId)),
 				// wait (or the popup closing after an answer, when this does nothing)
-				close: () => resolve({ tone: 'yellow', text: `${reply.name ?? 'member'} not checked in — dues unpaid` }),
+				// red, like the popup's own "hasn't paid" — they still owe
+				close: () => resolve({ tone: 'red', text: `${reply.name ?? 'member'} not checked in — dues unpaid` }),
 			}))
 		}
 		return flashFor(reply, who)

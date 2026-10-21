@@ -92,9 +92,11 @@ export default function DuesPopup({ name, schoolYear, amount, price = 0, onChoos
 			{(dismiss) => (
 				<>
 					<p className={line}>
-						<span className="font-semibold text-black">{name ?? 'This member'}</span> hasn’t
-						paid their {schoolYear} dues{amount > 0 ? ` (${money(amount)})` : ''}, so they
-						haven’t been checked in.
+						{/* the unpaid part in red, so it's what the eye lands on */}
+						<span className="font-semibold text-black">{name ?? 'This member'}</span>{' '}
+						<span className="font-semibold text-red">
+							hasn’t paid their {schoolYear} dues{amount > 0 ? ` (${money(amount)})` : ''}
+						</span>, so they haven’t been checked in.
 					</p>
 					<p className={line}>
 						{amount > 0 && <><b className="text-black">paid dues</b> marks them paid for the semester.{' '}</>}
