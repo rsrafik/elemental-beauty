@@ -17,16 +17,6 @@ import { hiddenTracks } from '@/lib/roles'
 // kind of thing and its name. The arrows under the title step the month; the
 // grid rebuilds itself from whatever month it lands on.
 
-// Height of the sheet, in px: a six-week grid plus its weekday header. Both
-// columns are held to it, so a five-week month leaves empty space under the
-// last row instead of dragging the title and the legends up with it — stepping
-// through the months never moves anything but the days themselves.
-//
-// It only applies from `lg` up, where the two columns are actually side by side.
-// Stacked, there is no second column to hold level with and a fixed height would
-// just be a hole under the grid.
-const SHEET_H = 815
-
 const WEEKDAYS = ['sun', 'mon', 'tue', 'wed', 'thu', 'fri', 'sat']
 
 // The chip list before the API answers — the tags the club ships with. Once
@@ -475,22 +465,27 @@ export default function MemberCalendar() {
 		.filter(({ entries }) => entries.length)
 
 	return (
-		// my-auto rather than justify-center: it centers the sheet in the page but
-		// still lets a tall month scroll from its top instead of clipping it.
+		// xl:overflow-visible: on a wide screen the page column doesn't scroll —
+		// the grid does, in a box that reaches past it to the window's edges
+		// (see the grid's column), which a scrolling page column would clip
 		<DashboardShell className="
 			flex
 			flex-col
+			xl:overflow-visible
 		">
-			{/* SHEET_H fixes the height of the row, so neither column is at the mercy
-			    of how many week rows the month happens to have. items-stretch then
-			    hands that same height to both, which is what lets the title sit on
-			    the top edge and the legends on the bottom one. */}
+			{/* On a wide screen the row is exactly as tall as the sidebar beside
+			    it (the page column shares its top and bottom edges), so neither
+			    column is at the mercy of how many week rows or entries the month
+			    has. items-stretch hands that height to both, which is what puts
+			    the title on the sidebar's top edge and the legends on its bottom
+			    one — and the grid's column scrolls within it. */}
 			{/* The columns don't pair off until `xl`. At `lg` the sidebar has
 			    already taken 327px of the window, and a 340px title column beside
 			    that leaves the seven days about 30px each. */}
 			<div
 				className="
-					xl:my-auto
+					xl:flex-1
+					xl:min-h-0
 					flex
 					flex-col
 					xl:flex-row
@@ -498,11 +493,7 @@ export default function MemberCalendar() {
 					gap-8
 					xl:gap-8
 					2xl:gap-12
-					xl:h-[var(--sheet-h)]
-					pr-0
-					xl:pr-2
 				"
-				style={{ '--sheet-h': `${SHEET_H}px` }}
 			>
 				{/* left column: month at the top, legends pushed to the bottom.
 				    calendar-side / calendar-grid bring the two columns in from
@@ -709,11 +700,32 @@ export default function MemberCalendar() {
 					</div>
 				</div>
 
-				{/* right column: the month grid */}
+				{/* right column: the month grid — its own scroller on a wide
+				    screen, with a little room on the right for the scrollbar.
+				    The box reaches 32px past the row at both ends — the page's
+				    padding (DashboardShell's lg:p-8), so out to the window's top
+				    and bottom edges — and is padded by the same, so the month
+				    starts level with the sidebar's top edge and ends level with
+				    its bottom, but scrolls all the way to the window's.
+				    A column, so the weeks can share out the height (see below).
+				    A scroll box clips sideways too, so it also reaches 16px out
+				    on the left (into the gap between the columns), padded back
+				    by the same: room for the leftmost day's badge to grow on
+				    hover, and for today's glow, without their edge being cut
+				    off — the grid itself doesn't move. */}
 				<div className="
 					calendar-grid
 					flex-1
 					min-w-0
+					xl:min-h-0
+					xl:-my-8
+					xl:py-8
+					xl:-ml-4
+					xl:pl-4
+					xl:overflow-y-auto
+					xl:pr-2
+					xl:flex
+					xl:flex-col
 				">
 					<div className="
 						grid
@@ -757,7 +769,12 @@ export default function MemberCalendar() {
 					    cells being relabelled, so every cell mounts again and the wave
 					    runs across the new month the way it did on arrival. Keyed on the
 					    row alone, only the cells whose date happened to change would
-					    remount, and the wave would come through in patches. */}
+					    remount, and the wave would come through in patches.
+					    On a wide screen the weeks split the height between them
+					    evenly (flex-1 grows each from nothing), so the rules are
+					    evenly spaced and the last one lands on the sidebar's bottom
+					    edge. A week with more on it than its share is as tall as it
+					    needs — and once they don't all fit, the column scrolls. */}
 					{weeks.map((week, i) => (
 						<div
 							key={`${stamp}-${i}`}
@@ -770,6 +787,7 @@ export default function MemberCalendar() {
 								border-black/20
 								pb-2
 								md:pb-4
+								xl:flex-1
 							"
 						>
 							{week.map((day, column) => (
