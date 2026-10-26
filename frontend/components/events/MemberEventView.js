@@ -34,6 +34,10 @@ import PaySection from '@/components/payments/PaySection'
 // shows someone holding a spot who hasn't paid the year's dues how to pay
 // before they come (PaySection), and warns anyone else what it'll cost
 // (DuesNotice). Its links sit under the photo.
+//
+// `preview` is the advisor's "view content" (/events/preview, from the dots on
+// /events): the same page a VIP gets — photo, date, description, category,
+// links — with the button and everything under it left off.
 
 const CLOCK_MS = 30_000
 const fmtDeadline = (at) =>
@@ -56,7 +60,7 @@ function LinkButton({ onClick, children }) {
 	)
 }
 
-export default function MemberEventView() {
+export default function MemberEventView({ preview = false }) {
 	const id = useSearchParams().get('id')
 	const [event, setEvent] = useState(null)
 	const [error, setError] = useState(null)
@@ -242,7 +246,7 @@ export default function MemberEventView() {
 
 					{/* centred in the content column: the 48px / 64px padding on
 					    Scaled above is given back, so the middle is the column's */}
-					<div className="
+					{!preview && <div className="
 						flex
 						flex-col
 						items-center
@@ -277,7 +281,7 @@ export default function MemberEventView() {
 								onSent={load}
 							/>
 						)}
-					</div>
+					</div>}
 				</FitScaled>
 			</div>
 		)

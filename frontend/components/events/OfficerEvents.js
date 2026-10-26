@@ -1,7 +1,7 @@
 'use client'
 
 import { LeavePopup } from '@/components/labs/LabViewParts'
-import { useEffect, useState } from 'react'
+import { useCallback, useEffect, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { useDismiss } from '@/lib/dismiss'
 import DashboardShell from '@/components/dashboards/DashboardShell'
@@ -17,6 +17,7 @@ import { canAddEvents, canChange, hiddenTracks } from '@/lib/roles'
 import { useJboardTeams, useRole } from '@/lib/session'
 import { splitByDate, CompletedDivider, COMPLETED_CARD } from '@/components/CardSections'
 import { RsvpButton } from '@/components/events/MemberEvents'
+import { CardMenu } from '@/components/labs/OfficerLabs'
 import { QrPopup } from '@/components/labs/MemberLabQuiz'
 import { COVER_MAX, shrinkImage } from '@/lib/images'
 
@@ -154,7 +155,9 @@ function CloseIcon({ className = '' }) {
 // The member card with one substitution: the corner holds a control instead of
 // a status icon.
 // `action` is j-board's rsvp row under the card (see rsvpFor on the page).
-function EventCard({ title, date, time, endTime, location, image, onOpen, onEdit, action = null, done = false }) {
+// The advisor, who edits nothing, gets `onMenu` instead of `onEdit`: the dots
+// open `menu`, which only offers "view content".
+function EventCard({ title, date, time, endTime, location, image, onOpen, onEdit, onMenu, menu = null, action = null, done = false }) {
 	return (
 		<div
 			role="link"
@@ -240,14 +243,15 @@ function EventCard({ title, date, time, endTime, location, image, onOpen, onEdit
 					</div>
 				</div>
 
-				{/* no dots for someone who can't edit (the advisor) */}
-				{onEdit && <button
+				{(onEdit || onMenu) && <button
 					type="button"
 					onClick={(clicked) => {
 						clicked.stopPropagation()
-						onEdit()
+						;(onEdit ?? onMenu)()
 					}}
-					aria-label={`Edit ${title}`}
+					aria-label={onEdit ? `Edit ${title}` : `${title} options`}
+					aria-haspopup={onEdit ? undefined : 'menu'}
+					aria-expanded={onEdit ? undefined : Boolean(menu)}
 					className="
 						w-7
 						h-7
@@ -277,6 +281,8 @@ function EventCard({ title, date, time, endTime, location, image, onOpen, onEdit
 					{action}
 				</div>
 			)}
+
+			{menu}
 		</div>
 	)
 }
@@ -1006,12 +1012,16 @@ const GRID = `
 
 export default function OfficerEvents({ openNew = false }) {
 	const router = useRouter()
-	// the advisor sees every event and edits none: no +, no dots. J-board's
-	// treasury team doesn't get the + either (canAddEvents).
+	// the advisor sees every event and edits none: no +, and dots that only
+	// offer "view content" — the event as a VIP sees it, without the rsvp.
+	// J-board's treasury team doesn't get the + either (canAddEvents).
 	const role = useRole()
 	const changes = canChange(role)
 	const adds = canAddEvents(role, useJboardTeams())
 	const signsUp = role === 'jboard'
+	// the advisor's card whose dots menu is open
+	const [menuFor, setMenuFor] = useState(null)
+	const closeMenu = useCallback(() => setMenuFor(null), [])
 	// events with an rsvp on its way, so a double click can't send two
 	const [rsvping, setRsvping] = useState(() => new Set())
 	// the event j-board's leaving, while LeavePopup asks
@@ -1074,6 +1084,19 @@ export default function OfficerEvents({ openNew = false }) {
 			})
 		}
 	}
+
+	// the advisor's dots: "view content", the event as a VIP sees it
+	const advisorMenu = (row) => role === 'advisor' ? {
+		onMenu: () => setMenuFor((open) => (open === row.id ? null : row.id)),
+		menu: menuFor === row.id && (
+			<CardMenu
+				title={row.title}
+				onClose={closeMenu}
+				previewLabel="view content"
+				onPreview={() => router.push(`/events/preview?id=${row.id}`)}
+			/>
+		),
+	} : {}
 
 	// j-board's row under a card, as on /labs: the rsvp button on an event
 	// that hasn't reached its day, and "my QR" on one they hold a spot for,
@@ -1288,6 +1311,7 @@ export default function OfficerEvents({ openNew = false }) {
 						image={row.image}
 						onOpen={() => router.push(`/events/view?id=${row.id}`)}
 						onEdit={changes ? () => setEditing({ event: row }) : null}
+						{...advisorMenu(row)}
 						action={rsvpFor(row)}
 					/>
 				))}
@@ -1309,6 +1333,7 @@ export default function OfficerEvents({ openNew = false }) {
 								image={row.image}
 								onOpen={() => router.push(`/events/view?id=${row.id}`)}
 								onEdit={changes ? () => setEditing({ event: row }) : null}
+								{...advisorMenu(row)}
 							/>
 						))}
 					</div>
