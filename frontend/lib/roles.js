@@ -12,7 +12,9 @@
 // j-board sits just above officer: everything an officer has, not the
 // treasurer's books. A VIP is a member who's paid this year's dues — the same
 // rank as a member, so the same pages (syncVipRoles in src/dues.js). The advisor ranks with admin, so every page an admin can
-// open is open to them — but they can't change anything there (canChange).
+// open is open to them — but they can't change anything there (canChange),
+// and analytics and the board's calendar tracks stay closed to them
+// (canSeeAnalytics, hiddenTracks).
 export const RANK = {
 	user: 0,
 	member: 1,
@@ -69,21 +71,23 @@ export function canAddEvents(role, teams) {
 	return canChange(role) && !onTreasuryTeam(role, teams)
 }
 
-// /analytics — the club's books — is every officer's except j-board's: j-board
-// outranks an officer everywhere else, but the money isn't theirs to see —
-// bar the treasury team's (onTreasuryTeam). The server refuses them the same
-// data (see server.js).
+// /analytics — the club's books — is every officer's except j-board's and the
+// advisor's: both outrank an officer everywhere else, but the money isn't
+// theirs to see — bar j-board's treasury team (onTreasuryTeam). The server
+// refuses them the same data (booksAccess in src/middleware/requireRole.js).
 export function canSeeAnalytics(role, teams) {
-	return hasRole('officer', role) && (role !== 'jboard' || onTreasuryTeam(role, teams))
+	return hasRole('officer', role) && role !== 'advisor' && (role !== 'jboard' || onTreasuryTeam(role, teams))
 }
 
 // Event tracks a role never sees — the page side of the rule the API enforces
 // (HIDDEN_TRACKS in src/routes/eventRoutes.js). J-board doesn't see the
-// officers' track; officers, treasurer and admin see all of them.
+// officers' track; the advisor sees only what a member does; officers,
+// treasurer and admin see all of them.
 const HIDDEN_TRACKS = {
 	user: ['officers', 'board', 'jboard'],
 	member: ['officers', 'board', 'jboard'],
 	vip: ['officers', 'board', 'jboard'],
+	advisor: ['officers', 'board', 'jboard'],
 	jboard: ['officers'],
 }
 export function hiddenTracks(role) {

@@ -90,6 +90,22 @@ test('a plain member sees no officers, EB board or j-board events, by list, by i
     })
 })
 
+test('the advisor sees only what a member does on the calendar', { skip }, async () => {
+    const advisor = await person('advisor')
+    await event('members')
+    await event('open')
+    const officers = await event('officers')
+    const board = await event('board')
+    const jboard = await event('jboard')
+
+    await as(advisor, 'advisor', async (base) => {
+        assert.deepEqual([...new Set(mine(await (await fetch(base)).json()))], ['members', 'open'])
+        for (const id of [officers, board, jboard]) {
+            assert.equal((await fetch(`${base}/${id}`)).status, 404)
+        }
+    })
+})
+
 test('j-board and officers see EB board events', { skip }, async () => {
     const jboard = await person('jboard')
     const officer = await person('officer')

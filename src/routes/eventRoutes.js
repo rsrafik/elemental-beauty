@@ -43,6 +43,9 @@ const HIDDEN_TRACKS = {
     member: ['officers', 'board', 'jboard'],
     // a member who's paid — sees exactly what a member sees
     vip: ['officers', 'board', 'jboard'],
+    // the faculty advisor reads everything else, but the calendar only as a
+    // member has it — not the e-board's, EB board's or j-board's own
+    advisor: ['officers', 'board', 'jboard'],
     jboard: ['officers'],
 }
 const hiddenTracks = (role) => HIDDEN_TRACKS[role] ?? []

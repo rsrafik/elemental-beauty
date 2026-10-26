@@ -29,7 +29,8 @@ const OFFICER_ONLY = [
 	{ label: 'students', href: '/students' },
 ]
 
-// every officer's but j-board's (bar its treasury team) — see canSeeAnalytics
+// every officer's but j-board's (bar its treasury team) and the advisor's —
+// see canSeeAnalytics
 const ANALYTICS = [
 	{ label: 'analytics', href: '/analytics' },
 ]

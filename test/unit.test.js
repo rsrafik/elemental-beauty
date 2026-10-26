@@ -10,6 +10,7 @@ import { fromEmail } from '../src/accountEmail.js'
 import { schoolYearOf } from '../src/dues.js'
 import { wipeProblem } from '../scripts/localDatabase.js'
 import { advisorMayDo } from '../src/middleware/advisor.js'
+import { booksAccess } from '../src/middleware/requireRole.js'
 
 // ---- the club's clock ------------------------------------------------------
 
@@ -135,6 +136,18 @@ test('the seed and reset only wipe a database on this machine', () => {
 })
 
 // ---- the advisor -----------------------------------------------------------
+
+test('the advisor is kept off the books', () => {
+    const through = (role) => {
+        let status = null
+        let passed = false
+        booksAccess({ role, method: 'GET', originalUrl: '/api/transactions' }, { status: (code) => { status = code; return { json: () => {} } } }, () => { passed = true })
+        return passed || status
+    }
+    assert.equal(through('advisor'), 403)
+    assert.equal(through('officer'), true)
+    assert.equal(through('treasurer'), true)
+})
 
 test('an advisor can read anything but only change email-all and their own account', () => {
     // reads, anywhere
