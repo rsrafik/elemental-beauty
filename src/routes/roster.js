@@ -30,8 +30,9 @@ import { PAYMENT_INCLUDE, enforcePaymentRules, keepsBooks, notifyDoorUndone, not
 //               both optional, here and on checkin) go in the ledger row's
 //               title
 //     undo-dues the treasurer's or admin's grey $: the entry paid or waived
-//               for this one is taken back (a paid one's income row with it)
-//               and they're emailed to disregard it — see src/payments.js
+//               for this one is taken back (a paid one's income row with it);
+//               a paid one is emailed to disregard it, a waived one isn't
+//               emailed at all — see src/payments.js
 //     uncheck   attended -> rsvped, points taken back (the x on checked in)
 //     admit     waitlisted -> offered, seat or no seat — an officer at the
 //               door can overrule the cap (the yellow button). The spot's
@@ -499,6 +500,11 @@ export function mountRoster(router, kind) {
                 const payment = await prisma.$transaction((tx) =>
                     undoDoorPayment(tx, { kindName, link: existing, actorId: req.userId, title: row.title }))
                 res.json({ message: existing.doorPayment === 'fee' ? 'Payment taken back, and the income is out of the ledger' : 'Waiver taken back' })
+                // A waived entry taken back isn't emailed about — nothing was
+                // paid, so there's no approval to disregard. They're simply
+                // unpaid again, and the payment sweep's usual reminders follow
+                // (src/payments.js).
+                if (!payment && existing.doorPayment === 'waive') { return }
                 const email = payment
                     ? prisma.memberPayment.findUnique({ where: { paymentId: payment.paymentId }, include: PAYMENT_INCLUDE })
                         .then((full) => notifyPayer(full, 'reversed'))

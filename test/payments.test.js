@@ -800,3 +800,37 @@ test('a j-board member who’s paid this year’s dues wears the crown on their 
         assert.equal(card.role, 'jboard')
     })
 })
+
+test('taking back a waived entry doesn’t email them; taking back a paid one does', { skip }, async () => {
+    const treasurer = await person('treasurer')
+    const waived = await person('member')
+    const paid = await person('member')
+    const labId = await lab([waived, paid])
+    // the emails print to the console with no mail service; catch who they're to
+    const to = []
+    const print = console.log
+    console.log = (...args) => {
+        const line = args.join(' ')
+        const match = /To: (\S+) .*Subject: (.*)/.exec(line)
+        if (match) { to.push(match) } else { print(...args) }
+    }
+    try {
+        await as(treasurer, 'treasurer', 'labs', async (base) => {
+            await send(`${base}/${labId}/roster`, 'POST', { action: 'dues', memberId: waived, dues: 'waive' })
+            await send(`${base}/${labId}/roster`, 'POST', { action: 'dues', memberId: paid, dues: 'fee' })
+            assert.equal((await send(`${base}/${labId}/roster`, 'POST', { action: 'undo-dues', memberId: waived })).status, 200)
+            assert.equal((await send(`${base}/${labId}/roster`, 'POST', { action: 'undo-dues', memberId: paid })).status, 200)
+        })
+        // the paid one's email goes out after the reply
+        await new Promise((resolve) => setTimeout(resolve, 300))
+        const emailOf = async (userId) => (await prisma.user.findUnique({ where: { userId } })).email
+        const waivedEmail = await emailOf(waived)
+        const paidEmail = await emailOf(paid)
+        assert.equal(to.filter(([, address]) => address === waivedEmail).length, 0)
+        assert.ok(to.some(([, address, subject]) => address === paidEmail && subject.startsWith('Please disregard')))
+        const link = await prisma.memberLab.findUnique({ where: { memberId_labId: { memberId: waived, labId } } })
+        assert.equal(link.doorPayment, null)
+    } finally {
+        console.log = print
+    }
+})
