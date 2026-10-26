@@ -2,14 +2,11 @@ import express from 'express'
 import prisma from '../prismaClient.js'
 import requireRole from '../middleware/requireRole.js'
 import { notifyRequester, notifyTreasurer, quietly } from '../reimbursementEmails.js'
+import { categoryError } from '../financeCategories.js'
 
 const router = express.Router()
 
 const STATUSES = ['pending', 'approved', 'reimbursed', 'denied']
-
-// Only the categories the expense summary actually has a slice for — a receipt
-// is spending, so the income half of the enum is never a valid answer here.
-const EXPENSE_CATEGORIES = ['lab', 'events', 'guests', 'marketing']
 
 // Where the money goes back to: the platform, and the handle on it (a phone
 // number, email or username). Cash is handed over, so it needs no handle; the
@@ -26,7 +23,7 @@ function readPayout(body) {
     }
     const handle = String(body.payoutHandle ?? '').trim().slice(0, 200) || null
     if (method && method !== 'cash' && !handle) {
-        return { error: 'Say where to send it — the phone number, email or username' }
+        return { error: 'Say where to send it: the phone number, email or username' }
     }
     return { fields: { payoutMethod: method, payoutHandle: method === 'cash' ? null : handle } }
 }
@@ -50,9 +47,9 @@ router.post('/', async (req, res) => {
     if (isNaN(amount) || amount <= 0) {
         return res.status(400).json({ message: 'amountRequested must be a positive number' })
     }
-    if (!EXPENSE_CATEGORIES.includes(category)) {
-        return res.status(400).json({ message: `category must be one of: ${EXPENSE_CATEGORIES.join(', ')}` })
-    }
+    // a receipt is spending, so only the expense summary's categories will do
+    const wrongCategory = await categoryError(category, 'expense')
+    if (wrongCategory) { return res.status(400).json({ message: wrongCategory }) }
     let purchased
     if (date !== undefined && date !== null) {
         purchased = new Date(date)
@@ -112,9 +109,8 @@ router.put('/:id', async (req, res) => {
     if (req.body.explanation !== undefined) { data.explanation = req.body.explanation }
     if (req.body.receipt !== undefined) { data.receipt = req.body.receipt }
     if (req.body.category !== undefined) {
-        if (!EXPENSE_CATEGORIES.includes(req.body.category)) {
-            return res.status(400).json({ message: `category must be one of: ${EXPENSE_CATEGORIES.join(', ')}` })
-        }
+        const wrongCategory = await categoryError(req.body.category, 'expense')
+        if (wrongCategory) { return res.status(400).json({ message: wrongCategory }) }
         data.category = req.body.category
     }
     if (req.body.amountRequested !== undefined) {
@@ -142,7 +138,7 @@ router.put('/:id', async (req, res) => {
             return res.status(403).json({ message: 'That is not your request' })
         }
         if (existing.status !== 'denied') {
-            return res.status(409).json({ message: `Only a denied request can be resent — this one is ${existing.status}` })
+            return res.status(409).json({ message: `Only a denied request can be resent, and this one is ${existing.status}` })
         }
 
         const updated = await prisma.reimbursement.update({
@@ -178,7 +174,7 @@ router.delete('/:id', async (req, res) => {
             return res.status(403).json({ message: 'That is not your request' })
         }
         if (existing.status === 'reimbursed') {
-            return res.status(409).json({ message: 'Already reimbursed — there is nothing left to revoke' })
+            return res.status(409).json({ message: 'Already reimbursed, so there’s nothing left to revoke' })
         }
 
         await prisma.reimbursement.delete({ where: { reimbursementId } })
@@ -239,6 +235,41 @@ const NEXT = {
     reimbursed: [],
     denied: []
 }
+
+// Treasurer+: "undo" — the last move taken back, one step:
+//
+//   reimbursed -> approved   the payout didn't happen (or was a mistake): its
+//                            expense row comes out of the ledger, and it can
+//                            be paid again
+//   approved   -> pending    the approval's withdrawn while it's looked at
+//                            again
+//
+// Either way the officer is emailed where it's gone back to.
+const BACK = { reimbursed: 'approved', approved: 'pending' }
+
+router.put('/:id/undo', requireRole('treasurer'), async (req, res) => {
+    const reimbursementId = parseInt(req.params.id)
+    if (isNaN(reimbursementId)) { return res.status(400).json({ message: 'Invalid reimbursement id' }) }
+
+    try {
+        const existing = await prisma.reimbursement.findUnique({ where: { reimbursementId }, include: { transaction: true } })
+        if (!existing) { return res.status(404).json({ message: 'Reimbursement not found' }) }
+        const to = BACK[existing.status]
+        if (!to) { return res.status(409).json({ message: `A ${existing.status} request has nothing to undo` }) }
+
+        const updated = await prisma.$transaction(async (tx) => {
+            if (existing.transaction) {
+                await tx.transaction.delete({ where: { transactionId: existing.transaction.transactionId } })
+            }
+            return tx.reimbursement.update({ where: { reimbursementId }, data: { status: to } })
+        })
+        res.json(updated)
+        quietly(notifyRequester(updated, { undone: true }))
+    } catch (err) {
+        console.error(err.message)
+        res.sendStatus(500)
+    }
+})
 
 router.put('/:id/status', requireRole('treasurer'), async (req, res) => {
     const reimbursementId = parseInt(req.params.id)
