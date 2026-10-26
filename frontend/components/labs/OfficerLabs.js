@@ -29,6 +29,10 @@ import { useSession } from '@/lib/session'
 // button on a lab still to come, and "my QR" on one they hold a spot for: the
 // check-in code a member shows at the door, for another officer to scan
 // (j-board's dashboard has no Elementist pass to show it from).
+//
+// The advisor gets this page as well, changing nothing: their dots hold only
+// "preview lab" — the lab as a member sees it once through the quiz
+// (/labs/preview).
 
 // ---- data ------------------------------------------------------------------
 
@@ -178,7 +182,9 @@ function MenuSwitch({ label, on, tint, onClick }) {
 // `onDelete`, `onJboard` and `onRsvps` are left off for j-board: deleting a
 // lab and its two switches are for officers and up. `jboard` and `rsvps` are
 // whether each switch is on — j-board may edit it, and it's taking sign-ups.
-function CardMenu({ title, onQuiz, onEdit, onDelete, jboard = false, onJboard, rsvps = true, onRsvps, onClose }) {
+// The advisor, who can't edit, gets `onPreview` and nothing else — events'
+// cards borrow it for theirs, under their own `previewLabel`.
+export function CardMenu({ title, onPreview, previewLabel = 'preview lab', onQuiz, onEdit, onDelete, jboard = false, onJboard, rsvps = true, onRsvps, onClose }) {
 	const ref = useRef(null)
 
 	useEffect(() => {
@@ -218,12 +224,21 @@ function CardMenu({ title, onQuiz, onEdit, onDelete, jboard = false, onJboard, r
 				[transform-origin:bottom_right]
 			"
 		>
-			<button type="button" role="menuitem" onClick={onQuiz} className={`${MENU_ITEM} text-black hover:bg-cream`}>
-				edit lab quiz
-			</button>
-			<button type="button" role="menuitem" onClick={onEdit} className={`${MENU_ITEM} text-black hover:bg-cream`}>
-				edit lab
-			</button>
+			{onPreview && (
+				<button type="button" role="menuitem" onClick={onPreview} className={`${MENU_ITEM} text-black hover:bg-cream`}>
+					{previewLabel}
+				</button>
+			)}
+			{onQuiz && (
+				<button type="button" role="menuitem" onClick={onQuiz} className={`${MENU_ITEM} text-black hover:bg-cream`}>
+					edit lab quiz
+				</button>
+			)}
+			{onEdit && (
+				<button type="button" role="menuitem" onClick={onEdit} className={`${MENU_ITEM} text-black hover:bg-cream`}>
+					edit lab
+				</button>
+			)}
 			{onJboard && <MenuSwitch label="allow j-board to edit" on={jboard} tint="bg-[#D6488F]" onClick={onJboard} />}
 			{onRsvps && <MenuSwitch label="accepting rsvps" on={rsvps} tint="bg-green-dark" onClick={onRsvps} />}
 			{onDelete && (
@@ -691,8 +706,18 @@ export default function OfficerLabs({ openNew = false }) {
 	const toggleRsvps = toggle('acceptingRsvps', labsApi.setAcceptingRsvps)
 
 	// the dots: everything for officers and up; for j-board, only on a lab
-	// that's been opened to them, and only its two editors
-	const cardMenu = (lab) => canEditLab(user, lab) ? {
+	// that's been opened to them, and only its two editors; for the advisor,
+	// who changes nothing, just the member's-eye preview
+	const cardMenu = (lab) => user?.role === 'advisor' ? {
+		onMenu: () => setMenuFor((open) => (open === lab.id ? null : lab.id)),
+		menu: menuFor === lab.id && (
+			<CardMenu
+				title={lab.title}
+				onClose={closeMenu}
+				onPreview={() => router.push(`/labs/preview?id=${lab.id}`)}
+			/>
+		),
+	} : canEditLab(user, lab) ? {
 		onMenu: () => setMenuFor((open) => (open === lab.id ? null : lab.id)),
 		menu: menuFor === lab.id && (
 			<CardMenu
