@@ -6,6 +6,7 @@ import { log } from '../activity.js'
 import { csvCell } from '../csv.js'
 import { DUES_ANSWERS, DUES_EXEMPT, asksDues, doorOwed, duesAnswerProblem, duesUnpaid, readPaidBy, schoolYearOf, settleDues } from '../dues.js'
 import { clubToday } from '../clubTime.js'
+import { lastSends, recordSend } from '../emailSends.js'
 import { PAYMENT_INCLUDE, enforcePaymentRules, keepsBooks, notifyDoorUndone, notifyPayer, remindUnpaid, undoDoorPayment } from '../payments.js'
 
 // The officer check-in page's roster, shared by labs and events: the same
@@ -57,7 +58,11 @@ import { PAYMENT_INCLUDE, enforcePaymentRules, keepsBooks, notifyDoorUndone, not
 //   POST /:id/confirm-all  { deadline } — the page's "confirmation": everyone
 //                        signed up who hasn't confirmed yet is emailed a link
 //                        to confirm by then, with a lab's prelab attached
-//                        (see src/offers.js)
+//                        (see src/offers.js). Sent again, it's an update: the
+//                        new deadline replaces the old one for everyone asked
+//   GET  /:id/last-sent  when each of the three last went out —
+//                        { email_all, unpaid_reminder, confirmation }, each
+//                        { sentAt, deadline, sent } or null (src/emailSends.js)
 //
 // The QR scan is still POST /:id/checkin on each router — this is everything
 // an officer does by hand.
@@ -222,6 +227,17 @@ export function mountRoster(router, kind) {
     // Everyone with a row, as a spreadsheet: one line each, names first.
     // Unlike the roster above, every address is included — this is the
     // officers' own record of who came, not a mailing list.
+    router.get('/:id/last-sent', ...staffOnly, async (req, res) => {
+        const parentId = parseInt(req.params.id)
+        if (isNaN(parentId)) { return res.status(400).json({ message: `Invalid ${label.toLowerCase()} id` }) }
+        try {
+            res.json(await lastSends(kindName, parentId))
+        } catch (err) {
+            console.error(err.message)
+            res.sendStatus(500)
+        }
+    })
+
     router.get('/:id/attendance', ...staffOnly, async (req, res) => {
         const parentId = parseInt(req.params.id)
         if (isNaN(parentId)) { return res.status(400).json({ message: `Invalid ${label.toLowerCase()} id` }) }
@@ -294,6 +310,7 @@ export function mountRoster(router, kind) {
                 { kind: kindName, id: parentId, title: item.title, date: item.date, price, duesAmount, schoolYear },
                 owing.map(({ member, confirmBy, payBy }) => ({ email: member.user.email, firstName: member.user.firstName, confirmBy, payBy }))
             )
+            await recordSend({ kind: 'unpaid_reminder', kindName, id: parentId, sent, by: req.userId })
             res.json({ message: `Reminded ${sent} ${sent === 1 ? 'person' : 'people'}`, sent })
         } catch (err) {
             console.error(err.message)
@@ -326,6 +343,7 @@ export function mountRoster(router, kind) {
                 message,
                 reason: `You’re getting this because you signed up for ${row.title}.`
             })
+            await recordSend({ kind: 'email_all', kindName, id: parentId, sent, by: req.userId })
             res.json({ message: `Sent to ${sent} ${sent === 1 ? 'person' : 'people'}`, sent })
         } catch (err) {
             console.error(err.message)
@@ -355,9 +373,11 @@ export function mountRoster(router, kind) {
         const parentId = parseInt(req.params.id)
         if (isNaN(parentId)) { return res.status(400).json({ message: `Invalid ${label.toLowerCase()} id` }) }
         try {
-            const { sent, attached } = await sendConfirmations(kindName, parentId, new Date(req.body?.deadline))
+            const deadline = new Date(req.body?.deadline)
+            const { sent, attached, updated } = await sendConfirmations(kindName, parentId, deadline)
+            await recordSend({ kind: 'confirmation', kindName, id: parentId, deadline, sent, by: req.userId })
             res.json({
-                message: `Asked ${sent} ${sent === 1 ? 'person' : 'people'} to confirm${attached ? `, with ${attached} attached` : ''}`,
+                message: `${updated ? 'Sent the new deadline to' : 'Asked'} ${sent} ${sent === 1 ? 'person' : 'people'}${updated ? '' : ' to confirm'}${attached ? `, with ${attached} attached` : ''}`,
                 sent,
                 attached
             })

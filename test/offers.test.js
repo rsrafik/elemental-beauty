@@ -217,6 +217,65 @@ test('a confirmation round needs a deadline that has not passed', { skip }, asyn
     assert.equal(sent, 1)
 })
 
+test('a confirmation sent again is an update, and each email says when it last went out', { skip }, async () => {
+    const staff = await member()
+    await prisma.member.update({ where: { userId: staff }, data: { role: 'officer' } })
+    const id = await lab({ capacity: 3, hoursOut: 24 * 10 })
+    const one = await member()
+    const two = await member()
+    await join(id, one)
+    await join(id, two)
+
+    const app = express()
+    app.use(express.json())
+    app.use((req, res, next) => { req.userId = staff; req.role = 'officer'; next() })
+    app.use('/labs', labRoutes)
+    const server = app.listen(0)
+    const base = `http://localhost:${server.address().port}/labs/${id}`
+    const send = (path, body) => fetch(`${base}${path}`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(body) })
+    // the emails print to the console with no mail service; catch the subjects
+    const subjects = []
+    const print = console.log
+    console.log = (...args) => {
+        const line = args.join(' ')
+        const subject = /Subject: (.*)/.exec(line)?.[1]
+        if (subject) { subjects.push(subject) } else { print(...args) }
+    }
+    try {
+        let last = await (await fetch(`${base}/last-sent`)).json()
+        assert.deepEqual(last, { email_all: null, unpaid_reminder: null, confirmation: null })
+
+        const first = new Date(Date.now() + 48 * HOUR)
+        assert.equal((await send('/confirm-all', { deadline: first.toISOString() })).status, 200)
+        last = await (await fetch(`${base}/last-sent`)).json()
+        assert.equal(new Date(last.confirmation.deadline).getTime(), first.getTime())
+        assert.equal(last.confirmation.sent, 2)
+        assert.ok(subjects.every((subject) => subject.startsWith('Please confirm your spot')))
+
+        // again, later: the new deadline for everyone asked, said to be one
+        subjects.length = 0
+        const second = new Date(Date.now() + 72 * HOUR)
+        const reply = await (await send('/confirm-all', { deadline: second.toISOString() })).json()
+        assert.match(reply.message, /new deadline to 2 people/)
+        assert.equal(subjects.length, 2)
+        assert.ok(subjects.every((subject) => subject.startsWith('Updated confirmation date')))
+        for (const who of [one, two]) {
+            const row = await prisma.memberLab.findUnique({ where: { memberId_labId: { memberId: who, labId: id } } })
+            assert.equal(row.confirmBy.getTime(), second.getTime())
+        }
+        last = await (await fetch(`${base}/last-sent`)).json()
+        assert.equal(new Date(last.confirmation.deadline).getTime(), second.getTime())
+
+        assert.equal((await send('/email-all', { subject: 'Hi', message: 'See you there' })).status, 200)
+        last = await (await fetch(`${base}/last-sent`)).json()
+        assert.ok(last.email_all.sentAt)
+        assert.equal(last.unpaid_reminder, null)
+    } finally {
+        console.log = print
+        server.close()
+    }
+})
+
 // ---- the seat lock ----------------------------------------------------------
 
 test('six people pressing RSVP at once on a two-seat lab get two seats and four waitlist places', { skip }, async () => {

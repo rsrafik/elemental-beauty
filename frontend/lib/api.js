@@ -179,6 +179,8 @@ export const members = {
 	// the dashboard's "Email All" — sent by the server to everyone who wants
 	// club-wide email; the reply is { sent }
 	emailAll: (message) => api('/members/email-all', { method: 'POST', body: message }),
+	// when it last went out: { sentAt, sent } or null
+	emailAllLast: () => api('/members/email-all/last'),
 	update: (fields) => api('/members/me', { method: 'PUT', body: fields }),
 	add: (student) => api('/members', { method: 'POST', body: student }),
 	remove: (id) => api(`/members/${id}`, { method: 'DELETE' }),
@@ -253,6 +255,9 @@ export const events = {
 	// the check-in page's "confirmation": everyone signed up who hasn't
 	// confirmed is emailed a link to, by `deadline` (an ISO time)
 	confirmAll: (id, deadline) => api(`/events/${id}/confirm-all`, { method: 'POST', body: { deadline } }),
+	// when the page's three emails last went out: { email_all, unpaid_reminder,
+	// confirmation }, each { sentAt, deadline, sent } or null
+	lastSent: (id) => api(`/events/${id}/last-sent`),
 	// the check-in page's "start check-in": QR codes before the start time
 	setCheckinOpen: (id, open) => api(`/events/${id}/checkin-open`, { method: 'PUT', body: { open } }),
 	// a member confirming their own spot from the event's page
@@ -335,6 +340,8 @@ export const labs = {
 	// confirmed is emailed a link to, by `deadline` (an ISO time), with the
 	// prelab attached (src/offers.js)
 	confirmAll: (id, deadline) => api(`/labs/${id}/confirm-all`, { method: 'POST', body: { deadline } }),
+	// when the page's three emails last went out, as an event's
+	lastSent: (id) => api(`/labs/${id}/last-sent`),
 	// a member confirming their own spot from the lab's page
 	confirm: (id) => api(`/labs/${id}/confirm`, { method: 'POST' }),
 	// the check-in page's attendance spreadsheet

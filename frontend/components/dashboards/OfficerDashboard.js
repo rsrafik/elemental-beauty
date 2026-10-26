@@ -269,6 +269,13 @@ export default function OfficerDashboard() {
 	// after waiting on a request gets stopped by the popup blocker.
 	const [memberEmails, setMemberEmails] = useState([])
 	const [emailing, setEmailing] = useState(false)
+	// when "Email All" last went out — the line at the bottom of its popup
+	// (LastSent); read as it opens, undefined until then
+	const [lastEmailed, setLastEmailed] = useState(undefined)
+	const openEmailing = () => {
+		setEmailing(true)
+		members.emailAllLast().then(setLastEmailed).catch(() => {})
+	}
 
 	// The next three things on the calendar, labs and events together — the club
 	// doesn't think of them as separate queues, and neither does this panel.
@@ -475,7 +482,7 @@ export default function OfficerDashboard() {
 					    (see components/EmailAllPopup.js and src/emailAll.js). */}
 					<button
 						type="button"
-						onClick={() => setEmailing(true)}
+						onClick={openEmailing}
 						disabled={memberEmails.length === 0}
 						title={`Email ${memberEmails.length} ${memberEmails.length === 1 ? 'person' : 'people'}`}
 						className="
@@ -962,6 +969,7 @@ export default function OfficerDashboard() {
 					count={memberEmails.length}
 					who="everyone who gets club-wide email"
 					addresses={memberEmails}
+					lastSent={lastEmailed}
 					onSend={(message) => members.emailAll(message)}
 					onClose={() => setEmailing(false)}
 				/>

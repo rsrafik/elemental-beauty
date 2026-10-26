@@ -10,6 +10,7 @@ import FitTitle from '@/components/FitTitle'
 import { INSET, EditorButton, IconLabel, UploadIcon } from '@/components/labs/EditorParts'
 import EmailAllPopup from '@/components/EmailAllPopup'
 import ConfirmationPopup from '@/components/ConfirmationPopup'
+import LastSent from '@/components/LastSent'
 import DuesPopup from '@/components/checkin/DuesPopup'
 import { PaymentDetails, ReviewButtons, ScreenshotCircle } from '@/components/payments/PaymentReview'
 import { Popup, PopupButton, priceText } from '@/components/labs/LabViewParts'
@@ -633,6 +634,15 @@ export default function CheckInView({ kind, id }) {
 	const [notice, setNotice] = useState(null)
 	const [emailing, setEmailing] = useState(false)
 	const [confirming, setConfirming] = useState(false)
+	// when the three emails last went out — the line at the bottom of each
+	// popup (LastSent). undefined until it's read; re-read after each send.
+	const [lastSent, setLastSent] = useState(undefined)
+	const readLastSent = () => api.lastSent(id).then(setLastSent).catch(() => {})
+	useEffect(() => {
+		let live = true
+		api.lastSent(id).then((reply) => live && setLastSent(reply)).catch(() => {})
+		return () => { live = false }
+	}, [api, id])
 	const [exporting, setExporting] = useState(false)
 	// the prelab upload: busy while it goes up, and what went wrong if it didn't
 	const [prelabBusy, setPrelabBusy] = useState(false)
@@ -840,6 +850,7 @@ export default function CheckInView({ kind, id }) {
 		try {
 			const reply = await api.remindUnpaid(id)
 			setNotice(reply.message)
+			readLastSent()
 		} catch (err) {
 			setError(err.message)
 		}
@@ -1425,6 +1436,7 @@ export default function CheckInView({ kind, id }) {
 									send them
 								</PopupButton>
 							</div>
+							<LastSent last={lastSent?.unpaid_reminder} />
 						</>
 					)}
 				</Popup>
@@ -1435,9 +1447,11 @@ export default function CheckInView({ kind, id }) {
 					what={item.title}
 					prelab={kind === 'lab' ? item.prelabPdfName : null}
 					startsAt={startsAt(item)}
+					lastSent={lastSent?.confirmation}
 					onSend={async (deadline) => {
 						const reply = await api.confirmAll(id, deadline)
 						await loadRoster()
+						readLastSent()
 						return reply
 					}}
 					onClose={() => setConfirming(false)}
@@ -1449,7 +1463,12 @@ export default function CheckInView({ kind, id }) {
 					who={`everyone signed up for ${item.title}`}
 					defaultSubject={item.title}
 					addresses={recipients}
-					onSend={(message) => api.emailAll(id, message)}
+					lastSent={lastSent?.email_all}
+					onSend={async (message) => {
+						const reply = await api.emailAll(id, message)
+						readLastSent()
+						return reply
+					}}
 					onClose={() => setEmailing(false)}
 				/>
 			)}

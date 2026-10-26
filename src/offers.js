@@ -480,7 +480,12 @@ function deadlineText(at) {
 //   already confirmed    paid and approved before this went out (that
 //     by paying          confirms them): they're told they're set
 //
-// Returns { sent, attached }.
+// Sent again, it's an update: everyone asked last time and still unconfirmed
+// gets `deadline` as their new one (and with it their payment due date, when
+// it's sooner than the week before), in an email that says it's an updated
+// date and to disregard the one before.
+//
+// Returns { sent, attached, updated } — `updated` when it replaced a deadline.
 export async function sendConfirmations(kindName, parentId, deadline) {
     if (!(deadline instanceof Date) || isNaN(deadline.getTime()) || deadline.getTime() <= Date.now()) {
         throw Object.assign(new Error('Pick a deadline that hasn’t passed yet'), { status: 400 })
@@ -504,9 +509,24 @@ export async function sendConfirmations(kindName, parentId, deadline) {
     const why = `You’re getting this because you signed up for ${parent.title}.`
 
     const later = `If we don’t hear back by then, your spot may go to someone on the waitlist, and you’ll move to the back of it.`
+    // asked before: it says so, up top, with the deadline it replaces
+    const asUpdate = (email, previous) => previous
+        ? {
+            ...email,
+            heading: 'Your confirmation date has changed',
+            callout: email.callout ?? { label: 'New confirmation date', text: deadlineText(deadline) },
+            lines: [
+                `The date to confirm by is now ${deadlineText(deadline)}. Please ignore the earlier one (${deadlineText(previous)}).`,
+                ...email.lines
+            ]
+        }
+        : email
     let sent = 0
+    let updated = false
     for (const row of asking) {
         const user = row.member.user
+        const previous = row.confirmSentAt && row.confirmBy ? row.confirmBy : null
+        if (previous) { updated = true }
         const standing = await payable(prisma, row.memberId, kindName, parentId)
         const owes = Boolean(standing?.owes)
         const token = jwt.sign(
@@ -516,8 +536,8 @@ export async function sendConfirmations(kindName, parentId, deadline) {
         )
         await sendEmail({
             to: user.email,
-            subject: `Please confirm your spot: ${parent.title}`,
-            ...actionEmail(owes && !standing.sent
+            subject: previous ? `Updated confirmation date: ${parent.title}` : `Please confirm your spot: ${parent.title}`,
+            ...actionEmail(asUpdate(owes && !standing.sent
                 ? {
                     heading: user.firstName ? `Pay to confirm your spot, ${user.firstName}` : 'Pay to confirm your spot',
                     // sent back: the 48 hours to fix it are the due date now
@@ -556,7 +576,7 @@ export async function sendConfirmations(kindName, parentId, deadline) {
                     button: { label: 'Confirm my spot', url: `${APP_URL}/offer?token=${token}` },
                     after: [`Please confirm by ${deadlineText(deadline)}. ${later}`, ...prelabLine],
                     reason: why
-                }),
+                }, previous)),
             ...(prelab ? { attachments: [prelab] } : {})
         })
         await prisma[kind.link].update({
@@ -589,7 +609,7 @@ export async function sendConfirmations(kindName, parentId, deadline) {
         sent++
     }
     await prisma[kind.parent].update({ where: { [kind.key]: parentId }, data: { confirmSentAt: new Date() } })
-    return { sent, attached: prelab?.filename ?? null }
+    return { sent, attached: prelab?.filename ?? null, updated }
 }
 
 // rsvped + asked -> confirmed. Anything else is said back as it is —

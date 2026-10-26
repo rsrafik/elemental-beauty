@@ -2,6 +2,7 @@
 
 import { useState } from 'react'
 import { Popup, PopupButton } from '@/components/labs/LabViewParts'
+import LastSent from '@/components/LastSent'
 
 // "Email all", written on the site and sent by the server — from the club's
 // own address, in the club's layout, with replies going to the club inbox
@@ -15,6 +16,8 @@ import { Popup, PopupButton } from '@/components/labs/LabViewParts'
 //                   into your own mail instead)
 //   onSend          ({ subject, message }) -> the server's reply; throws if
 //                   it's refused
+//   lastSent        when it last went out, for the line at the bottom
+//                   (LastSent) — leave it out to draw none
 
 const FIELD = `
 	w-full
@@ -33,7 +36,7 @@ const FIELD = `
 	focus:border-black
 `
 
-export default function EmailAllPopup({ count, who, defaultSubject = '', addresses, onSend, onClose }) {
+export default function EmailAllPopup({ count, who, defaultSubject = '', addresses, lastSent, onSend, onClose }) {
 	const [subject, setSubject] = useState(defaultSubject)
 	const [message, setMessage] = useState('')
 	const [busy, setBusy] = useState(false)
@@ -190,6 +193,7 @@ export default function EmailAllPopup({ count, who, defaultSubject = '', address
 							</button>
 						</div>
 					</div>
+					<LastSent last={lastSent} />
 				</>
 			)}
 		</Popup>

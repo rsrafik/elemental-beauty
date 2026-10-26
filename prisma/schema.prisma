@@ -184,6 +184,7 @@ model User {
   member        Member?
   announcements Announcement[]
   eventsCreated Event[]
+  emailsSent    EmailSend[]
 
   // the roster sorts and searches on names as often as on the username
   @@index([lastName, firstName])
@@ -321,6 +322,7 @@ model Lab {
   quizQuestions LabQuizQuestion[]
   members       MemberLab[]
   payments      MemberPayment[]
+  emailSends    EmailSend[]
 
   @@map("labs")
 }
@@ -437,8 +439,9 @@ model Event {
   // standing — they just stop being filed under anything.
   category  EventCategory? @relation(fields: [categoryId], references: [categoryId], onDelete: SetNull)
   createdBy User?          @relation(fields: [createdById], references: [userId], onDelete: SetNull)
-  members   MemberEvent[]
-  payments  MemberPayment[]
+  members    MemberEvent[]
+  payments   MemberPayment[]
+  emailSends EmailSend[]
 
   @@index([date])
   @@index([categoryId])
@@ -789,4 +792,44 @@ model ActivityLog {
   @@index([createdAt])
   @@index([targetId])
   @@map("activity_log")
+}
+
+// ---------- Emails sent by hand ----------
+
+// The emails officers send from a button, so the popup that sends one can say
+// when it last went out:
+//
+//   email_all        "email all" — on a lab's or event's check-in page (labId
+//                    / eventId), or the officer dashboard's club-wide one
+//                    (neither)
+//   unpaid_reminder  the check-in page's "email unpaid"
+//   confirmation     the check-in page's "confirmation", with the deadline it
+//                    set (`deadline`) — sent again, that's the new deadline
+enum EmailSendKind {
+  email_all
+  unpaid_reminder
+  confirmation
+
+  @@map("email_send_kind")
+}
+
+// One row per send — `sent` is how many it reached, `sentById` who pressed
+// the button (null once they're gone).
+model EmailSend {
+  emailSendId Int           @id @default(autoincrement()) @map("email_send_id")
+  kind        EmailSendKind
+  labId       Int?          @map("lab_id")
+  eventId     Int?          @map("event_id")
+  sentAt      DateTime      @default(now()) @map("sent_at") @db.Timestamptz()
+  deadline    DateTime?     @db.Timestamptz()
+  sent        Int           @default(0)
+  sentById    Int?          @map("sent_by")
+
+  lab    Lab?   @relation(fields: [labId], references: [labId], onDelete: Cascade)
+  event  Event? @relation(fields: [eventId], references: [eventId], onDelete: Cascade)
+  sentBy User?  @relation(fields: [sentById], references: [userId], onDelete: SetNull)
+
+  @@index([kind, labId])
+  @@index([kind, eventId])
+  @@map("email_sends")
 }

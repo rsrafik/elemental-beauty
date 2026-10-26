@@ -12,6 +12,7 @@ import { hashPassword, passwordProblem } from '../passwords.js'
 import { log } from '../activity.js'
 import { duesStandings, payForVip, schoolYearOf, syncVipRoles } from '../dues.js'
 import { clubToday } from '../clubTime.js'
+import { lastSend, recordSend } from '../emailSends.js'
 
 const router = express.Router()
 
@@ -170,6 +171,16 @@ router.get('/me', async (req, res) => {
 // The officer dashboard's "Email All": a message the server sends to everyone
 // who wants club-wide email — members unless they've turned it off, staff only
 // if they've turned it on (see emailPrefs.js / emailAll.js).
+// when it last went out: { sentAt, sent } or null (src/emailSends.js)
+router.get('/email-all/last', requireRole('officer'), async (req, res) => {
+    try {
+        res.json(await lastSend('email_all'))
+    } catch (err) {
+        console.error(err.message)
+        res.sendStatus(500)
+    }
+})
+
 router.post('/email-all', requireRole('officer'), async (req, res) => {
     const { subject, message, error } = readMessage(req.body)
     if (error) { return res.status(400).json({ message: error }) }
@@ -190,6 +201,7 @@ router.post('/email-all', requireRole('officer'), async (req, res) => {
             message,
             reason: 'You’re getting this because you’re a member of Elemental Beauty. You can turn these emails off on your account page.'
         })
+        await recordSend({ kind: 'email_all', sent, by: req.userId })
         res.json({ message: `Sent to ${sent} ${sent === 1 ? 'person' : 'people'}`, sent })
     } catch (err) {
         console.error(err.message)

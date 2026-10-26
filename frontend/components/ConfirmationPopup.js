@@ -3,6 +3,7 @@
 import { useState } from 'react'
 import { Popup, PopupButton } from '@/components/labs/LabViewParts'
 import DateTimeField from '@/components/labs/DateTimeField'
+import LastSent from '@/components/LastSent'
 
 // The check-in page's "confirmation": asks everyone signed up who hasn't
 // confirmed yet to confirm their spot. Each gets their own email with a
@@ -15,6 +16,9 @@ import DateTimeField from '@/components/labs/DateTimeField'
 //   prelab    the prelab's file name, or null
 //   startsAt  when the lab or event starts (a Date), or null
 //   onSend    (deadline: ISO string) -> the server's reply; throws if refused
+//   lastSent  the last one that went out ({ sentAt, deadline }), if any — then
+//             sending is an update: the new deadline replaces it for everyone
+//             still asked, and their email says so
 
 const pad = (n) => String(n).padStart(2, '0')
 
@@ -47,7 +51,7 @@ const FIELD = `
 	focus:border-black
 `
 
-export default function ConfirmationPopup({ count, what, prelab, startsAt, onSend, onClose }) {
+export default function ConfirmationPopup({ count, what, prelab, startsAt, lastSent, onSend, onClose }) {
 	const [busy, setBusy] = useState(false)
 	const [status, setStatus] = useState(null)
 	const [deadline, setDeadline] = useState(() => defaultDeadline(startsAt))
@@ -117,6 +121,11 @@ export default function ConfirmationPopup({ count, what, prelab, startsAt, onSen
 										? `That’s after ${what} starts, so nobody would lose their spot before it.`
 										: `Anyone who hasn’t confirmed by then may lose their spot to the next person on the waitlist, and moves to the back of it.`}
 							</p>
+							{lastSent?.deadline && (
+								<p className={line}>
+									This replaces the last confirmation date. Everyone who hasn’t confirmed gets the new date as their deadline, and as their payment due date if that’s sooner. Their email says the date changed and to ignore the earlier one.
+								</p>
+							)}
 							<p className={`${line} ${prelab ? 'text-green-dark font-semibold' : ''}`}>
 								{prelab
 									? `The prelab (${prelab}) will be attached.`
@@ -168,9 +177,10 @@ export default function ConfirmationPopup({ count, what, prelab, startsAt, onSen
 									: 'bg-black/10 text-black/40 cursor-not-allowed'}
 							`}
 						>
-							{busy ? 'sending…' : 'send'}
+							{busy ? 'sending…' : lastSent?.deadline ? 'send update' : 'send'}
 						</button>
 					</div>
+					<LastSent last={lastSent} deadline />
 				</>
 			)}
 		</Popup>
