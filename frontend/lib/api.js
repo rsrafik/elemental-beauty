@@ -397,7 +397,7 @@ export const finances = {
 	reviseRequest: (id, request) => api(`/reimbursements/${id}`, { method: 'PUT', body: request }),
 	revokeRequest: (id) => api(`/reimbursements/${id}`, { method: 'DELETE' }),
 	// the treasurer's "undo": reimbursed back to approved (the payout's expense
-	// row comes out), approved back to pending — the officer is emailed
+	// row comes out; the officer is emailed), approved back to pending
 	undoRequest: (id) => api(`/reimbursements/${id}/undo`, { method: 'PUT' }),
 	setRequestStatus: (id, status, denialExplanation) =>
 		api(`/reimbursements/${id}/status`, {

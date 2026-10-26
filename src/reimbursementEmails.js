@@ -7,10 +7,10 @@ import { APP_URL } from './verification.js'
 //
 //   notifyTreasurer   a receipt came in (or came back after a denial) — to
 //                     the treasurer, or to the admins if there isn't one
-//   notifyRequester   the treasurer approved, denied or paid it — or moved it
-//                     back a step (`undone`: a payout taken back to approved,
-//                     an approval back to pending) — to the officer who
-//                     handed it in
+//   notifyRequester   the treasurer denied or paid it — or took a payout back
+//                     to approved (`undone`) — to the officer who handed it
+//                     in. Approving it, or taking an approval back to
+//                     pending, sends nothing
 //
 // Neither is an "email all", so neither follows the /account switches: they're
 // about the person's own money. Both are fired after the change has been saved
@@ -66,11 +66,6 @@ export async function notifyTreasurer(request, { resent = false } = {}) {
 }
 
 const STATUS = {
-    approved: {
-        subject: (r) => `Approved: ${r.title}`,
-        heading: 'Your receipt was approved',
-        lines: (r) => [`The treasurer approved “${r.title}” for ${money(r.amountRequested)}. You’ll be paid back soon, and you’ll get another email when it’s done.`]
-    },
     reimbursed: {
         subject: (r) => `Paid back: ${r.title}`,
         heading: 'You’ve been paid back',
@@ -87,7 +82,8 @@ const STATUS = {
     }
 }
 
-// The same request moved back a step rather than on — the treasurer's "undo".
+// The same request moved back a step rather than on — the treasurer's "undo"
+// (back to pending sends nothing).
 const BACK = {
     approved: {
         subject: (r) => `Moved back to approved: ${r.title}`,
@@ -95,14 +91,6 @@ const BACK = {
         lines: (r) => [
             `The treasurer marked “${r.title}” (${money(r.amountRequested)}) as not paid yet. It’s still approved.`,
             'You’ll get another email once the money has been sent.'
-        ]
-    },
-    pending: {
-        subject: (r) => `Moved back to pending: ${r.title}`,
-        heading: 'Your receipt is pending again',
-        lines: (r) => [
-            `The treasurer moved “${r.title}” (${money(r.amountRequested)}) back to pending to look at it again, so it isn’t approved for now.`,
-            'You’ll get an email when it’s decided.'
         ]
     }
 }

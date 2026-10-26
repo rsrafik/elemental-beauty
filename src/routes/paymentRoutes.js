@@ -2,7 +2,7 @@ import express from 'express'
 import prisma from '../prismaClient.js'
 import { log } from '../activity.js'
 import {
-    PAYMENT_INCLUDE, approvePayment, declinePayment, itemOf, notifyPayer, notifyReviewers, payable, runsDoor
+    PAYMENT_INCLUDE, approvePayment, declinePayment, itemOf, notifyPayer, payable, runsDoor
 } from '../payments.js'
 import { acceptByPaying } from '../offers.js'
 import { duesDeadlines, goggleDeadlines, goggleStanding, schoolYearOfLab } from '../payable.js'
@@ -234,7 +234,6 @@ router.post('/', async (req, res) => {
         // doesn't)
         const accepted = place && body.kind !== 'goggles' ? await acceptByPaying(place[0], place[1], req.userId) : false
         res.status(201).json({ ...shape(payment), accepted })
-        notifyReviewers(payment).catch((err) => console.error(`Payment email failed: ${err.message}`))
     } catch (err) {
         console.error(err.message)
         res.sendStatus(500)

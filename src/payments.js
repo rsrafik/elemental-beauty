@@ -4,7 +4,6 @@ import { actionEmail } from './emailTemplate.js'
 import { APP_URL } from './verification.js'
 import { fullName, log } from './activity.js'
 import { clubToday, dateColumn, startsAt } from './clubTime.js'
-import { treasurers } from './reimbursementEmails.js'
 import { ledgerSource, recordDues } from './dues.js'
 import { lockParent, moveToWaitlist, notifyMovedToWaitlist } from './offers.js'
 import {
@@ -488,14 +487,13 @@ export async function releaseLedgerRow(tx, transactionId) {
 
 // ---- emails ------------------------------------------------------------------
 
-// '$20.00 for Body Butter' / 'your $25.00 2026–27 VIP dues'. `whose` is 'their'
-// in the treasurer's email, which talks about the member rather than to them.
-function whatFor(payment, whose = 'your') {
+// '$20.00 for Body Butter' / 'your $25.00 2026–27 VIP dues'
+function whatFor(payment) {
     const from = payment.lab ?? payment.event
-    if (payment.kind === 'goggles') return `${money(payment.amount)} goggle rental for ${from?.title ?? `${whose} lab`}`
+    if (payment.kind === 'goggles') return `${money(payment.amount)} goggle rental for ${from?.title ?? 'your lab'}`
     return payment.kind === 'dues'
-        ? `${whose} ${money(payment.amount)} ${payment.schoolYear} VIP dues`
-        : `${money(payment.amount)} for ${from?.title ?? `${whose} lab`}`
+        ? `your ${money(payment.amount)} ${payment.schoolYear} VIP dues`
+        : `${money(payment.amount)} for ${from?.title ?? 'your lab'}`
 }
 
 // a goggle rental's deadline, big — the day before its lab
@@ -689,33 +687,6 @@ export async function notifyDoorUndone({ memberId, kindName, id, title }) {
             reason: 'You’re getting this because you’re signed up for it on Elemental Beauty.'
         })
     })
-}
-
-// To the treasurer (or the admins), when a member sends a payment in.
-export async function notifyReviewers(payment) {
-    const at = itemOf(payment)
-    const url = at ? `${APP_URL}${ITEMS[at[0]].page(at[1])}` : `${APP_URL}/analytics`
-    const name = fullName(payment.member.user)
-    for (const to of await treasurers()) {
-        await sendEmail({
-            to,
-            subject: `Payment to review: ${name}, ${whatFor(payment, 'their')}`,
-            ...actionEmail({
-                heading: 'A payment to review',
-                ...(payment.kind === 'goggles'
-                    ? { callout: goggleCallout(payment) }
-                    : (payment.lab ?? payment.event)
-                        ? { callout: dueCallout(payment.lab ?? payment.event, await dueLinkOf(prisma, payment.memberId, ...itemOf(payment))) }
-                        : {}),
-                lines: [
-                    `${name} says they paid ${whatFor(payment, 'their')} by ${payment.methodTitle}.`,
-                    `Transaction id: ${payment.reference}`
-                ],
-                button: { label: 'Review it', url },
-                reason: 'You’re getting this because you keep the club’s books on Elemental Beauty.'
-            })
-        })
-    }
 }
 
 // A data URL -> an email attachment

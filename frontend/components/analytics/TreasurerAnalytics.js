@@ -1255,7 +1255,7 @@ function QueueAction({ label, tint, onClick, children }) {
 // approving says the club agrees it owes the money, reimbursing says it's been
 // handed back — and that second one is what writes the expense row. `onUndo`
 // takes the last one back a step (reimbursed to approved, approved to
-// pending), and emails the officer where it's gone.
+// pending), and emails the officer when a payout's taken back.
 function RequestQueue({ requests, filter, onFilter, onApprove, onDeny, onReimburse, onUndo, onView }) {
 	const rows = filter === 'all'
 		? requests
@@ -2422,7 +2422,7 @@ export default function TreasurerAnalytics() {
 					title={undoingRequest.status === 'reimbursed' ? 'undo this payout?' : 'undo this approval?'}
 					body={undoingRequest.status === 'reimbursed'
 						? `${undoingRequest.what} (${money(undoingRequest.amount)}) goes back to approved: its expense row comes out of the books, and it can be paid again. ${undoingRequest.who || 'The officer'} is emailed that it's back to approved.`
-						: `${undoingRequest.what} (${money(undoingRequest.amount)}) goes back to pending, to be approved or denied again. ${undoingRequest.who || 'The officer'} is emailed that it's pending.`}
+						: `${undoingRequest.what} (${money(undoingRequest.amount)}) goes back to pending, to be approved or denied again.`}
 					confirmLabel={undoingRequest.status === 'reimbursed' ? 'move it back to approved' : 'move it back to pending'}
 					onCancel={() => setUndoingRequest(null)}
 					onConfirm={undoRequest}
