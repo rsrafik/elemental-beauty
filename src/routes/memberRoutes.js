@@ -394,11 +394,17 @@ router.get('/:id/card', requireRole('jboard'), async (req, res) => {
             prisma.memberEvent.count({ where: { memberId: userId, attendanceStatus: 'attended' } }),
             prisma.memberEvent.count({ where: { memberId: userId, attendanceStatus: { in: HOLDING } } })
         ])
+        // this year's dues paid — a VIP, j-board included (who keep their role)
+        const paid = await prisma.duesPayment.findUnique({
+            where: { memberId_schoolYear: { memberId: userId, schoolYear: schoolYearOf(clubToday()) } },
+            select: { duesId: true }
+        })
         const { member, ...rest } = user
         res.json({
             ...rest,
             role: member?.role ?? 'user',
             points: member?.points ?? 0,
+            duesPaid: Boolean(paid),
             stats: { pastLabs, rsvpLabs, pastEvents, rsvpEvents }
         })
     } catch (err) {

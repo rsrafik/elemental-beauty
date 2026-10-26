@@ -80,7 +80,15 @@ export function Scaled({ className = '', children }) {
 // pay card, once its QR codes are too many for one row and wrap into a grid.
 // Then it stays at the width's zoom and the page column scrolls — the
 // sidebar doesn't.
+//
+// The zoom only moves when it'd move by more than FIT_STEP. A zoom changes how
+// wide each line is, so how lines wrap, so how tall the page is: just at the
+// edge, one zoom wraps a word onto a line of its own, the page is taller, the
+// fit zooms it down, the word fits back, the page is shorter, the fit zooms it
+// up — and the page flickers between the two for good. A step that small
+// isn't worth taking anyway.
 const FIT_FLOOR = 0.55
+const FIT_STEP = 0.02
 
 // Inside a FitScaled: call with true to let the page scroll rather than
 // shrink to fit, false to fit again. Null outside one.
@@ -111,7 +119,11 @@ export function FitScaled({ className = '', children }) {
 			const natural = el.getBoundingClientRect().height / current
 			if (!natural) return
 			const wanted = Math.max(FIT_FLOOR, room / natural)
-			setFit(wanted < zoom ? wanted : null)
+			setFit((previous) => {
+				const target = Math.min(wanted, zoom)
+				if (Math.abs(target - (previous ?? zoom)) < FIT_STEP) return previous
+				return target < zoom ? target : null
+			})
 		}
 		const observer = new ResizeObserver(measure)
 		observer.observe(el)

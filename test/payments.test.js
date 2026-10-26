@@ -720,3 +720,83 @@ test('undo takes a receipt back one step — paid to approved, approved to pendi
         assert.equal((await undo()).status, 409)
     })
 })
+
+test('goggles: the treasurer sets the price, anyone signed up rents a pair by the day before, and it’s its own income', { skip }, async () => {
+    const method = await aMethod()
+    const treasurer = await person('treasurer')
+    const officer = await person('officer')
+    const member = await person('member')
+    const vip = await person('vip')
+    const before = (await prisma.clubSettings.findUnique({ where: { settingId: 1 } }))?.goggleRentalPrice ?? 0
+    try {
+        await as(officer, 'officer', 'methods', async (base) => {
+            assert.equal((await send(`${base}/goggles`, 'PUT', { price: 5 })).status, 403)
+        })
+        await as(treasurer, 'treasurer', 'methods', async (base) => {
+            assert.equal((await (await send(`${base}/goggles`, 'PUT', { price: 5 })).json()).price, 5)
+        })
+        // VIPs rent them too: it's apart from paying to come
+        await prisma.duesPayment.create({ data: { memberId: vip, schoolYear: YEAR, amount: 25 } })
+        const labId = await lab([member, vip])
+        // and a lab starting inside the day: rentals closed
+        const soon = await lab([member], new Date(Date.now() + 12 * 3_600_000).toISOString().slice(0, 10))
+
+        let rental
+        await as(vip, 'member', 'payments', async (base) => {
+            const options = await json(`${base}/options?labId=${labId}`)
+            assert.equal(options.goggles.price, 5)
+            assert.equal(options.goggles.open, true)
+            assert.equal(options.duesPaid, true)
+            rental = await (await send(base, 'POST', { kind: 'goggles', labId, methodId: method.methodId, reference: 'G1' })).json()
+            assert.equal(rental.kind, 'goggles')
+            assert.equal(rental.amount, 5)
+            // one waiting at a time
+            assert.equal((await send(base, 'POST', { kind: 'goggles', labId, methodId: method.methodId, reference: 'G2' })).status, 409)
+        })
+        await as(member, 'member', 'payments', async (base) => {
+            const closed = await send(base, 'POST', { kind: 'goggles', labId: soon, methodId: method.methodId, reference: 'G3' })
+            assert.equal(closed.status, 409)
+            // the calendar has the rental's deadline, the day before
+            const deadlines = await json(`${base}/deadlines`)
+            const goggles = deadlines.find((d) => d.by === 'goggles' && d.id === labId)
+            assert.ok(goggles)
+            assert.equal(goggles.amount, 5)
+        })
+
+        // approved: filed under goggle rental; their spot's untouched
+        await as(officer, 'officer', 'payments', async (base) => {
+            assert.equal((await send(`${base}/${rental.paymentId}/approve`, 'POST')).status, 200)
+        })
+        const approved = await prisma.memberPayment.findUnique({ where: { paymentId: rental.paymentId }, include: { transaction: true } })
+        assert.equal(approved.transaction.category, 'goggle_rental')
+        assert.equal(Number(approved.transaction.amount), 5)
+
+        // rejected: only the rental is turned down — nobody moves
+        let second
+        await as(member, 'member', 'payments', async (base) => {
+            second = await (await send(base, 'POST', { kind: 'goggles', labId, methodId: method.methodId, reference: 'G4' })).json()
+        })
+        await as(officer, 'officer', 'payments', async (base) => {
+            const reply = await (await send(`${base}/${second.paymentId}/reject`, 'POST', {})).json()
+            assert.equal(reply.status, 'declined')
+        })
+        const link = await prisma.memberLab.findUnique({ where: { memberId_labId: { memberId: member, labId } } })
+        assert.equal(link.attendanceStatus, 'rsvped')
+    } finally {
+        await prisma.clubSettings.update({ where: { settingId: 1 }, data: { goggleRentalPrice: before } })
+    }
+})
+
+test('a j-board member who’s paid this year’s dues wears the crown on their card', { skip }, async () => {
+    const viewer = await person('jboard')
+    const paid = await person('jboard')
+    const { schoolYearOf } = await import('../src/dues.js')
+    const { clubToday } = await import('../src/clubTime.js')
+    await as(viewer, 'jboard', 'members', async (base) => {
+        assert.equal((await json(`${base}/${paid}/card`)).duesPaid, false)
+        await prisma.duesPayment.create({ data: { memberId: paid, schoolYear: schoolYearOf(clubToday()), amount: 25 } })
+        const card = await json(`${base}/${paid}/card`)
+        assert.equal(card.duesPaid, true)
+        assert.equal(card.role, 'jboard')
+    })
+})

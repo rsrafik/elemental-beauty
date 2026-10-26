@@ -8,7 +8,9 @@ import { Popup, PopupButton } from '@/components/labs/LabViewParts'
 // One person, as j-board and up see them from a row on /students: the same
 // five numbers as the counter on their own /account (points, labs done and
 // rsvp'd, events done and rsvp'd) in a row, then their email and whichever
-// handles they've given — instagram, discord. A VIP's name wears the crown.
+// handles they've given — instagram, discord. A VIP's name wears the crown,
+// and so does a j-board member's who's paid this year's dues (duesPaid) — the
+// role line still says j-board.
 // GET /members/:id/card.
 
 // the counter's colours, number for number (Profile.js)
@@ -98,7 +100,7 @@ export default function StudentCard({ id, onClose }) {
 							text-sm
 							text-black/55
 						">
-							{person.role === 'vip' && (
+							{(person.role === 'vip' || person.duesPaid) && (
 								<span title="VIP: dues paid for the year" className="inline-flex">
 									<CrownIcon className="w-5 h-5" />
 								</span>

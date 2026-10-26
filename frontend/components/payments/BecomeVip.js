@@ -3,7 +3,7 @@
 import DashboardShell from '@/components/dashboards/DashboardShell'
 import PaySection from '@/components/payments/PaySection'
 import { Scaled } from '@/components/labs/LabViewParts'
-import { useRole } from '@/lib/session'
+import { useDuesPaid, useRole } from '@/lib/session'
 
 // /vip — "become VIP" in a plain member's sidebar: everything a lab's page
 // offers for paying ahead, with what it's for fixed to the year's VIP dues
@@ -15,6 +15,9 @@ import { useRole } from '@/lib/session'
 
 export default function BecomeVip() {
 	const role = useRole()
+	const duesPaid = useDuesPaid()
+	// j-board who've paid are VIPs too, keeping their role
+	const vip = role === 'vip' || duesPaid
 	return (
 		<DashboardShell className="
 			flex
@@ -45,7 +48,7 @@ export default function BecomeVip() {
 					text-black/70
 					text-center
 				">
-					{role === 'vip'
+					{vip
 						? 'You’re a VIP! Every lab and members-only event is covered this year.'
 						: 'Pay your dues for the semester and every lab and members-only event is covered, with no entry fee at the door. Pay with one of the codes below, then tell us how you paid and the transaction id.'}
 				</p>

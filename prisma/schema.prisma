@@ -698,13 +698,27 @@ model PaymentMethod {
   @@map("payment_methods")
 }
 
-// What a payment a member sent in was for: the year's dues (they turn VIP) or
-// one lab's or members-only event's non-member price.
+// What a payment a member sent in was for: the year's dues (they turn VIP),
+// one lab's or members-only event's non-member price, or a pair of goggles
+// rented for a lab (ClubSettings.goggleRentalPrice) — anyone signed up can
+// rent them, VIP or staff too, and it's apart from paying to come.
 enum PaymentKind {
   dues
   fee
+  goggles
 
   @@map("payment_kind")
+}
+
+// The club's settings that aren't per year or per lab — one row (settingId 1),
+// kept from /analytics by the treasurer or admin.
+//
+//   goggleRentalPrice  what renting goggles for a lab costs (0 = not offered)
+model ClubSettings {
+  settingId         Int     @id @default(1) @map("setting_id")
+  goggleRentalPrice Decimal @default(0) @map("goggle_rental_price") @db.Decimal(10, 2)
+
+  @@map("club_settings")
 }
 
 // pending -> approved (the money's in the ledger), rejected ("send back": with

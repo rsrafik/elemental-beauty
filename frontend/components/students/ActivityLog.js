@@ -19,6 +19,11 @@ const AWARD = {
 
 const money = (amount) => Number(amount).toLocaleString('en-US', { style: 'currency', currency: 'USD' })
 
+// what a payment that was sent back or rejected was for
+const paidFor = (d) => d.kind === 'dues'
+	? `${d.schoolYear} VIP dues`
+	: d.kind === 'goggles' ? `goggle rental for ${d.title}` : `payment for ${d.title}`
+
 // One entry as a sentence. Bold spans are people; everything else is plain.
 function sentence(entry) {
 	const actor = <b>{entry.actorName}</b>
@@ -79,9 +84,9 @@ function sentence(entry) {
 		case 'payment_rejected':
 			// "reject" (declined) moves them to the waitlist; "send back" doesn't
 			if (d.declined) {
-				return <>{actor} rejected {target}&apos;s {d.kind === 'dues' ? `${d.schoolYear} VIP dues` : `payment for ${d.title}`}{d.reason ? `: ${d.reason}` : ''}{d.moved ? ' (moved to the waitlist)' : ''}</>
+				return <>{actor} rejected {target}&apos;s {paidFor(d)}{d.reason ? `: ${d.reason}` : ''}{d.moved ? ' (moved to the waitlist)' : ''}</>
 			}
-			return <>{actor} sent back {target}&apos;s {d.kind === 'dues' ? `${d.schoolYear} VIP dues` : `payment for ${d.title}`}: {d.reason}</>
+			return <>{actor} sent back {target}&apos;s {paidFor(d)}: {d.reason}</>
 		case 'dues_reset':
 			return <>{actor} cleared everyone&apos;s {d.schoolYear} dues ({d.count} {d.count === 1 ? 'payment' : 'payments'})</>
 		default:

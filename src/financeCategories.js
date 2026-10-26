@@ -8,6 +8,7 @@ export const LOCKED = {
     dues: 'dues marked paid on the dues card are filed here',
     fees: 'non-member prices paid at the door are filed here',
     sponsors: 'j-board’s treasury team files the sponsorships they keep here',
+    goggle_rental: 'goggle rentals approved on a lab’s check-in page are filed here',
 }
 
 // 'Merch Sales' -> 'merch_sales': what a new category is stored as on the

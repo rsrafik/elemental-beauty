@@ -18,6 +18,10 @@ import { shrinkImage } from '@/lib/images'
 // Clicking one opens the same form filled in, to change any of it. Payments
 // already sent in under one keep the name it had then, so renaming or taking
 // one off changes nothing that's been sent (src/routes/paymentMethodRoutes.js).
+//
+// Under them, what renting goggles for a lab costs (GogglePrice): every lab's
+// page offers a pair at that price, up to 24 hours before it starts, and an
+// approved rental is filed under the 'goggle rental' income. 0 turns it off.
 
 // big enough to scan off a phone, small enough to ride along on every read
 const QR_MAX = 800
@@ -392,7 +396,137 @@ export default function AcceptedPaymentsCard() {
 				</ul>
 			)}
 
+			<GogglePrice />
+
 			{editing && <MethodDialog method={editing.method} onClose={() => setEditing(null)} onSaved={load} />}
 		</Card>
+	)
+}
+
+function GogglePrice() {
+	// what the server has, and what's in the box
+	const [saved, setSaved] = useState(null)
+	const [draft, setDraft] = useState('')
+	const [busy, setBusy] = useState(false)
+	const [error, setError] = useState(null)
+
+	useEffect(() => {
+		let live = true
+		methodsApi.goggles()
+			.then((reply) => {
+				if (!live) return
+				setSaved(reply.price)
+				setDraft(reply.price ? String(reply.price) : '')
+			})
+			.catch((err) => live && setError(err.message))
+		return () => { live = false }
+	}, [])
+
+	const price = draft.trim() === '' ? 0 : Number(draft)
+	const valid = Number.isFinite(price) && price >= 0
+	const ready = saved !== null && valid && price !== saved && !busy
+
+	const save = async (event) => {
+		event.preventDefault()
+		if (!ready) return
+		setBusy(true)
+		setError(null)
+		try {
+			const reply = await methodsApi.setGoggles(price)
+			setSaved(reply.price)
+			setDraft(reply.price ? String(reply.price) : '')
+		} catch (err) {
+			setError(err.message)
+		} finally {
+			setBusy(false)
+		}
+	}
+
+	return (
+		<form onSubmit={save} className="
+			mt-8
+			border-t
+			border-black/10
+			pt-6
+		">
+			<Label htmlFor="goggle-price">goggle rental</Label>
+			<div className="
+				mt-1.5
+				flex
+				flex-wrap
+				items-center
+				gap-3
+			">
+				<div className="
+					relative
+					w-[140px]
+				">
+					<span className="
+						pointer-events-none
+						absolute
+						left-4
+						top-1/2
+						-translate-y-1/2
+						font-vietnam
+						text-sm
+						text-black/50
+					">
+						$
+					</span>
+					<input
+						id="goggle-price"
+						aria-label="Goggle rental price"
+						type="number"
+						min="0"
+						step="0.01"
+						inputMode="decimal"
+						value={draft}
+						onChange={(event) => setDraft(event.target.value)}
+						placeholder="0"
+						className={`${FIELD} pl-8`}
+					/>
+				</div>
+				<button
+					type="submit"
+					disabled={!ready}
+					className={`
+						rounded-full
+						px-5
+						py-2
+						font-vietnam
+						font-semibold
+						text-sm
+						transition-all
+						duration-200
+						ease-out
+						${ready
+							? 'bg-salmon text-white cursor-pointer hover:-translate-y-0.5 hover:shadow-lg hover:shadow-black/20'
+							: 'bg-black/10 text-black/40 cursor-not-allowed'}
+					`}
+				>
+					{busy ? 'saving…' : 'save'}
+				</button>
+			</div>
+			<p className="
+				mt-2
+				font-vietnam
+				text-xs
+				text-black/50
+			">
+				{saved
+					? 'Every lab’s page offers goggles at this price, up to 24 hours before it starts. Approved rentals go under goggle rental income. Set it to 0 to stop renting them.'
+					: 'Not renting goggles right now. Set a price and every lab’s page offers them, up to 24 hours before it starts.'}
+			</p>
+			{error && (
+				<p className="
+					mt-2
+					font-vietnam
+					text-sm
+					text-salmon-dark
+				">
+					{error}
+				</p>
+			)}
+		</form>
 	)
 }

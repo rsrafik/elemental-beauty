@@ -1,6 +1,7 @@
 import express from 'express'
 import prisma from '../prismaClient.js'
 import { keepsBooks } from '../payments.js'
+import { goggleRentalPrice } from '../payable.js'
 
 const router = express.Router()
 // mounted behind authMiddleware + requireRole('member') in server.js
@@ -12,6 +13,10 @@ const router = express.Router()
 //   title        what the payment dropdown offers ('Venmo') — required
 //   image        its QR code, a data URL like a receipt photo — optional
 //   description  a line under the QR code ('@elementalbeauty') — optional
+//
+// And on the same card, what renting goggles for a lab costs:
+//   GET /goggles   { price } — everyone reads it
+//   PUT /goggles   { price } — the treasurer or admin; 0 stops rentals
 
 // a phone screenshot of a QR code, shrunk in the browser first (lib/images)
 const IMAGE = /^data:image\/(png|jpe?g|webp|gif);base64,/
@@ -34,6 +39,35 @@ function readMethod(body, { keep = false } = {}) {
 router.get('/', async (req, res) => {
     try {
         res.json(await prisma.paymentMethod.findMany({ orderBy: { methodId: 'asc' } }))
+    } catch (err) {
+        console.error(err.message)
+        res.sendStatus(500)
+    }
+})
+
+router.get('/goggles', async (req, res) => {
+    try {
+        res.json({ price: await goggleRentalPrice(prisma) })
+    } catch (err) {
+        console.error(err.message)
+        res.sendStatus(500)
+    }
+})
+
+router.put('/goggles', async (req, res) => {
+    if (!keepsBooks(req)) { return res.status(403).json({ message: 'Only the treasurer or an admin can set the goggle rental price' }) }
+    const price = Number(req.body?.price)
+    if (!Number.isFinite(price) || price < 0 || price > 10_000) {
+        return res.status(400).json({ message: 'The price has to be a number of dollars, 0 or more' })
+    }
+    try {
+        const rounded = Math.round(price * 100) / 100
+        await prisma.clubSettings.upsert({
+            where: { settingId: 1 },
+            update: { goggleRentalPrice: rounded },
+            create: { settingId: 1, goggleRentalPrice: rounded }
+        })
+        res.json({ price: rounded })
     } catch (err) {
         console.error(err.message)
         res.sendStatus(500)

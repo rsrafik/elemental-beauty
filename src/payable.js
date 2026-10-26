@@ -41,6 +41,8 @@ export const LATE_HOURS = 48
 export const REMIND_HOURS = 24
 // how long an emailed offer of a spot lasts (see src/offers.js)
 export const OFFER_HOURS = 48
+// goggles are rented up to a day before a lab starts
+export const GOGGLES_HOURS = 24
 
 // When an offer on `link` (emailed at its offerSentAt) lapses for `parent`, or
 // null: not emailed yet, or it's inside the last 48 hours before it starts,
@@ -199,7 +201,7 @@ export async function paymentSent(db, memberId, kindName, id, schoolYear) {
 // null.
 export async function sentBackBy(db, memberId, kindName, id) {
     const newest = await db.memberPayment.findFirst({
-        where: { memberId, [ITEMS[kindName].key]: id },
+        where: { memberId, [ITEMS[kindName].key]: id, kind: { in: ['fee', 'dues'] } },
         orderBy: { submittedAt: 'desc' },
         select: { status: true, reviewedAt: true }
     })
@@ -260,4 +262,86 @@ export async function duesDeadlines(db, memberId, now = new Date()) {
         deadlines.push({ kind: kindName, id, title: parent.title, amount, ...due })
     }
     return deadlines
+}
+
+// ---- goggles ---------------------------------------------------------------
+//
+// Goggles are required at a lab; anyone signed up for one can rent a pair
+// (VIP and staff too — it's apart from paying to come), at the club's one
+// price (ClubSettings), up to 24 hours before it starts. A rental is a
+// payment of its own (kind 'goggles'), checked on the check-in page like any
+// other — but nothing about anyone's spot hangs on it: sent back, it's fixed
+// by the rental's deadline; rejected, it's only turned down.
+
+// a lab's school year (for a goggle rental's row) — this one's for a draft
+export function schoolYearOfLab(lab) {
+    return schoolYearOf(lab?.date ? lab.date.toISOString().slice(0, 10) : clubToday())
+}
+
+// what renting goggles costs (0 = not offered)
+export async function goggleRentalPrice(db) {
+    const row = await db.clubSettings.findUnique({ where: { settingId: 1 } })
+    return Number(row?.goggleRentalPrice ?? 0)
+}
+
+// When goggles for `lab` stop being rented: 24 hours before it starts, or
+// null for a draft with no date
+export function goggleDueAt(lab) {
+    if (!lab?.date) return null
+    return new Date(startsAt(lab).getTime() - GOGGLES_HOURS * 3_600_000)
+}
+
+// Where `memberId` stands on renting goggles for one lab:
+//
+//   { price   what it costs (0 = not offered)
+//     dueAt   the rental's deadline
+//     holds   signed up for it (or offered a spot) — renting needs a spot
+//     open    they can send one now: offered, signed up, before the deadline
+//     sent    one's in, waiting or approved }
+//
+// Null if the lab doesn't exist.
+export async function goggleStanding(db, memberId, labId, now = new Date()) {
+    const [lab, link, price, sent] = await Promise.all([
+        db.lab.findUnique({ where: { labId } }),
+        db.memberLab.findUnique({ where: { memberId_labId: { memberId, labId } } }),
+        goggleRentalPrice(db),
+        db.memberPayment.findFirst({
+            where: { memberId, labId, kind: 'goggles', status: { in: ['pending', 'approved'] } },
+            select: { paymentId: true }
+        })
+    ])
+    if (!lab) return null
+    const dueAt = goggleDueAt(lab)
+    const holds = ['rsvped', 'offered'].includes(link?.attendanceStatus)
+    return {
+        price,
+        dueAt,
+        holds,
+        open: price > 0 && holds && Boolean(dueAt) && dueAt.getTime() > now.getTime(),
+        sent: Boolean(sent)
+    }
+}
+
+// The calendar's goggle days: for each lab `memberId` is signed up for and
+// hasn't rented goggles for, the rental's deadline while it's still ahead —
+// [{ kind: 'lab', id, title, amount, at, by: 'goggles' }]. Nothing when the
+// club doesn't rent them.
+export async function goggleDeadlines(db, memberId, now = new Date()) {
+    const price = await goggleRentalPrice(db)
+    if (price <= 0) return []
+    const rows = await db.memberLab.findMany({
+        where: { memberId, attendanceStatus: { in: ['rsvped', 'offered'] } },
+        include: { lab: true }
+    })
+    const out = []
+    for (const { lab } of rows) {
+        const at = goggleDueAt(lab)
+        if (!at || at.getTime() <= now.getTime()) continue
+        const sent = await db.memberPayment.count({
+            where: { memberId, labId: lab.labId, kind: 'goggles', status: { in: ['pending', 'approved'] } }
+        })
+        if (sent > 0) continue
+        out.push({ kind: 'lab', id: lab.labId, title: `${lab.title} goggle rental`, amount: price, at, by: 'goggles' })
+    }
+    return out.sort((a, b) => a.at - b.at)
 }

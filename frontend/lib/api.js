@@ -426,6 +426,9 @@ export const paymentMethods = {
 	// the same fields; an `image` left out stays as it is, null takes it off
 	update: (id, method) => api(`/payment-methods/${id}`, { method: 'PUT', body: method }),
 	remove: (id) => api(`/payment-methods/${id}`, { method: 'DELETE' }),
+	// what renting goggles for a lab costs: { price } (0 = not offered)
+	goggles: () => api('/payment-methods/goggles'),
+	setGoggles: (price) => api('/payment-methods/goggles', { method: 'PUT', body: { price } }),
 }
 
 // Payments members make on their own and send in for review — see

@@ -9,7 +9,7 @@ import { ledgerSource, recordDues } from './dues.js'
 import { lockParent, moveToWaitlist, notifyMovedToWaitlist } from './offers.js'
 import {
     HOLDS, ITEMS, LATE_HOURS, REMIND_HOURS, REVISE_HOURS,
-    dueCallout, dueLinkOf, dueText, dueWhen, offerLapse, payable, paymentDue, paymentDueAt, reviseBy
+    dueCallout, dueLinkOf, dueText, dueWhen, goggleDueAt, offerLapse, payable, paymentDue, paymentDueAt, reviseBy
 } from './payable.js'
 
 // Payments a member makes on their own — Venmo, Zelle, whatever's on the
@@ -83,16 +83,18 @@ export function itemOf(row) {
 // The include every payment read needs: who, from where, and how.
 export const PAYMENT_INCLUDE = {
     member: { select: { role: true, user: { select: { firstName: true, lastName: true, username: true, email: true } } } },
-    lab: { select: { labId: true, title: true, date: true } },
-    event: { select: { eventId: true, title: true, date: true } }
+    lab: { select: { labId: true, title: true, date: true, startTime: true } },
+    event: { select: { eventId: true, title: true, date: true, startTime: true } }
 }
 
 // Approve `payment` (read with PAYMENT_INCLUDE) inside `tx`: the income row,
 // and what it settles —
 //
-//   dues   their DuesPayment for the year (they turn VIP), filed under 'dues'
-//   fee    the entry for its lab or event, filed under 'fees', kept on their
-//          row there so the door's $ goes grey and the tick doesn't ask
+//   dues     their DuesPayment for the year (they turn VIP), filed under 'dues'
+//   fee      the entry for its lab or event, filed under 'fees', kept on their
+//            row there so the door's $ goes grey and the tick doesn't ask
+//   goggles  a pair of goggles rented for its lab, filed under
+//            'goggle_rental' — nothing else hangs on it (see payable.js)
 //
 // The row's title is ledgerSource's — 'Mina Reyes — Body Butter — #4F2K9 —
 // Venmo'. Refused (409) when it's already been settled some other way —
@@ -104,6 +106,25 @@ export async function approvePayment(tx, payment, actorId) {
     const from = payment.lab ?? payment.event
     const paidBy = { reference: payment.reference, method: payment.methodTitle }
     const day = dateColumn(clubToday())
+
+    if (payment.kind === 'goggles') {
+        if (!payment.lab) throw conflict('That lab is gone')
+        const ledger = await tx.transaction.create({
+            data: {
+                type: 'income',
+                source: ledgerSource({ name, what: `Goggle rental (${payment.lab.title})`, ...paidBy }),
+                amount: payment.amount,
+                category: 'goggle_rental',
+                date: day
+            }
+        })
+        const approved = await tx.memberPayment.update({
+            where: { paymentId: payment.paymentId },
+            data: { status: 'approved', reviewedAt: new Date(), rejectionReason: null, transactionId: ledger.transactionId },
+            include: PAYMENT_INCLUDE
+        })
+        return { ...approved, confirmed: false }
+    }
 
     const paid = await tx.duesPayment.findUnique({
         where: { memberId_schoolYear: { memberId: payment.memberId, schoolYear: payment.schoolYear } }
@@ -170,8 +191,8 @@ export async function approvePayment(tx, payment, actorId) {
 
 // "Reject", inside `tx`: not accepted, and they're moved to the back of the
 // waitlist of the lab or event it was sent from (VIP dues sent from /vip have
-// none, so they're only turned down). `reason` is optional. Returns the
-// payment, with `moved`.
+// none, so they're only turned down — and so is a goggle rental, which no
+// spot hangs on). `reason` is optional. Returns the payment, with `moved`.
 export async function declinePayment(tx, payment, reason) {
     if (payment.status !== 'pending') throw conflict('Only a pending payment can be rejected')
     const declined = await tx.memberPayment.update({
@@ -180,7 +201,7 @@ export async function declinePayment(tx, payment, reason) {
         include: PAYMENT_INCLUDE
     })
     let moved = false
-    const at = itemOf(payment)
+    const at = payment.kind === 'goggles' ? null : itemOf(payment)
     if (at) {
         await lockParent(tx, at[0], at[1])
         moved = await moveToWaitlist(tx, at[0], at[1], payment.memberId)
@@ -240,7 +261,12 @@ export async function enforcePaymentRules(now = new Date()) {
 
     // sent back and left
     const stale = await prisma.memberPayment.findMany({
-        where: { status: 'rejected', reviewedAt: { lte: cutoff }, OR: [{ labId: { not: null } }, { eventId: { not: null } }] },
+        // (a goggle rental sent back isn't anyone's spot — its own deadline
+        // is the day before)
+        where: {
+            status: 'rejected', reviewedAt: { lte: cutoff }, kind: { in: ['fee', 'dues'] },
+            OR: [{ labId: { not: null } }, { eventId: { not: null } }]
+        },
         include: { lab: true, event: true }
     })
     for (const payment of stale) {
@@ -466,9 +492,16 @@ export async function releaseLedgerRow(tx, transactionId) {
 // in the treasurer's email, which talks about the member rather than to them.
 function whatFor(payment, whose = 'your') {
     const from = payment.lab ?? payment.event
+    if (payment.kind === 'goggles') return `${money(payment.amount)} goggle rental for ${from?.title ?? `${whose} lab`}`
     return payment.kind === 'dues'
         ? `${whose} ${money(payment.amount)} ${payment.schoolYear} VIP dues`
         : `${money(payment.amount)} for ${from?.title ?? `${whose} lab`}`
+}
+
+// a goggle rental's deadline, big — the day before its lab
+const goggleCallout = (p) => {
+    const at = goggleDueAt(p.lab)
+    return at ? { label: 'Goggle rental due', text: dueText(at) } : undefined
 }
 
 // where they'd go to send it again
@@ -487,6 +520,48 @@ const dueLine = (p, link) => {
     const from = p.lab ?? p.event
     const when = dueWhen(from, link)
     return when ? [`Payment for ${from.title} is due ${when}. Anyone signed up who hasn’t paid by then is moved to the waitlist.`] : []
+}
+
+// a goggle rental's own copy: nothing about their spot
+const GOGGLES = {
+    approved: (p) => ({
+        subject: `Goggle rental approved: ${titleOf(p)}`,
+        heading: 'Your goggle rental was approved',
+        lines: [
+            `We got ${whatFor(p)} by ${p.methodTitle} (transaction #${p.reference}). Thank you!`,
+            'Your goggles will be ready for you at the lab.'
+        ],
+        button: { label: 'See the lab', url: pageFor(p) }
+    }),
+    rejected: (p) => ({
+        subject: `Goggle rental sent back: ${titleOf(p)}`,
+        heading: 'Please fix your goggle rental and send it again',
+        lines: [
+            `Your ${whatFor(p)} by ${p.methodTitle} (transaction #${p.reference}) wasn’t registered or accepted.`,
+            `Why: ${p.rejectionReason}`,
+            'Fix it and send it again from the lab’s page before the rental closes, 24 hours before the lab starts.'
+        ],
+        button: { label: 'Fix it', url: pageFor(p) }
+    }),
+    declined: (p) => ({
+        subject: `Goggle rental rejected: ${titleOf(p)}`,
+        heading: 'Your goggle rental was rejected',
+        lines: [
+            `Your ${whatFor(p)} by ${p.methodTitle} (transaction #${p.reference}) wasn’t accepted.`,
+            ...(p.rejectionReason ? [`Why: ${p.rejectionReason}`] : []),
+            'Goggles are required at the lab, so bring your own, or rent a pair again from its page before the rental closes.'
+        ],
+        button: { label: 'See the lab', url: pageFor(p) }
+    }),
+    reversed: (p) => ({
+        subject: `Please disregard: goggle rental approval for ${titleOf(p)}`,
+        heading: 'Please disregard your goggle rental approval',
+        lines: [
+            `We approved ${whatFor(p)} by mistake, so we’ve taken it back.`,
+            'If you did pay, send it again from the lab’s page with the transaction id.'
+        ],
+        button: { label: 'Send it again', url: pageFor(p) }
+    })
 }
 
 const PAYER = {
@@ -554,8 +629,15 @@ const PAYER = {
 // its due date, big, and a line under it — sent back, the new due date (48
 // hours on) is the big one, and the old one's the line.
 export async function notifyPayer(payment, status = payment.status) {
-    const copy = PAYER[status]?.(payment)
     const to = payment.member?.user?.email
+    if (payment.kind === 'goggles') {
+        const copy = GOGGLES[status]?.(payment)
+        if (!copy || !to) return
+        const { subject, ...body } = copy
+        await sendEmail({ to, subject, ...actionEmail({ ...body, callout: goggleCallout(payment), reason: REASON }) })
+        return
+    }
+    const copy = PAYER[status]?.(payment)
     if (!copy || !to) return
     const { subject, ...body } = copy
     const from = payment.lab ?? payment.event
@@ -620,9 +702,11 @@ export async function notifyReviewers(payment) {
             subject: `Payment to review: ${name}, ${whatFor(payment, 'their')}`,
             ...actionEmail({
                 heading: 'A payment to review',
-                ...((payment.lab ?? payment.event)
-                    ? { callout: dueCallout(payment.lab ?? payment.event, await dueLinkOf(prisma, payment.memberId, ...itemOf(payment))) }
-                    : {}),
+                ...(payment.kind === 'goggles'
+                    ? { callout: goggleCallout(payment) }
+                    : (payment.lab ?? payment.event)
+                        ? { callout: dueCallout(payment.lab ?? payment.event, await dueLinkOf(prisma, payment.memberId, ...itemOf(payment))) }
+                        : {}),
                 lines: [
                     `${name} says they paid ${whatFor(payment, 'their')} by ${payment.methodTitle}.`,
                     `Transaction id: ${payment.reference}`

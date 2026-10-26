@@ -537,7 +537,17 @@ function ManualAdd({ onAdd, people }) {
 // 48 hours to fix it; "reject" moves them to the waitlist. Each emails them.
 //
 // `readOnly` is the advisor's copy: all of it to see, none of it to settle.
-function PaymentsPopup({ title, payments, readOnly, onChange, onClose }) {
+// A lab's popup has a toggle over the list: "fee" (paying to come — the
+// entry, or VIP dues) and "rental" (goggle rentals), each with its own count,
+// approved, sent back or rejected the same way. An event's has no rentals.
+const PAYMENT_TABS = [
+	{ key: 'fee', label: 'fee', has: (payment) => payment.kind !== 'goggles' },
+	{ key: 'rental', label: 'rental', has: (payment) => payment.kind === 'goggles' },
+]
+
+function PaymentsPopup({ title, payments: all, rentals = false, readOnly, onChange, onClose }) {
+	const [tab, setTab] = useState('fee')
+	const payments = rentals ? all.filter(PAYMENT_TABS.find((one) => one.key === tab).has) : all
 	return (
 		<Popup title="payments" onClose={onClose} width="max-w-[620px]">
 			{() => (
@@ -550,6 +560,48 @@ function PaymentsPopup({ title, payments, readOnly, onChange, onClose }) {
 					">
 						What members say they paid for {title}. Check it’s in the account before you approve it.
 					</p>
+
+					{rentals && (
+						<div
+							role="tablist"
+							aria-label="Which payments"
+							className="
+								mt-4
+								inline-flex
+								rounded-full
+								bg-black/5
+								p-1
+							"
+						>
+							{PAYMENT_TABS.map((one) => {
+								const on = tab === one.key
+								const count = all.filter(one.has).length
+								return (
+									<button
+										key={one.key}
+										type="button"
+										role="tab"
+										aria-selected={on}
+										onClick={() => setTab(one.key)}
+										className={`
+											rounded-full
+											px-4
+											py-1.5
+											font-vietnam
+											font-semibold
+											text-[13px]
+											cursor-pointer
+											transition-colors
+											duration-150
+											${on ? 'bg-black text-cream' : 'text-black/60 hover:text-black'}
+										`}
+									>
+										{one.label}{count > 0 ? ` · ${count}` : ''}
+									</button>
+								)
+							})}
+						</div>
+					)}
 
 					{payments.length === 0 ? (
 						<p className="
@@ -1367,6 +1419,7 @@ export default function CheckInView({ kind, id }) {
 				<PaymentsPopup
 					title={item.title}
 					payments={waitingPayments}
+					rentals={kind === 'lab'}
 					readOnly={!changes}
 					onChange={async () => {
 						await loadPayments()

@@ -19,7 +19,9 @@ import { useDismiss } from '@/lib/dismiss'
 //                    fix it and send it again, for a lab or event, or they're
 //                    moved to its waitlist) or reject (not accepted, and
 //                    they're moved to the waitlist now — the reason's
-//                    optional). Each emails them.
+//                    optional). Each emails them. A goggle rental's answers
+//                    leave their spot alone: sent back, it's fixed by the
+//                    rental's deadline; rejected, it's only turned down.
 //
 // `payment` is the API's shape: { paymentId, kind, title, schoolYear, amount,
 // methodTitle, reference, screenshot, submittedAt, ... }.
@@ -27,8 +29,9 @@ import { useDismiss } from '@/lib/dismiss'
 const money = (amount) => Number(amount).toLocaleString('en-US', { style: 'currency', currency: 'USD' })
 const sentOn = (at) => new Date(at).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })
 
-// 'lab fee · $20.00' / 'VIP dues 2026–27 · $25.00'
+// 'lab fee · $20.00' / 'VIP dues 2026–27 · $25.00' / 'goggle rental · $5.00'
 export function paymentWhat(payment) {
+	if (payment.kind === 'goggles') return `goggle rental · ${money(payment.amount)}`
 	return payment.kind === 'dues'
 		? `VIP dues ${payment.schoolYear} · ${money(payment.amount)}`
 		: `${payment.eventId ? 'event' : 'lab'} fee · ${money(payment.amount)}`
@@ -228,7 +231,14 @@ const NO = {
 	},
 }
 
+// what a goggle rental's two "no"s say instead (its own deadline, no waitlist)
+const GOGGLES_NO = {
+	'send-back': 'What needs fixing? They’ll see this and can send it again until the rental closes',
+	reject: 'Why? (optional) The rental is turned down and they’re emailed',
+}
+
 export function ReviewButtons({ payment, onDone, readOnly = false }) {
+	const goggles = payment.kind === 'goggles'
 	const [busy, setBusy] = useState(null)
 	const [error, setError] = useState(null)
 	// which "no" is having its reason written: 'send-back' / 'reject' / null
@@ -252,7 +262,7 @@ export function ReviewButtons({ payment, onDone, readOnly = false }) {
 		}
 	}
 
-	const no = asking ? NO[asking] : null
+	const no = asking ? { ...NO[asking], ...(goggles ? { placeholder: GOGGLES_NO[asking] } : {}) } : null
 	const ready = no && (!no.required || reason.trim()) && !busy
 
 	return (
@@ -271,7 +281,7 @@ export function ReviewButtons({ payment, onDone, readOnly = false }) {
 					<Button
 						tone="approve"
 						disabled={Boolean(busy)}
-						title="It's in the account. Book it as income, confirm their spot, and let them know"
+						title={goggles ? "It's in the account. Book it as goggle rental income and let them know" : "It's in the account. Book it as income, confirm their spot, and let them know"}
 						onClick={() => run('approve', () => paymentsApi.approve(payment.paymentId))}
 					>
 						{busy === 'approve' ? 'approving…' : 'approve'}
@@ -279,7 +289,7 @@ export function ReviewButtons({ payment, onDone, readOnly = false }) {
 					<Button
 						tone="sendBack"
 						disabled={Boolean(busy)}
-						title="Something's off. They fix it and send it again within 48 hours"
+						title={goggles ? "Something's off. They fix it and send it again before the rental closes" : "Something's off. They fix it and send it again within 48 hours"}
 						onClick={() => setAsking('send-back')}
 					>
 						send back
@@ -287,7 +297,7 @@ export function ReviewButtons({ payment, onDone, readOnly = false }) {
 					<Button
 						tone="reject"
 						disabled={Boolean(busy)}
-						title="Not accepted. They're moved to the waitlist"
+						title={goggles ? 'Not accepted. Only the rental is turned down' : "Not accepted. They're moved to the waitlist"}
 						onClick={() => setAsking('reject')}
 					>
 						reject

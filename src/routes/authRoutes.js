@@ -9,6 +9,8 @@ import { actionEmail } from '../emailTemplate.js'
 import { wantsEmail } from '../emailPrefs.js'
 import { checkPassword, hashPassword, needsRehash, passwordProblem } from '../passwords.js'
 import { log } from '../activity.js'
+import { schoolYearOf } from '../dues.js'
+import { clubToday } from '../clubTime.js'
 
 const router = express.Router()
 
@@ -119,6 +121,12 @@ router.get('/me', authMiddleware, async (req, res) => {
             }
         })
         if (!user) { return res.status(404).json({ message: 'Account not found' }) }
+        // this year's dues paid: a VIP — and j-board who've paid count as one,
+        // though their role stays j-board
+        const paid = await prisma.duesPayment.findUnique({
+            where: { memberId_schoolYear: { memberId: req.userId, schoolYear: schoolYearOf(clubToday()) } },
+            select: { duesId: true }
+        })
 
         const { member, ...account } = user
         res.json({
@@ -134,7 +142,8 @@ router.get('/me', authMiddleware, async (req, res) => {
             dateJoined: member?.dateJoined ?? null,
             // j-board only: their team, which decides the j-board events
             // they see and can file (see eventRoutes.js)
-            jboardTeams: member?.jboardTeams ?? []
+            jboardTeams: member?.jboardTeams ?? [],
+            duesPaid: Boolean(paid)
         })
     } catch (err) {
         console.error(err.message)

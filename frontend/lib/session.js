@@ -131,6 +131,13 @@ export function useJboardTeams() {
 	return user?.jboardTeams ?? []
 }
 
+// This year's dues paid — a VIP's are, and so are j-board's who've paid (their
+// role stays j-board; this is what says they're a VIP too)
+export function useDuesPaid() {
+	const { user } = useSession()
+	return Boolean(user?.duesPaid)
+}
+
 // What the sidebar's logout button does. Clearing the token is the whole of it
 // — the JWT is stateless, so there's nothing on the server to tell. replace()
 // rather than push() so the back button doesn't walk into a page that will only

@@ -5,7 +5,7 @@ import {
     PAYMENT_INCLUDE, approvePayment, declinePayment, itemOf, notifyPayer, notifyReviewers, payable, runsDoor
 } from '../payments.js'
 import { acceptByPaying } from '../offers.js'
-import { duesDeadlines } from '../payable.js'
+import { duesDeadlines, goggleDeadlines, goggleStanding, schoolYearOfLab } from '../payable.js'
 
 const router = express.Router()
 // mounted behind authMiddleware + requireRole('member') in server.js
@@ -16,7 +16,9 @@ const router = express.Router()
 // A member's:
 //   GET  /options?labId= | ?eventId= | (neither, for /vip)
 //        what they can pay for there, the ways to pay, and what they've sent
-//   POST /  { kind: 'dues' | 'fee', labId? | eventId?, methodId, reference, screenshot? }
+//   POST /  { kind: 'dues' | 'fee' | 'goggles', labId? | eventId?, methodId, reference, screenshot? }
+//           'goggles' is a lab's goggle rental — anyone signed up, VIP or
+//           staff too, up to 24 hours before it starts (payable.js)
 //           sent from a lab or event they hold an offer for, it takes the
 //           spot: paying is accepting (src/offers.js)
 //   PUT  /:id  the same fields, on their own payment while it's still pending
@@ -26,8 +28,10 @@ const router = express.Router()
 //   GET  /history  everything they've paid the club, newest first — the
 //        account page's "payment history" (see the route)
 //   GET  /deadlines  their unpaid due dates, one per lab or event they're
-//        signed up for (or offered) and owe for — the calendar's red days:
-//        [{ kind, id, title, amount, at, by }] (duesDeadlines in payable.js)
+//        signed up for (or offered) and owe for, and each lab's goggle rental
+//        they haven't sent in — the calendar's red days:
+//        [{ kind, id, title, amount, at, by }] (duesDeadlines and
+//        goggleDeadlines in payable.js), soonest first
 //
 // Officers' and up — the check-in page's payments (the advisor reads them):
 //   GET  /?labId= &eventId= &kind= &status= &schoolYear=
@@ -40,7 +44,7 @@ const router = express.Router()
 //   POST /:id/reject     { reason? } — not accepted, and they're moved to that
 //                        lab's or event's waitlist; emails them
 
-const KINDS = ['dues', 'fee']
+const KINDS = ['dues', 'fee', 'goggles']
 const STATUSES = ['pending', 'approved', 'rejected', 'declined', 'reversed']
 const IMAGE = /^data:image\/(png|jpe?g|webp|gif);base64,/
 const MAX_IMAGE = 3_000_000
@@ -86,13 +90,16 @@ function shape(payment, { withMember = false } = {}) {
     }
 }
 
-// Theirs that are about this place: the fee for this lab or event, and dues
-// for its year — /vip shows the year's dues alone.
+// Theirs that are about this place: the fee for this lab or event, dues for
+// its year, and a lab's goggle rentals — /vip shows the year's dues alone.
 function mineWhere(memberId, place, schoolYear) {
     const dues = { kind: 'dues', schoolYear }
     if (!place) return { memberId, ...dues }
     const key = place[0] === 'lab' ? 'labId' : 'eventId'
-    return { memberId, OR: [dues, { kind: 'fee', [key]: place[1] }] }
+    return {
+        memberId,
+        OR: [dues, { kind: 'fee', [key]: place[1] }, ...(place[0] === 'lab' ? [{ kind: 'goggles', labId: place[1] }] : [])]
+    }
 }
 
 router.get('/options', async (req, res) => {
@@ -101,6 +108,8 @@ router.get('/options', async (req, res) => {
     try {
         const standing = await payable(prisma, req.userId, ...(place ?? []))
         if (!standing) { return res.status(404).json({ message: 'Not found' }) }
+        // a lab's goggle rental, beside paying to come
+        const goggles = place?.[0] === 'lab' ? await goggleStanding(prisma, req.userId, place[1]) : null
         const [methods, mine] = await Promise.all([
             prisma.paymentMethod.findMany({ orderBy: { methodId: 'asc' } }),
             prisma.memberPayment.findMany({
@@ -109,7 +118,7 @@ router.get('/options', async (req, res) => {
                 orderBy: { submittedAt: 'desc' }
             })
         ])
-        res.json({ ...standing, methods, payments: mine.map((payment) => shape(payment)) })
+        res.json({ ...standing, goggles, methods, payments: mine.map((payment) => shape(payment)) })
     } catch (err) {
         console.error(err.message)
         res.sendStatus(500)
@@ -120,7 +129,7 @@ router.get('/options', async (req, res) => {
 // the transaction id and the screenshot. `keepScreenshot` is an edit, where
 // one left out stays as it was. Returns { fields } or { error }.
 function readPayment(body, { keepScreenshot = false } = {}) {
-    if (!KINDS.includes(body.kind)) { return { error: 'Say what it was for: VIP dues or the lab fee' } }
+    if (!KINDS.includes(body.kind)) { return { error: 'Say what it was for: VIP dues, the lab fee or goggles' } }
     const reference = typeof body.reference === 'string' ? body.reference.trim().replace(/^#/, '').slice(0, 80) : ''
     if (!reference) { return { error: 'Type the transaction id your payment app gave you' } }
     const fields = { kind: body.kind, reference }
@@ -141,6 +150,7 @@ function readPayment(body, { keepScreenshot = false } = {}) {
 // amount }) and their standing, or why not (409). `except` is the payment
 // being edited, which doesn't count as one already waiting.
 async function choiceFor(memberId, place, kind, except = null) {
+    if (kind === 'goggles') return goggleChoice(memberId, place, except)
     const standing = await payable(prisma, memberId, ...(place ?? []))
     if (!standing) { return { status: 404, message: 'Not found' } }
     const choice = standing.choices.find((option) => option.kind === kind)
@@ -166,6 +176,26 @@ async function choiceFor(memberId, place, kind, except = null) {
     })
     if (waiting) { return { status: 409, message: 'You’ve already sent one, and it’s waiting to be looked at' } }
     return { choice, standing }
+}
+
+// choiceFor for a goggle rental: a lab they hold a spot in, rented at the
+// club's price, before its deadline, one waiting at a time
+async function goggleChoice(memberId, place, except = null) {
+    if (place?.[0] !== 'lab') { return { status: 400, message: 'Goggles are rented from a lab’s page' } }
+    const goggles = await goggleStanding(prisma, memberId, place[1])
+    if (!goggles) { return { status: 404, message: 'Not found' } }
+    if (goggles.price <= 0) { return { status: 409, message: 'The club isn’t renting goggles right now' } }
+    if (!goggles.holds) { return { status: 409, message: 'Sign up first. Goggles are rented for your spot' } }
+    if (!goggles.open) { return { status: 409, message: 'Goggle rental closed 24 hours before the lab' } }
+    const waiting = await prisma.memberPayment.findFirst({
+        where: {
+            memberId, status: 'pending', kind: 'goggles', labId: place[1],
+            ...(except ? { paymentId: { not: except } } : {})
+        }
+    })
+    if (waiting) { return { status: 409, message: 'You’ve already sent one, and it’s waiting to be looked at' } }
+    const lab = await prisma.lab.findUnique({ where: { labId: place[1] }, select: { date: true } })
+    return { choice: { kind: 'goggles', amount: goggles.price }, standing: { schoolYear: schoolYearOfLab(lab) } }
 }
 
 router.post('/', async (req, res) => {
@@ -200,8 +230,9 @@ router.post('/', async (req, res) => {
             },
             include: PAYMENT_INCLUDE
         })
-        // paying for a spot they've been offered takes it
-        const accepted = place ? await acceptByPaying(place[0], place[1], req.userId) : false
+        // paying for a spot they've been offered takes it (renting goggles
+        // doesn't)
+        const accepted = place && body.kind !== 'goggles' ? await acceptByPaying(place[0], place[1], req.userId) : false
         res.status(201).json({ ...shape(payment), accepted })
         notifyReviewers(payment).catch((err) => console.error(`Payment email failed: ${err.message}`))
     } catch (err) {
@@ -223,7 +254,8 @@ router.post('/', async (req, res) => {
 // club has, so it's left off.
 router.get('/deadlines', async (req, res) => {
     try {
-        res.json(await duesDeadlines(prisma, req.userId))
+        const [dues, goggles] = await Promise.all([duesDeadlines(prisma, req.userId), goggleDeadlines(prisma, req.userId)])
+        res.json([...dues, ...goggles].sort((a, b) => new Date(a.at) - new Date(b.at)))
     } catch (err) {
         console.error(err.message)
         res.sendStatus(500)
@@ -245,6 +277,10 @@ router.get('/history', async (req, res) => {
             }),
             prisma.memberPayment.findMany({ where: { memberId, status: 'pending' }, include: PAYMENT_INCLUDE })
         ])
+        const rentals = await prisma.memberPayment.findMany({
+            where: { memberId, kind: 'goggles', status: 'approved', transactionId: { not: null } },
+            include: { ...PAYMENT_INCLUDE, transaction: { select: { date: true, amount: true } } }
+        })
 
         // the income rows behind the paid ones, and the payment each one came
         // from when they sent it in (for its platform and transaction id)
@@ -292,12 +328,24 @@ router.get('/history', async (req, res) => {
                         status: 'paid'
                     }
                 }),
+            ...rentals.map((payment) => ({
+                key: `goggles-${payment.paymentId}`,
+                kind: 'goggles',
+                title: `Goggle rental (${payment.lab?.title ?? 'a lab'})`,
+                amount: Number(payment.transaction?.amount ?? payment.amount),
+                method: payment.methodTitle,
+                reference: payment.reference,
+                approvedOn: day(payment.transaction?.date),
+                status: 'paid'
+            })),
             ...waiting.map((payment) => ({
                 key: `pending-${payment.paymentId}`,
                 kind: payment.kind,
                 title: payment.kind === 'dues'
                     ? `VIP dues ${payment.schoolYear}`
-                    : (payment.lab ?? payment.event)?.title ?? 'entry fee',
+                    : payment.kind === 'goggles'
+                        ? `Goggle rental (${payment.lab?.title ?? 'a lab'})`
+                        : (payment.lab ?? payment.event)?.title ?? 'entry fee',
                 amount: Number(payment.amount),
                 method: payment.methodTitle,
                 reference: payment.reference,
@@ -329,6 +377,10 @@ router.put('/:id', async (req, res) => {
         if (!payment || payment.memberId !== req.userId) { return res.status(404).json({ message: 'Payment not found' }) }
         if (payment.status !== 'pending') {
             return res.status(409).json({ message: 'It’s already been looked at. Send a new one instead' })
+        }
+        // a goggle rental stays one, and nothing else turns into one
+        if ((payment.kind === 'goggles') !== (read.fields.kind === 'goggles')) {
+            return res.status(400).json({ message: 'A goggle rental can’t be changed into another payment, or the other way round. Send a new one' })
         }
         const method = await prisma.paymentMethod.findUnique({ where: { methodId: read.fields.methodId } })
         if (!method) { return res.status(400).json({ message: 'That payment platform isn’t offered any more. Pick another' }) }

@@ -3,7 +3,7 @@
 import { useEffect, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import Sidebar from '@/components/dashboards/Sidebar'
-import { useJboardTeams, useRole, useSession, useSignOut } from '@/lib/session'
+import { useDuesPaid, useJboardTeams, useRole, useSession, useSignOut } from '@/lib/session'
 import { navFor, showInstagramFor } from '@/lib/nav'
 import { announcements as announcementsApi, eventCategories, events as eventsApi, labs as labsApi, members } from '@/lib/api'
 import EmailAllPopup from '@/components/EmailAllPopup'
@@ -247,6 +247,7 @@ function LeaderRow({ place, name }) {
 export default function OfficerDashboard() {
 	const role = useRole()
 	const teams = useJboardTeams()
+	const duesPaid = useDuesPaid()
 	// adding labs is for officers and up, not j-board (canManageLabs)
 	const labEditor = canManageLabs(useSession().user)
 	// The advisor sees this dashboard as it is and can only use "Email All":
@@ -420,7 +421,7 @@ export default function OfficerDashboard() {
 			lg:gap-6
 		">
 			<Sidebar
-				items={navFor(role, teams)}
+				items={navFor(role, teams, duesPaid)}
 				showInstagram={showInstagramFor(role)}
 				onLogout={signOut}
 			/>

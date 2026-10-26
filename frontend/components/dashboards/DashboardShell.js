@@ -1,7 +1,7 @@
 'use client'
 
 import Sidebar from '@/components/dashboards/Sidebar'
-import { useJboardTeams, useRole, useSignOut } from '@/lib/session'
+import { useDuesPaid, useJboardTeams, useRole, useSignOut } from '@/lib/session'
 import { navFor, showInstagramFor } from '@/lib/nav'
 
 // Sidebar + content frame shared by every logged-in page that isn't the
@@ -36,6 +36,7 @@ export default function DashboardShell({
 }) {
 	const role = useRole()
 	const teams = useJboardTeams()
+	const duesPaid = useDuesPaid()
 	const signOut = useSignOut()
 
 	return (
@@ -66,7 +67,7 @@ export default function DashboardShell({
 			lg:gap-6
 		`}>
 			<Sidebar
-				items={navFor(role, teams)}
+				items={navFor(role, teams, duesPaid)}
 				showInstagram={showInstagram ?? showInstagramFor(role)}
 				onLogout={signOut}
 			/>

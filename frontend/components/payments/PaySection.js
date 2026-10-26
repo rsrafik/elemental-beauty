@@ -33,8 +33,12 @@ import { FitScroll } from '@/components/labs/LabViewParts'
 // the card grows taller, and the page scrolls rather than shrinking to fit
 // (FitScroll, in LabViewParts).
 //
+// On a lab's page there's a second card on its right (under it, narrower):
+// renting goggles (GoggleCard) — for anyone signed up, VIP and staff too, so
+// it's there even when there's nothing else to pay.
+//
 // Draws nothing for someone with nothing to pay here — paid up, staff, or a
-// lab with no price and no dues set.
+// lab with no price and no dues set — and no goggles to rent.
 
 const money = (amount) => Number(amount).toLocaleString('en-US', {
 	style: 'currency',
@@ -114,7 +118,8 @@ const dueText = (at) => new Date(at).toLocaleString('en-US', {
 // On a lab's or event's page it's that one's 48 hours. Either way it names
 // whose waitlist they'd be moved to.
 function Status({ payment, noun, duesOnly = false, nextDue = null }) {
-	const what = payment.kind === 'dues' ? 'VIP dues' : `${noun} fee`
+	const goggles = payment.kind === 'goggles'
+	const what = payment.kind === 'dues' ? 'VIP dues' : goggles ? 'goggle rental' : `${noun} fee`
 	const tones = {
 		pending: 'bg-yellow-light/60 text-[#8A7500]',
 		approved: 'bg-green/40 text-[#295212]',
@@ -137,7 +142,9 @@ function Status({ payment, noun, duesOnly = false, nextDue = null }) {
 		pending: `You sent your ${what} (${money(payment.amount)} by ${payment.methodTitle}, #${payment.reference}) on ${sentOn(payment.submittedAt)}. It’s waiting to be checked.`,
 		approved: payment.kind === 'dues'
 			? `Your VIP dues were approved. You’re a VIP for ${payment.schoolYear}!`
-			: `Your ${what} was approved, and your spot is confirmed. Show your QR code at the door.`,
+			: goggles
+				? 'Your goggle rental was approved. Your goggles will be ready for you at the lab.'
+				: `Your ${what} was approved, and your spot is confirmed. Show your QR code at the door.`,
 		// on /vip, what to do about it on a line of its own, under why
 		rejected: (
 			<>
@@ -150,7 +157,9 @@ function Status({ payment, noun, duesOnly = false, nextDue = null }) {
 				)}
 			</>
 		),
-		declined: `Your ${what} (#${payment.reference}) was rejected${payment.rejectionReason ? `: ${payment.rejectionReason}` : '.'}${payment.labId || payment.eventId ? ` You’ve been moved to the waitlist.` : ''}`,
+		declined: `Your ${what} (#${payment.reference}) was rejected${payment.rejectionReason ? `: ${payment.rejectionReason}` : '.'}${goggles
+			? ' Bring your own goggles, or rent a pair again below.'
+			: payment.labId || payment.eventId ? ` You’ve been moved to the waitlist.` : ''}`,
 		reversed: `Your ${what} approval was taken back, and you’re marked unpaid again. Send it again below.`,
 	}[payment.status]
 	return (
@@ -177,6 +186,12 @@ function Status({ payment, noun, duesOnly = false, nextDue = null }) {
 const CODE_W = 112
 const CODE_GAP = 32
 const FORM_MIN = 320
+// the goggle card beside it (lg:w-[340px] on it), and the gap between
+const GOGGLES_W = 340
+const CARD_GAP = 20
+
+// a white card the way the analytics cards are
+const CARD = 'rounded-[16px] bg-white p-6 shadow-[0_0_20px_rgba(0,0,0,0.15)]'
 
 // `onSent` runs once a payment's been sent (or fixed): sending one holds their
 // spot (and takes one they were offered), so the page re-reads.
@@ -201,7 +216,7 @@ export default function PaySection({ place = {}, noun = 'lab', duesOnly = false,
 	// typing it all again.
 	const fill = (reply) => {
 		setOptions(reply)
-		const last = reply.payments[0]
+		const last = reply.payments.find((payment) => payment.kind !== 'goggles')
 		if (last?.status !== 'rejected' && last?.status !== 'reversed') return
 		setMethodId(last.methodId != null && reply.methods.some((m) => m.methodId === last.methodId) ? String(last.methodId) : '')
 		setReference(last.reference)
@@ -222,8 +237,9 @@ export default function PaySection({ place = {}, noun = 'lab', duesOnly = false,
 	}, [key])
 
 	// Approved dues make them VIP on the server; the session's copy of their
-	// role (and with it the sidebar's "become VIP") is re-read to follow.
-	const nowVip = Boolean(options?.duesPaid) && user?.role === 'member'
+	// role (and with it the sidebar's "become VIP") is re-read to follow —
+	// j-board's role stays, but their duesPaid turns.
+	const nowVip = Boolean(options?.duesPaid) && (user?.role === 'member' || (user?.role === 'jboard' && !user?.duesPaid))
 	useEffect(() => {
 		if (nowVip) refresh()
 	}, [nowVip, refresh])
@@ -251,23 +267,53 @@ export default function PaySection({ place = {}, noun = 'lab', duesOnly = false,
 	}, [fitScroll, options, editing])
 
 	if (!options) return null
-	const latest = options.payments[0] ?? null
+	// the spot's payments — a goggle rental has its own card
+	const latest = options.payments.find((payment) => payment.kind !== 'goggles') ?? null
 	const choices = options.choices.filter((choice) => !duesOnly || choice.kind === 'dues')
+
+	// a lab's goggle rental, for anyone signed up — and anyone who's sent one
+	const rentals = options.payments.filter((payment) => payment.kind === 'goggles')
+	const goggles = !duesOnly && options.goggles?.price > 0 && (options.goggles.holds || rentals.length > 0)
+		? (
+			<GoggleCard
+				key={rentals[0]?.paymentId ?? 'none'}
+				goggles={options.goggles}
+				rentals={rentals}
+				methods={options.methods}
+				place={place}
+				onSent={async () => {
+					await read()
+					await onSent?.()
+				}}
+			/>
+		)
+		: null
+	// nothing to pay to come, but goggles to rent: the notice, any line in
+	// place of the pay card, and the goggle card under it (AloneFrame)
+	const alone = (content = null) => goggles
+		? (
+			<AloneFrame>
+				{notice}
+				{content}
+				{goggles}
+			</AloneFrame>
+		)
+		: content
 
 	// /vip once they're paid up
 	if (options.duesPaid) {
-		if (!duesOnly) return null
+		if (!duesOnly) return alone()
 		return (
 			<section className="w-full max-w-[640px] mx-auto">
 				<Status payment={latest ?? { kind: 'dues', status: 'approved', schoolYear: options.schoolYear }} noun={noun} />
 			</section>
 		)
 	}
-	if (options.exempt) return null
+	if (options.exempt) return alone()
 
 	// the entry's settled for this one — at the door, or a fee they sent
 	if (options.door) {
-		return (
+		return alone(
 			<p className="
 				mt-5
 				font-vietnam
@@ -280,14 +326,17 @@ export default function PaySection({ place = {}, noun = 'lab', duesOnly = false,
 			</p>
 		)
 	}
-	if (choices.length === 0 && !latest) return notice
+	if (choices.length === 0 && !latest) return goggles ? alone() : notice
 
 	// the card's wide layout (see the form), and how wide it is: room for
 	// every QR code in one row beside the form, or the usual 880px if that's
 	// more — never past the column, which wraps them instead
+	// With the goggle card beside it the pay card starts narrower, so the two
+	// fit the column side by side.
 	const side = !duesOnly
 	const count = options.methods.length
-	const wide = Math.max(880, count * CODE_W + (count - 1) * CODE_GAP + CODE_GAP + FORM_MIN + 48)
+	const needed = count * CODE_W + (count - 1) * CODE_GAP + CODE_GAP + FORM_MIN + 48
+	const wide = goggles ? Math.max(720, needed) + CARD_GAP + GOGGLES_W : Math.max(880, needed)
 	const waiting = latest?.status === 'pending'
 	const ready = methodId !== '' && reference.trim() !== '' && kind !== '' && !busy
 	const showForm = editing != null || (!waiting && choices.length > 0)
@@ -363,14 +412,25 @@ export default function PaySection({ place = {}, noun = 'lab', duesOnly = false,
 			style={side ? { '--pay-w': `${wide}px` } : undefined}
 		>
 		{notice}
+		{/* the pay card, and a lab's goggle card on its right (under it,
+		    narrower) */}
+		<div className="
+			flex
+			flex-col
+			lg:flex-row
+			lg:items-stretch
+			gap-5
+		">
 		{/* on a lab's or event's page it's a card of its own, the way the
 		    analytics cards are (white, rounded, the soft shadow) — set apart
 		    from the page's own text above it. /vip is nothing but this, so it
 		    isn't. */}
 		<section className={`
 			w-full
+			min-w-0
+			lg:flex-1
 			text-left
-			${duesOnly ? '' : 'rounded-[16px] bg-white p-6 shadow-[0_0_20px_rgba(0,0,0,0.15)]'}
+			${duesOnly ? '' : CARD}
 		`}>
 			<h2 className="
 				font-vietnam
@@ -725,6 +785,337 @@ export default function PaySection({ place = {}, noun = 'lab', duesOnly = false,
 				</p>
 			)}
 		</section>
+		{goggles}
+		</div>
 		</div>
 	)
 }
+
+// The goggle card with nothing to pay beside it — a VIP's, staff's — centred
+// at its own width. It sits as far under the button as the button sits under
+// the lab's description (MemberLabSignup's lg:mt-[30px]), so the three read
+// as evenly spaced, and the page centres them as one block — truly centred:
+// the lab page sits its content 26px above the middle (MemberLabView's
+// lg:pb-[26px]), which the -26px under this hands back.
+function AloneFrame({ children }) {
+	return (
+		<div className="
+			mt-6
+			lg:mt-[30px]
+			lg:-mb-[26px]
+			w-full
+			max-w-[720px]
+			mx-auto
+			flex
+			flex-col
+			items-center
+			gap-5
+		">
+			{children}
+		</div>
+	)
+}
+
+// The goggle rental, on a lab's page beside the pay card: goggles are
+// required, so anyone signed up who hasn't got their own rents a pair — the
+// club's price, up to 24 hours before it starts. Sent the way any payment is
+// (the platform and the transaction id, a screenshot if they like), with no
+// QR codes of its own (they're on the pay card) and nothing to pick for what
+// it's for. Paid in the same transaction as the lab, it's the same
+// transaction id. Then it says where the rental stands, the same as the pay
+// card does, with the form back to fix one that's sent back. Keyed on the
+// newest rental, so the form starts over (or on the one sent back) when that
+// changes.
+//
+// Past the deadline with no rental in (none sent, or one sent back or turned
+// down), the card is only a note, in its middle: bring your own goggles, from
+// the university bookstore or a friend — no more rentals.
+//
+//   goggles  the API's { price, dueAt, holds, open, sent }
+//   rentals  their goggle payments for this lab, newest first
+function GoggleCard({ goggles, rentals, methods, place, onSent }) {
+	const latest = rentals[0] ?? null
+	// a sent-back (or taken-back) one opens the form on what they sent
+	const again = latest && ['rejected', 'reversed'].includes(latest.status) ? latest : null
+	const [methodId, setMethodId] = useState(() =>
+		again?.methodId != null && methods.some((m) => m.methodId === again.methodId) ? String(again.methodId) : '')
+	const [reference, setReference] = useState(again?.reference ?? '')
+	const [screenshot, setScreenshot] = useState(again?.screenshot ?? null)
+	const [editing, setEditing] = useState(null)
+	const [busy, setBusy] = useState(false)
+	const [error, setError] = useState(null)
+	const picker = useRef(null)
+
+	const waiting = latest?.status === 'pending'
+	const settled = latest && ['pending', 'approved'].includes(latest.status)
+	const showForm = goggles.open && (editing != null || !settled)
+	const ready = methodId !== '' && reference.trim() !== '' && !busy
+	const closed = goggles.dueAt && new Date(goggles.dueAt) <= new Date()
+
+	if (closed && !settled) {
+		return (
+			<section className={`
+				w-full
+				lg:w-[340px]
+				lg:shrink-0
+				min-h-[180px]
+				flex
+				flex-col
+				items-center
+				justify-center
+				text-center
+				${CARD}
+			`}>
+				<h2 className="
+					font-vietnam
+					font-semibold
+					text-[15px]
+					text-black
+				">
+					goggle rental is closed
+				</h2>
+				<p className="
+					mt-2
+					font-vietnam
+					text-[13px]
+					leading-snug
+					text-black/70
+				">
+					You must now bring your own goggles. We aren’t taking any more rentals. You can buy a pair at the university bookstore, or get one from a friend.
+				</p>
+			</section>
+		)
+	}
+
+	const startEdit = () => {
+		setEditing(latest.paymentId)
+		setMethodId(latest.methodId != null ? String(latest.methodId) : '')
+		setReference(latest.reference)
+		setScreenshot(latest.screenshot ?? null)
+		setError(null)
+	}
+	const stopEdit = () => {
+		setEditing(null)
+		setMethodId('')
+		setReference('')
+		setScreenshot(null)
+	}
+
+	const pick = async (event) => {
+		const file = event.target.files?.[0]
+		event.target.value = ''
+		if (!file) return
+		try {
+			setScreenshot(await shrinkImage(file, RECEIPT_MAX))
+		} catch (err) {
+			setError(err.message)
+		}
+	}
+
+	const submit = async (event) => {
+		event.preventDefault()
+		if (!ready) return
+		setBusy(true)
+		setError(null)
+		try {
+			const body = { kind: 'goggles', methodId: Number(methodId), reference: reference.trim(), screenshot }
+			if (editing != null) await paymentsApi.edit(editing, body)
+			else await paymentsApi.send({ ...place, ...body })
+			stopEdit()
+			await onSent()
+		} catch (err) {
+			setError(err.message)
+		} finally {
+			setBusy(false)
+		}
+	}
+
+	return (
+		<section className={`
+			w-full
+			lg:w-[340px]
+			lg:shrink-0
+			text-left
+			${CARD}
+		`}>
+			<h2 className="
+				font-vietnam
+				font-semibold
+				text-[15px]
+				text-black
+			">
+				goggle rental
+				<span className="
+					ml-2
+					font-normal
+					text-[13px]
+					text-black/50
+				">
+					{money(goggles.price)}
+				</span>
+			</h2>
+			<p className="
+				mt-1
+				font-vietnam
+				text-[13px]
+				leading-snug
+				text-black/70
+			">
+				Goggles are required in the lab. If you need a pair, rent one here with a payment of its own. If you paid for the rental in the same transaction as the lab, put that same transaction id.
+			</p>
+			{goggles.dueAt && (
+				<p className="
+					mt-2
+					font-vietnam
+					text-[13px]
+					leading-snug
+					text-black/70
+				">
+					{closed
+						? <>Rental closed <b className="text-black">{dueText(goggles.dueAt)}</b>, 24 hours before the lab.</>
+						: <>Rent by <b className="text-black">{dueText(goggles.dueAt)}</b>, 24 hours before the lab.</>}
+				</p>
+			)}
+
+			{latest && (
+				<div className="
+					mt-3
+					flex
+					items-start
+					gap-3
+				">
+					<div className="flex-1 min-w-0"><Status payment={latest} noun="lab" /></div>
+					{waiting && goggles.open && (
+						<button
+							type="button"
+							onClick={editing != null ? stopEdit : startEdit}
+							className="
+								shrink-0
+								mt-1.5
+								rounded-full
+								border
+								border-black/60
+								px-3
+								py-1
+								font-vietnam
+								font-semibold
+								text-[12px]
+								text-black
+								cursor-pointer
+								transition-colors
+								hover:bg-black
+								hover:text-cream
+							"
+						>
+							{editing != null ? 'cancel' : 'edit'}
+						</button>
+					)}
+				</div>
+			)}
+
+			{showForm && methods.length > 0 && (
+				<form onSubmit={submit} className="
+					mt-3
+					grid
+					gap-2.5
+				">
+					<Dropdown
+						value={methodId}
+						onChange={(event) => setMethodId(event.target.value)}
+						aria-label="Payment platform"
+					>
+						<option value="">payment platform</option>
+						{methods.map((method) => (
+							<option key={method.methodId} value={method.methodId}>{method.title}</option>
+						))}
+					</Dropdown>
+					<input
+						type="text"
+						value={reference}
+						onChange={(event) => setReference(event.target.value)}
+						maxLength={80}
+						placeholder="transaction id"
+						aria-label="Transaction id"
+						className={FIELD}
+					/>
+					<div className="
+						flex
+						items-center
+						justify-between
+						gap-3
+					">
+						<div className="
+							min-w-0
+							flex
+							items-center
+							gap-2
+							font-vietnam
+							text-[13px]
+							text-black/55
+						">
+							{screenshot && (
+								<img src={screenshot} alt="" className="w-8 h-8 rounded-[6px] object-cover border border-black/10" />
+							)}
+							<button
+								type="button"
+								onClick={() => picker.current?.click()}
+								className="
+									underline
+									underline-offset-2
+									cursor-pointer
+									hover:text-black
+								"
+							>
+								{screenshot ? 'change screenshot' : '+ screenshot (recommended)'}
+							</button>
+							{screenshot && (
+								<button
+									type="button"
+									onClick={() => setScreenshot(null)}
+									className="cursor-pointer hover:text-black"
+								>
+									remove
+								</button>
+							)}
+							<input ref={picker} type="file" accept="image/*" onChange={pick} className="hidden" />
+						</div>
+						<button
+							type="submit"
+							disabled={!ready}
+							title={ready ? undefined : 'Pick how you paid and type the transaction id first'}
+							className={`
+								shrink-0
+								h-[38px]
+								rounded-full
+								px-5
+								font-vietnam
+								font-semibold
+								text-[14px]
+								transition-all
+								duration-200
+								ease-out
+								${ready
+									? 'bg-salmon text-white cursor-pointer hover:-translate-y-0.5 hover:shadow-lg hover:shadow-black/20'
+									: 'bg-black/10 text-black/40 cursor-not-allowed'}
+							`}
+						>
+							{busy ? 'sending…' : editing != null ? 'save' : 'rent goggles'}
+						</button>
+					</div>
+				</form>
+			)}
+
+			{error && (
+				<p className="
+					mt-2
+					font-vietnam
+					text-[13px]
+					text-salmon-dark
+				">
+					{error}
+				</p>
+			)}
+		</section>
+	)
+}
+
