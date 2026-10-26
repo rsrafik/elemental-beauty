@@ -139,6 +139,7 @@ router.get('/me', async (req, res) => {
                         firstName: true,
                         lastName: true,
                         instagram: true,
+                        discord: true,
                         profilePicture: true,
                         emailVerified: true,
                         waiverSigned: true,
@@ -292,7 +293,7 @@ router.get('/me/history', async (req, res) => {
 // is its first half (see accountEmail.js), so the two always move together; a
 // new address has to be verified again.
 router.put('/me', async (req, res) => {
-    const { firstName, lastName, instagram, profilePicture, emailClub } = req.body
+    const { firstName, lastName, profilePicture, emailClub } = req.body
 
     const data = {}
     if (firstName !== undefined) {
@@ -309,7 +310,12 @@ router.put('/me', async (req, res) => {
         data.email = email
         data.username = username
     }
-    if (instagram !== undefined) { data.instagram = instagram }
+    // the socials card's two handles: both optional, so blank clears one
+    for (const field of ['instagram', 'discord']) {
+        if (req.body[field] !== undefined) {
+            data[field] = String(req.body[field] ?? '').trim().slice(0, 60) || null
+        }
+    }
     // the club-wide email opt-out (see schema.prisma)
     if (emailClub !== undefined) { data.emailClub = emailClub === true }
     if (profilePicture !== undefined) { data.profilePicture = profilePicture }
@@ -330,6 +336,7 @@ router.put('/me', async (req, res) => {
                 firstName: true,
                 lastName: true,
                 instagram: true,
+                discord: true,
                 profilePicture: true,
                 emailVerified: true,
                 waiverSigned: true,
@@ -347,6 +354,42 @@ router.put('/me', async (req, res) => {
     } catch (err) {
         if (err.code === 'P2002') { return res.status(409).json({ message: takenMessage(err, data.username) }) }
         if (err.code === 'P2025') { return res.status(404).json({ message: 'Account not found' }) }
+        console.error(err.message)
+        res.sendStatus(500)
+    }
+})
+
+// J-board and up: one person as /students' row popup shows them — the five
+// numbers on their /account counter, their email, the handles they've given
+// (instagram, discord) and their role (a VIP gets the crown). An account with
+// no membership yet has no counter to show, so its numbers come back zero.
+router.get('/:id/card', requireRole('jboard'), async (req, res) => {
+    const userId = parseInt(req.params.id)
+    if (isNaN(userId)) { return res.status(400).json({ message: 'Invalid member id' }) }
+    try {
+        const user = await prisma.user.findUnique({
+            where: { userId },
+            select: {
+                userId: true, username: true, email: true, firstName: true, lastName: true,
+                instagram: true, discord: true, profilePicture: true,
+                member: { select: { role: true, points: true } }
+            }
+        })
+        if (!user) { return res.status(404).json({ message: 'Not found' }) }
+        const [pastLabs, rsvpLabs, pastEvents, rsvpEvents] = await Promise.all([
+            prisma.memberLab.count({ where: { memberId: userId, attendanceStatus: 'attended' } }),
+            prisma.memberLab.count({ where: { memberId: userId, attendanceStatus: { in: HOLDING } } }),
+            prisma.memberEvent.count({ where: { memberId: userId, attendanceStatus: 'attended' } }),
+            prisma.memberEvent.count({ where: { memberId: userId, attendanceStatus: { in: HOLDING } } })
+        ])
+        const { member, ...rest } = user
+        res.json({
+            ...rest,
+            role: member?.role ?? 'user',
+            points: member?.points ?? 0,
+            stats: { pastLabs, rsvpLabs, pastEvents, rsvpEvents }
+        })
+    } catch (err) {
         console.error(err.message)
         res.sendStatus(500)
     }
@@ -678,7 +721,7 @@ router.put('/:id/role', requireRole('admin'), async (req, res) => {
                 const schoolYear = schoolYearOf(clubToday())
                 const paid = await tx.duesPayment.findUnique({ where: { memberId_schoolYear: { memberId: targetId, schoolYear } } })
                 if (paid) {
-                    throw Object.assign(new Error(`They’ve paid their ${schoolYear} dues, so they stay VIP — take the payment back on analytics’ dues card (“undo”) to make them a member`), { code: 'STILL_PAID' })
+                    throw Object.assign(new Error(`They’ve paid their ${schoolYear} dues, so they stay VIP. To make them a member, take the payment back with “undo” on the dues card in analytics`), { code: 'STILL_PAID' })
                 }
             }
 
@@ -704,7 +747,7 @@ router.put('/:id/role', requireRole('admin'), async (req, res) => {
         if (err.code === 'STILL_PAID') { return res.status(409).json({ message: err.message }) }
         // two admins promoting the same account at once: the second finds the
         // member row already made
-        if (err.code === 'P2002') { return res.status(409).json({ message: 'They were just made a member — reload to see it' }) }
+        if (err.code === 'P2002') { return res.status(409).json({ message: 'They were just made a member. Reload to see it' }) }
         console.error(err.message)
         res.sendStatus(500)
     }

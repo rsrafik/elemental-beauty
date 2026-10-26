@@ -108,6 +108,7 @@ router.get('/me', authMiddleware, async (req, res) => {
                 firstName: true,
                 lastName: true,
                 instagram: true,
+                discord: true,
                 profilePicture: true,
                 emailVerified: true,
                 waiverSigned: true,
@@ -210,7 +211,7 @@ router.post('/verify-email', async (req, res) => {
         res.json({
             promoted,
             message: promoted
-                ? 'Email verified~ Welcome, you are now a member!'
+                ? 'Email verified. Welcome, you’re a member now!'
                 : 'Email verified. Sign the waiver to become a member.'
         })
     } catch (err) {
@@ -276,7 +277,7 @@ router.post('/waiver', authMiddleware, async (req, res) => {
         res.json({
             promoted,
             message: promoted
-                ? 'Waiver signed ~ welcome, you are now a member!'
+                ? 'Waiver signed. Welcome, you’re a member now!'
                 : 'Waiver signed. Confirm your email to become a member.'
         })
     } catch (err) {
@@ -316,7 +317,7 @@ router.post('/forgot-password', async (req, res) => {
                         lines: ['Someone asked to reset the password on your Elemental Beauty account. Choose a new one here:'],
                         button: { label: 'Choose a new password', url: link },
                         after: ['The link works once, for 15 minutes. Your current password keeps working until you use it.'],
-                        reason: `You’re getting this because a password reset was requested for ${user.email}. If that wasn’t you, ignore this email — nothing has changed.`
+                        reason: `You’re getting this because a password reset was requested for ${user.email}. If that wasn’t you, ignore this email. Nothing has changed.`
                     })
                     : { text: `Someone requested a password reset for your account.\n\nYour reset code (expires in 15 minutes):\n\n${resetToken}\n\nIf this wasn't you, ignore this email.` })
             })
@@ -363,7 +364,7 @@ router.post('/reset-password', async (req, res) => {
             data: { passwordHash }
         })
 
-        res.json({ message: 'Password reset — you can now log in with your new password' })
+        res.json({ message: 'Password reset. You can log in with your new password now' })
     } catch (err) {
         console.error(err.message)
         res.sendStatus(500)
@@ -396,7 +397,7 @@ router.delete('/me', authMiddleware, async (req, res) => {
         if (user.member?.role === 'admin') {
             const admins = await prisma.member.count({ where: { role: 'admin' } })
             if (admins <= 1) {
-                return res.status(409).json({ message: 'You’re the only admin — make someone else an admin before deleting your account' })
+                return res.status(409).json({ message: 'You’re the only admin. Make someone else an admin before deleting your account' })
             }
         }
 

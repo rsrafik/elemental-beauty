@@ -9,6 +9,7 @@ import { TEAMS, teamLabel } from '@/lib/calendar'
 import { useDismiss } from '@/lib/dismiss'
 import AwardPointsDialog from '@/components/students/AwardPointsDialog'
 import ActivityLog from '@/components/students/ActivityLog'
+import StudentCard from '@/components/students/StudentCard'
 
 // /students — officer and up only. The member roster as one sheet: search,
 // sort by any column that holds a value, filter by role, add a student (an
@@ -1471,6 +1472,16 @@ export default function OfficerStudents() {
 	// the row whose "+" was pressed, or null
 	const [awarding, setAwarding] = useState(null)
 	const [showActivity, setShowActivity] = useState(false)
+	// j-board and up open anyone's profile from their row (StudentCard); the
+	// row's own controls — the checkbox, the role pill, the points "+" — keep
+	// their clicks
+	const seesProfiles = hasRole('jboard', role)
+	const [viewing, setViewing] = useState(null)
+	const openProfile = (event, student) => {
+		if (!seesProfiles) return
+		if (event.target.closest('button, input, label, a, [role=menu]')) return
+		setViewing(student.id)
+	}
 
 	// null = closed; otherwise the row whose pill was clicked and the rectangle
 	// that pill occupied, which is what the menu positions itself against.
@@ -2058,6 +2069,8 @@ export default function OfficerStudents() {
 									<tr
 										key={student.id}
 										data-student
+										onClick={(event) => openProfile(event, student)}
+										title={seesProfiles ? `See ${student.first || 'their'} profile` : undefined}
 										className={`
 											border-b
 											border-black/[0.07]
@@ -2065,6 +2078,7 @@ export default function OfficerStudents() {
 											transition-colors
 											duration-150
 											ease-out
+											${seesProfiles ? 'cursor-pointer' : ''}
 											${isSelected(student.id) ? 'bg-blue-light/25' : 'hover:bg-cream'}
 										`}
 									>
@@ -2355,6 +2369,7 @@ export default function OfficerStudents() {
 					onConfirm={deleteSelected}
 				/>
 			)}
+			{viewing != null && <StudentCard id={viewing} onClose={() => setViewing(null)} />}
 		</DashboardShell>
 	)
 }
