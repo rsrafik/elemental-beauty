@@ -289,19 +289,21 @@ export function CardNote({ children }) {
 	)
 }
 
-export function StatusPill({ status }) {
+// `bare` keeps the status's colour on the text and drops the pill behind it,
+// for a table that already has pill buttons on the same row.
+export function StatusPill({ status, bare = false }) {
+	const tint = STATUS_PILL[status] ?? 'bg-black/10 text-black/60'
 	return (
 		<span className={`
 			inline-flex
 			items-center
-			rounded-full
-			px-3
-			py-1
 			font-vietnam
 			font-semibold
 			text-xs
 			whitespace-nowrap
-			${STATUS_PILL[status] ?? 'bg-black/10 text-black/60'}
+			${bare
+				? tint.split(' ').filter((name) => name.startsWith('text-')).join(' ')
+				: `rounded-full px-3 py-1 ${tint}`}
 		`}>
 			{statusLabel(status)}
 		</span>

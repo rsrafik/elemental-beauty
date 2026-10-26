@@ -1324,7 +1324,9 @@ function RequestQueue({ requests, filter, onFilter, onApprove, onDeny, onReimbur
 			">
 				{/* fixed columns: what someone bought can be a sentence long, and left
 				    to size itself it pushes the buttons off the end of the card. The
-				    widths are what let the request cell truncate instead */}
+				    widths are what let the request cell truncate instead. Every column
+				    but the request is sized to what it holds, so any room the card
+				    gains goes to the titles */}
 				<table className="
 					w-full
 					min-w-[760px]
@@ -1332,12 +1334,12 @@ function RequestQueue({ requests, filter, onFilter, onApprove, onDeny, onReimbur
 					border-collapse
 				">
 					<colgroup>
-						<col className="w-[28%]" />
-						<col className="w-[13%]" />
-						<col className="w-[12%]" />
-						<col className="w-[11%]" />
-						<col className="w-[12%]" />
-						<col className="w-[24%]" />
+						<col />
+						<col className="w-[110px]" />
+						<col className="w-[110px]" />
+						<col className="w-[88px]" />
+						<col className="w-[86px]" />
+						<col className="w-[170px]" />
 					</colgroup>
 					<thead>
 						<tr className="border-b border-black/10">
@@ -1546,7 +1548,7 @@ function RequestQueue({ requests, filter, onFilter, onApprove, onDeny, onReimbur
 								</td>
 
 								<td className="px-2 py-3">
-									<StatusPill status={request.status} />
+									<StatusPill status={request.status} bare />
 								</td>
 
 								{/* what's offered follows the status, so nothing here can be
@@ -1558,7 +1560,7 @@ function RequestQueue({ requests, filter, onFilter, onApprove, onDeny, onReimbur
 										flex
 										items-center
 										justify-end
-										gap-2
+										gap-1.5
 									">
 										{onApprove && request.status === 'pending' && (
 											<>
@@ -1579,33 +1581,43 @@ function RequestQueue({ requests, filter, onFilter, onApprove, onDeny, onReimbur
 											</>
 										)}
 
+										{/* one step on at a time: once it's approved, denying it
+										    means undoing the approval first */}
 										{onReimburse && request.status === 'approved' && (
-											<>
-												<QueueAction
-													label="reimburse"
-													tint="bg-green text-green-dark"
-													onClick={() => onReimburse(request)}
-												>
-													<CheckIcon className="w-3 h-3" />
-												</QueueAction>
-												<QueueAction
-													label="deny"
-													tint="bg-salmon-lightest text-salmon-dark"
-													onClick={() => onDeny(request)}
-												>
-													<CloseIcon className="w-3 h-3" />
-												</QueueAction>
-											</>
+											<QueueAction
+												label="reimburse"
+												tint="bg-green text-green-dark"
+												onClick={() => onReimburse(request)}
+											>
+												<CheckIcon className="w-3 h-3" />
+											</QueueAction>
 										)}
 
+										{/* plain text, not a pill — it's the quiet way back */}
 										{onUndo && (request.status === 'approved' || request.status === 'reimbursed') && (
-											<QueueAction
-												label="undo"
-												tint="bg-black/[0.06] text-black/60"
+											<button
+												type="button"
 												onClick={() => onUndo(request)}
+												className="
+													inline-flex
+													items-center
+													gap-0.5
+													px-1
+													font-vietnam
+													text-[11px]
+													text-black/45
+													whitespace-nowrap
+													cursor-pointer
+													transition-colors
+													duration-150
+													ease-out
+													hover:text-black
+													hover:underline
+												"
 											>
 												<UndoIcon className="w-3 h-3" />
-											</QueueAction>
+												undo
+											</button>
 										)}
 
 										{(request.status === 'denied' || (request.status === 'reimbursed' && !onUndo)) && (
@@ -2312,14 +2324,14 @@ export default function TreasurerAnalytics() {
 					editable={editable}
 				/>
 
-				{/* their own receipts beside everyone's — the queue only gets
-				    the room it needs next to it on a wide screen */}
-				<div className="
+				{/* their own receipts beside everyone's on a wide screen. The
+				    queue takes the larger share, so its titles aren't cut short */}
+				<div className={`
 					grid
 					grid-cols-1
 					gap-6
-					2xl:grid-cols-3
-				">
+					${changes ? '2xl:grid-cols-[minmax(0,2fr)_minmax(0,5fr)]' : ''}
+				`}>
 					{/* the advisor has no receipts of their own to hand in, and
 					    reads the queue without settling any of it */}
 					{changes && (
@@ -2331,7 +2343,7 @@ export default function TreasurerAnalytics() {
 						/>
 					)}
 
-					<div className={changes ? '2xl:col-span-2' : '2xl:col-span-3'}>
+					<div className="min-w-0">
 						<RequestQueue
 							requests={queue}
 							filter={queueFilter}
