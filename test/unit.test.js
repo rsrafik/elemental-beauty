@@ -149,14 +149,14 @@ test('the advisor is kept off the books', () => {
     assert.equal(through('treasurer'), true)
 })
 
-test('an advisor can read anything but only change email-all and their own account', () => {
+test('an advisor can read anything but only change the club-wide email-all and their own account', () => {
     // reads, anywhere
     assert.equal(advisorMayDo('GET', '/api/transactions?from=2026-01-01'), true)
     assert.equal(advisorMayDo('HEAD', '/api/members'), true)
-    // the email-alls
+    // the club-wide email-all, but not a lab's or event's
     assert.equal(advisorMayDo('POST', '/api/members/email-all'), true)
-    assert.equal(advisorMayDo('POST', '/api/labs/12/email-all'), true)
-    assert.equal(advisorMayDo('POST', '/api/events/3/email-all'), true)
+    assert.equal(advisorMayDo('POST', '/api/labs/12/email-all'), false)
+    assert.equal(advisorMayDo('POST', '/api/events/3/email-all'), false)
     // their own account
     assert.equal(advisorMayDo('PUT', '/api/members/me'), true)
     assert.equal(advisorMayDo('DELETE', '/api/auth/me'), true)

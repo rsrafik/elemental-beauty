@@ -6,8 +6,8 @@
 // it — so a route added later is read-only to them without anyone having to
 // remember. The exceptions:
 //
-//   email-all   the dashboard's club-wide "Email All", and a lab's or event's
-//               "email all" to the people signed up for it
+//   email-all   the dashboard's club-wide "Email All" — not a lab's or event's
+//               "email all", whose check-in page they don't get the button on
 //   their own account — their profile and email settings (PUT /members/me),
 //               and the /auth routes that are about themselves (resending the
 //               verification email, the waiver, deleting their account)
@@ -19,7 +19,6 @@ const READS = new Set(['GET', 'HEAD', 'OPTIONS'])
 
 const ALLOWED = [
     ['POST', /^\/api\/members\/email-all$/],
-    ['POST', /^\/api\/(labs|events)\/\d+\/email-all$/],
     ['PUT', /^\/api\/members\/me$/],
     [null, /^\/api\/auth\//],
 ]

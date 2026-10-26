@@ -33,7 +33,8 @@ const router = express.Router()
 //        [{ kind, id, title, amount, at, by }] (duesDeadlines and
 //        goggleDeadlines in payable.js), soonest first
 //
-// Officers' and up — the check-in page's payments (the advisor reads them):
+// Officers' and up — the check-in page's payments (not the advisor's, who
+// doesn't get the button):
 //   GET  /?labId= &eventId= &kind= &status= &schoolYear=
 //   POST /:id/approve    writes the income row and settles it, and confirms
 //                        their spot in the lab or event it was sent from;
@@ -48,8 +49,6 @@ const KINDS = ['dues', 'fee', 'goggles']
 const STATUSES = ['pending', 'approved', 'rejected', 'declined', 'reversed']
 const IMAGE = /^data:image\/(png|jpe?g|webp|gif);base64,/
 const MAX_IMAGE = 3_000_000
-
-const readsBooks = (req) => runsDoor(req) || req.role === 'advisor'
 
 // labId / eventId off a query or body: ['lab', 12], ['event', 4] or null
 function placeFrom(source) {
@@ -404,7 +403,7 @@ router.put('/:id', async (req, res) => {
 })
 
 router.get('/', async (req, res) => {
-    if (!readsBooks(req)) { return res.status(403).json({ message: 'Insufficient permissions' }) }
+    if (!runsDoor(req)) { return res.status(403).json({ message: 'Insufficient permissions' }) }
     const { place, error } = placeFrom(req.query)
     if (error) { return res.status(400).json({ message: error }) }
     const { kind, status, schoolYear } = req.query

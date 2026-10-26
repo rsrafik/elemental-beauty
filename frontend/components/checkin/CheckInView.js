@@ -810,8 +810,8 @@ function PaymentsPopup({ kind, item, title, payments: all, rentals = false, read
 export default function CheckInView({ kind, id }) {
 	const api = API[kind]
 	// The advisor sees the door as it stands — who's signed up, who's in, the
-	// waitlist — and can email everyone or download the attendance, but runs
-	// none of it: no camera, no ticks or crosses, no confirmations or prelab.
+	// waitlist — and runs none of it: no camera, no ticks or crosses, and none
+	// of the header's buttons (no email all, attendance csv or payments either).
 	const role = useRole()
 	const changes = canChange(role)
 	// the treasurer and admin: payments to approve, and the grey $ to undo
@@ -896,9 +896,10 @@ export default function CheckInView({ kind, id }) {
 		}
 	}, [api, id])
 
-	// the payments too, on the roster's beat
+	// the payments too, on the roster's beat (not for the advisor, who has no
+	// payments button)
 	useEffect(() => {
-		if (!id) return
+		if (!id || !changes) return
 		let live = true
 		const place = kind === 'lab' ? { labId: id } : { eventId: id }
 		const read = () => paymentsApi.list({ ...place, status: 'pending' })
@@ -910,7 +911,7 @@ export default function CheckInView({ kind, id }) {
 			live = false
 			clearInterval(timer)
 		}
-	}, [kind, id])
+	}, [kind, id, changes])
 
 	// "start check-in" / "close check-in": before the start time, whether the
 	// people signed up get their QR code on its page yet (members' pages read
@@ -1143,7 +1144,11 @@ export default function CheckInView({ kind, id }) {
 				    sidebar's (the page column already starts level with it), and
 				    the lists under it take the room, the gap between the two
 				    staying as it is. */}
-				<div className="
+				{/* The advisor has no camera and no buttons, so the date and title
+				    are all there is: centred over the middle list and as wide as
+				    all three, so the title isn't wrapped to a column's width. The
+				    header takes the lists' 8px on the left so the middles line up. */}
+				<div className={`
 					shrink-0
 					flex
 					flex-col
@@ -1153,16 +1158,16 @@ export default function CheckInView({ kind, id }) {
 					justify-center
 					gap-6
 					lg:gap-[33.8px]
-				">
+					${changes ? '' : 'lg:pl-[calc(8px/var(--design-zoom))]'}
+				`}>
 					{changes && <QrScanner onScan={scanned} />}
 
-					<div className="
+					<div className={`
 						w-full
-						lg:w-[366px]
+						${changes ? 'lg:w-[366px] lg:text-left' : ''}
 						lg:pt-[16.9px]
 						text-center
-						lg:text-left
-					">
+					`}>
 						{item && (
 							<>
 								<p className="
@@ -1192,8 +1197,8 @@ export default function CheckInView({ kind, id }) {
 								    padding, so none of them is squeezed to its text. An
 								    event has no prelab, so its fourth cell stays empty.
 								    Before the start time, "start check-in" runs the full
-								    width under them. */}
-								<div className="
+								    width under them. None of them is the advisor's. */}
+								{changes && <div className="
 									mt-[14px]
 									mx-auto
 									lg:mx-0
@@ -1271,7 +1276,7 @@ export default function CheckInView({ kind, id }) {
 											{opening ? 'saving…' : item.checkinOpen ? 'close check-in' : 'start check-in'}
 										</EditorButton>
 									)}
-								</div>
+								</div>}
 								{((early && item.checkinOpen) || openNow) && (
 									<p className="
 										mt-[8px]
@@ -1294,16 +1299,16 @@ export default function CheckInView({ kind, id }) {
 											className="hidden"
 										/>
 										{item.prelabPdfName && (
-											<p className="
+											<p className={`
 												mt-[8px]
 												mx-auto
-												lg:mx-0
+												${changes ? 'lg:mx-0' : ''}
 												max-w-[300px]
 												font-vietnam
 												text-[12px]
 												text-black/55
 												truncate
-											">
+											`}>
 												<button
 													type="button"
 													onClick={viewPrelab}

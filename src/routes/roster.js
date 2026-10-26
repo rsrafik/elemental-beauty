@@ -1,5 +1,5 @@
 import prisma from '../prismaClient.js'
-import requireRole from '../middleware/requireRole.js'
+import requireRole, { denyRole } from '../middleware/requireRole.js'
 import { OFF_WAITLIST, expireOffers, lockParent, offerNext, sendConfirmations, sendOffer } from '../offers.js'
 import { emailAll, readMessage } from '../emailAll.js'
 import { log } from '../activity.js'
@@ -239,7 +239,8 @@ export function mountRoster(router, kind) {
         }
     })
 
-    router.get('/:id/attendance', ...staffOnly, async (req, res) => {
+    // not the advisor's: the page doesn't give them "attendance csv"
+    router.get('/:id/attendance', ...staffOnly, denyRole('advisor'), async (req, res) => {
         const parentId = parseInt(req.params.id)
         if (isNaN(parentId)) { return res.status(400).json({ message: `Invalid ${label.toLowerCase()} id` }) }
 
