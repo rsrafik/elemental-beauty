@@ -1015,15 +1015,18 @@ function Line({ label, value, onChange, placeholder, type = 'text', autoComplete
 	)
 }
 
-function DetailsCard({ draft, dirty, ready, saved, saving, error, verified, onChange, onSave, onRevert }) {
+function DetailsCard({ draft, dirty, ready, saved, saving, error, verified, onChange, onSave, onRevert, className = '' }) {
 	return (
-		<section className="
+		<section className={`
+			flex
+			flex-col
 			rounded-[26px]
 			bg-white
 			p-6
 			sm:p-8
 			shadow-[0_0_20px_rgba(0,0,0,0.12)]
-		">
+			${className}
+		`}>
 			<h2 className="
 				font-beachday
 				text-[28px]
@@ -1136,9 +1139,11 @@ function DetailsCard({ draft, dirty, ready, saved, saving, error, verified, onCh
 			</div>
 
 			{/* the footer says what state the form is in before it offers to act on
-			    it: nothing to save, something to save, or just saved */}
+			    it: nothing to save, something to save, or just saved. mt-auto keeps
+			    it on the bottom edge when the card is stretched to its neighbour */}
 			<div className="
-				mt-8
+				mt-auto
+				pt-8
 				flex
 				flex-wrap
 				items-center
@@ -2469,13 +2474,44 @@ export default function Profile() {
 
 	// What sits beside the form, if anything: your place for a member, the
 	// invitation for somebody who isn't one yet, and nothing for an officer —
-	// whose form then stops widening rather than stretching a four-field paper
-	// form across the whole window.
+	// who gets the bands beside the form instead (see below).
 	const beside = onTheBoard
 		? <RankRail board={ranking} place={mine?.place} points={mine?.points ?? 0} meId={user?.userId} />
 		: isMember ? null : <JoinCard />
 
-	const narrow = beside ? '' : 'xl:max-w-[900px]'
+	const details = (
+		<DetailsCard
+			className="h-full"
+			draft={draft}
+			dirty={dirty}
+			ready={dirty && filled && !saving}
+			saved={saved}
+			saving={saving}
+			error={error}
+			verified={profile.emailVerified && draft.email === profile.email}
+			onChange={set}
+			onSave={save}
+			onRevert={revert}
+		/>
+	)
+
+	// The bands — payments, password, emails. Under the form they each run the
+	// full width; beside it (an officer's page) they stack in a column and the
+	// emails card takes up the slack, so the column's bottom edge lands on the
+	// form's. Delete account always runs the full width along the bottom.
+	const bands = (column) => (
+		<>
+			{pays && <PaymentsCard onOpen={() => setPaymentsOpen(true)} />}
+
+			<PasswordCard onReset={() => setResetting(true)} />
+
+			<EmailPrefsCard
+				className={column ? 'flex-1' : ''}
+				user={user}
+				onSaved={refresh}
+			/>
+		</>
+	)
 
 	return (
 		// The column bleeds out to the window on every side and pads the same
@@ -2530,74 +2566,65 @@ export default function Profile() {
 					<Counter points={profile.points ?? mine?.points ?? 0} stats={profile.stats} onOpen={openHistory} />
 				)}
 
-				{/* the form and whatever's beside it pair off from xl — below that
-				    the side card goes under the form full width, because the two
-				    name fields need roughly 480px between them before they're worth
-				    having side by side and the rail wants 320 of its own */}
-				<div className={`
-					flex
-					flex-col
-					xl:flex-row
-					items-start
-					gap-6
-					sm:gap-7
-					${narrow}
-				`}>
-					<div className="
-						flex-1
-						min-w-0
-						w-full
-					">
-						<DetailsCard
-							draft={draft}
-							dirty={dirty}
-							ready={dirty && filled && !saving}
-							saved={saved}
-							saving={saving}
-							error={error}
-							verified={profile.emailVerified && draft.email === profile.email}
-							onChange={set}
-							onSave={save}
-							onRevert={revert}
-						/>
-					</div>
-
-					{beside && (
+				{beside ? (
+					<>
+						{/* the form and whatever's beside it pair off from xl — below
+						    that the side card goes under the form full width, because
+						    the two name fields need roughly 480px between them before
+						    they're worth having side by side and the rail wants 320 of
+						    its own */}
 						<div className="
-							w-full
-							xl:w-[340px]
-							shrink-0
+							flex
+							flex-col
+							xl:flex-row
+							items-start
+							gap-6
+							sm:gap-7
 						">
-							{beside}
-						</div>
-					)}
-				</div>
+							<div className="
+								flex-1
+								min-w-0
+								w-full
+							">
+								{details}
+							</div>
 
-				{/* the password runs the full width under the form: it belongs to it
-				    but doesn't go through its save button, and a band across the
-				    bottom is the clearest way to say so */}
-				{pays && (
-					<PaymentsCard
-						className={narrow}
-						onOpen={() => setPaymentsOpen(true)}
-					/>
+							<div className="
+								w-full
+								xl:w-[340px]
+								shrink-0
+							">
+								{beside}
+							</div>
+						</div>
+
+						{bands(false)}
+					</>
+				) : (
+					// Nothing to sit beside the form, so the bands do: from xl the
+					// form takes three fifths and the bands stack in the other two,
+					// filling the width instead of leaving it empty.
+					<div className="
+						grid
+						grid-cols-1
+						xl:grid-cols-[minmax(0,3fr)_minmax(0,2fr)]
+						gap-5
+						sm:gap-6
+					">
+						{details}
+
+						<div className="
+							flex
+							flex-col
+							gap-5
+							sm:gap-6
+						">
+							{bands(true)}
+						</div>
+					</div>
 				)}
 
-				<PasswordCard
-					className={narrow}
-					onReset={() => setResetting(true)}
-				/>
-
-				<EmailPrefsCard
-					className={narrow}
-					user={user}
-					onSaved={refresh}
-				/>
-
-				<DeleteAccountCard
-					className={narrow}
-					onDelete={() => setDeleting(true)}
-				/>
+				<DeleteAccountCard onDelete={() => setDeleting(true)} />
 			</div>
 
 			{historyOpen && (
