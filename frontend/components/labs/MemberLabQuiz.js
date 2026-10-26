@@ -203,7 +203,7 @@ function ScorePopup({ result, onRetake, onClose }) {
 							mt-4
 							text-center
 						">
-							You got 100% — you can now access the lab.
+							You got 100%! The lab is open to you now.
 						</p>
 						<div className="
 							mt-8
@@ -387,7 +387,7 @@ function LabQuiz({ lab, onPassed }) {
 					text-black/[0.53]
 					text-center
 				">
-					This lab doesn&apos;t have a quiz yet — check back soon.
+					This lab doesn&apos;t have a quiz yet. Check back soon.
 				</p>
 			) : (
 				<>

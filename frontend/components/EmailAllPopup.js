@@ -60,7 +60,7 @@ export default function EmailAllPopup({ count, who, defaultSubject = '', address
 			await navigator.clipboard.writeText(addresses.join('; '))
 			setStatus({ text: `${addresses.length} ${addresses.length === 1 ? 'address' : 'addresses'} copied` })
 		} catch {
-			setStatus({ error: true, text: 'Couldn’t copy — allow clipboard access and try again' })
+			setStatus({ error: true, text: 'Couldn’t copy. Allow clipboard access and try again' })
 		}
 	}
 
@@ -75,8 +75,8 @@ export default function EmailAllPopup({ count, who, defaultSubject = '', address
 						mt-3
 					">
 						{count > 0
-							? <>Goes to <span className="font-semibold text-black">{count} {count === 1 ? 'person' : 'people'}</span> — {who} — from the club’s email, in BCC. Replies go to the club’s inbox.</>
-							: <>Nobody to send to yet — {who}.</>}
+							? <>Goes to <span className="font-semibold text-black">{count} {count === 1 ? 'person' : 'people'}</span> ({who}) from the club’s email, in BCC. Replies go to the club’s inbox.</>
+							: <>Nobody to send to yet. This goes to {who}.</>}
 					</p>
 
 					<label className="block mt-5">

@@ -639,8 +639,8 @@ export default function LabEditor({ id }) {
 			setDirty(false)
 			setStatus({
 				text: saved.published
-					? 'Draft saved — members still see the published version'
-					: 'Draft saved — members can’t see this lab until it’s published',
+					? 'Draft saved. Members still see the published version'
+					: 'Draft saved. Members can’t see this lab until it’s published',
 			})
 		} catch (err) {
 			setStatus({ error: true, text: err.message })
@@ -854,7 +854,7 @@ export default function LabEditor({ id }) {
 								min="0"
 								step="0.01"
 								inputMode="decimal"
-								placeholder="$ — don’t add if free"
+								placeholder="$ (leave blank if free)"
 								{...field('price')}
 								aria-invalid={flagged.has('price')}
 								className={`

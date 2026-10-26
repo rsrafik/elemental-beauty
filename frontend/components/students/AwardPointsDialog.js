@@ -73,8 +73,8 @@ export default function AwardPointsDialog({ student, onClose, onAwarded }) {
 			onAwarded(student.id, reply.points, reply.awardsClaimed)
 			setStatus({
 				text: undo
-					? `took back the points for ${award.label} — ${student.first} has ${reply.points} now`
-					: `+${award.points} for ${award.label} — ${student.first} has ${reply.points} now`,
+					? `took back the points for ${award.label}. ${student.first} has ${reply.points} now`
+					: `+${award.points} for ${award.label}. ${student.first} has ${reply.points} now`,
 			})
 		} catch (err) {
 			setStatus({ error: true, text: err.message })
@@ -95,7 +95,7 @@ export default function AwardPointsDialog({ student, onClose, onAwarded }) {
 					">
 						<span className="font-semibold text-black">{student.first} {student.last}</span> has{' '}
 						<span className="font-semibold text-black tabular-nums">{points}</span>{' '}points. Type a new total,
-						or pick what they did — either way it&apos;s logged under your name on the activity log.
+						or pick what they did. Either way it&apos;s logged under your name on the activity log.
 					</p>
 
 					<form
@@ -172,7 +172,7 @@ export default function AwardPointsDialog({ student, onClose, onAwarded }) {
 										onClick={() => give(award)}
 										disabled={busy !== null}
 										aria-pressed={award.once ? had : undefined}
-										title={had ? `Already given — click to take the ${award.points} points back` : undefined}
+										title={had ? `Already given. Click to take the ${award.points} points back` : undefined}
 										className={`
 											w-full
 											flex

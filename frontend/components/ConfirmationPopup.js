@@ -112,7 +112,7 @@ export default function ConfirmationPopup({ count, what, prelab, startsAt, onSen
 								${passed || afterStart ? 'text-salmon-dark font-semibold' : ''}
 							`}>
 								{passed
-									? 'That time has already passed — pick one ahead.'
+									? 'That time has already passed. Pick a later one.'
 									: afterStart
 										? `That’s after ${what} starts, so nobody would lose their spot before it.`
 										: `Anyone who hasn’t confirmed by then may lose their spot to the next person on the waitlist, and moves to the back of it.`}
@@ -120,7 +120,7 @@ export default function ConfirmationPopup({ count, what, prelab, startsAt, onSen
 							<p className={`${line} ${prelab ? 'text-green-dark font-semibold' : ''}`}>
 								{prelab
 									? `The prelab (${prelab}) will be attached.`
-									: 'No prelab uploaded — it’ll go without one.'}
+									: 'No prelab uploaded, so it’ll go without one.'}
 							</p>
 						</>
 					) : (

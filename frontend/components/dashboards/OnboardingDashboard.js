@@ -262,12 +262,12 @@ export default function OnboardingDashboard() {
 					">
 						<Step number={1} done={verified} title="confirm your email">
 							{verified ? (
-								<>Confirmed — {user?.email}.</>
+								<>Confirmed: {user?.email}.</>
 							) : (
 								<>
 									We sent a link to{' '}
 									<span className="font-semibold text-black">{user?.email}</span>.
-									Open it to confirm — check your spam folder if it isn&rsquo;t there.
+									Open it to confirm, and check your spam folder if it isn&rsquo;t there.
 									<div>
 										<button
 											type="button"

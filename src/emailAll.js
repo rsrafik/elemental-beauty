@@ -34,8 +34,8 @@ export async function emailAll({ recipients, subject, message, reason }) {
         const configured = (process.env.GMAIL_USER && process.env.GMAIL_APP_PASSWORD) || process.env.RESEND_API_KEY
         if (!ok && configured) {
             throw new Error(i === 0
-                ? 'The email didn’t go out — check the server log'
-                : `Only the first ${i} went out — check the server log`)
+                ? 'The email didn’t go out. Check the server log'
+                : `Only the first ${i} went out. Check the server log`)
         }
     }
     return list.length

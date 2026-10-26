@@ -252,7 +252,7 @@ export default function QuizEditor({ id }) {
 			}
 			setHasDraft(true)
 			setDirty(false)
-			setStatus({ text: 'Draft saved — members still see the published quiz' })
+			setStatus({ text: 'Draft saved. Members still see the published quiz' })
 		} catch (err) {
 			setStatus({ error: true, text: err.message })
 		} finally {

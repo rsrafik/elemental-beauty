@@ -27,7 +27,7 @@ function Verify() {
 				(reply) => ({ ok: true, promoted: reply.promoted, message: reply.message }),
 				(err) => ({ ok: false, message: err.message })
 			)
-			: Promise.resolve({ ok: false, message: 'This link is missing its code — open the one in the email again.' })
+			: Promise.resolve({ ok: false, message: 'This link is missing its code. Open the one in the email again.' })
 		run.then(async (outcome) => {
 			if (outcome.ok && getToken()) await refresh()
 			if (live) setResult(outcome)
@@ -44,7 +44,7 @@ function Verify() {
 		title = result.ok ? (result.promoted ? "you're in!" : 'email confirmed') : "that didn't work"
 		body = result.ok
 			? result.promoted
-				? 'Your email’s confirmed and the waiver’s signed — you’re an Elementist. Labs, events and the calendar are open.'
+				? 'Your email’s confirmed and the waiver’s signed, so you’re an Elementist. Labs, events and the calendar are open.'
 				: 'Thanks! One step left: sign the waiver from your dashboard and you’re a member.'
 			: `${result.message}. You can send yourself a new link from your dashboard.`
 	}

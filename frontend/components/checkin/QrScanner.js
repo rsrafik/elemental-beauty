@@ -157,7 +157,7 @@ export default function QrScanner({ onScan }) {
 	const prompt = {
 		idle: 'click to start scanning',
 		starting: 'starting camera…',
-		blocked: 'camera blocked — allow it in the address bar, then click',
+		blocked: 'camera blocked. Allow it in the address bar, then click',
 		none: 'no camera found',
 	}[state]
 
