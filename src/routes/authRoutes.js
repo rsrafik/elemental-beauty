@@ -39,15 +39,16 @@ async function promoteIfEligible(userId) {
 }
 
 
-// The sign-up form asks for an email, a password, the person's name and an
-// instagram handle it marks optional. The username isn't asked for: it's the
-// part of the email before the @ (see accountEmail.js), and any domain will do.
+// The sign-up form asks for an email, a password, the person's name and the
+// instagram and discord handles it marks optional. The username isn't asked
+// for: it's the part of the email before the @ (see accountEmail.js), and any
+// domain will do.
 //
 // What comes out is an account with NO member row — role 'user'. That's the
 // onboarding dashboard, and the labs / events / calendar menu isn't offered
 // until the waiver promotes them.
 router.post('/register', async (req, res) => {
-    const { password, firstName, lastName, instagram } = req.body
+    const { password, firstName, lastName, instagram, discord } = req.body
 
     if (!req.body.email || !password) {
         return res.status(400).json({ message: 'email and password are required' })
@@ -72,7 +73,8 @@ router.post('/register', async (req, res) => {
                 passwordHash,
                 firstName: firstName?.trim() || '',
                 lastName: lastName?.trim() || '',
-                instagram: instagram?.trim() || null
+                instagram: instagram?.trim() || null,
+                discord: discord?.trim() || null
             }
         })
 

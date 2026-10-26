@@ -604,6 +604,7 @@ function SignUp({ front, onCome, onSubmit, onDone }) {
 		password: '',
 		verify: '',
 		instagram: '',
+		discord: '',
 	})
 	const [error, setError] = useState(null)
 	const [busy, setBusy] = useState(false)
@@ -645,6 +646,7 @@ function SignUp({ front, onCome, onSubmit, onDone }) {
 				email: form.email.trim(),
 				password: form.password,
 				instagram: form.instagram.trim(),
+				discord: form.discord.trim(),
 			})
 			onDone()
 		} catch (err) {
@@ -764,14 +766,36 @@ function SignUp({ front, onCome, onSubmit, onDone }) {
 			/>
 			<p className={`${HINT} mt-[10px]`}>must be the same password</p>
 
-			<p className={`${LABEL} mt-[23px]`}>INSTA USERNAME (OPTIONAL)</p>
-			<input
-				type="text"
-				name="instagram"
-				value={form.instagram}
-				onChange={set('instagram')}
-				className={`${FIELD} mt-[8px] bg-[#FFCC6E]`}
-			/>
+			{/* the two handles share a line like the names do — both optional,
+			    which the placeholder says instead of the label */}
+			<div className="
+				mt-[23px]
+				flex
+				gap-[14px]
+			">
+				<div className="min-w-0 flex-1">
+					<p className={LABEL}>INSTAGRAM</p>
+					<input
+						type="text"
+						name="instagram"
+						placeholder="optional"
+						value={form.instagram}
+						onChange={set('instagram')}
+						className={`${FIELD} mt-[8px] bg-[#FFCC6E] placeholder:text-black/40 placeholder:italic`}
+					/>
+				</div>
+				<div className="min-w-0 flex-1">
+					<p className={LABEL}>DISCORD</p>
+					<input
+						type="text"
+						name="discord"
+						placeholder="optional"
+						value={form.discord}
+						onChange={set('discord')}
+						className={`${FIELD} mt-[8px] bg-[#FFCC6E] placeholder:text-black/40 placeholder:italic`}
+					/>
+				</div>
+			</div>
 
 			<div className="
 				mt-[24px]

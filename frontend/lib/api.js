@@ -141,12 +141,12 @@ export const auth = {
 		api('/auth/login', { method: 'POST', body: { username, password }, auth: false }),
 
 	// Signing up gets an account and nothing else — role 'user', no membership.
-	// The instagram handle is the one optional field on the form. There's no
-	// username to send: the server takes it from the email, before the @.
-	register: ({ firstName, lastName, email, password, instagram }) =>
+	// The instagram and discord handles are the optional fields on the form.
+	// There's no username to send: the server takes it from the email, before the @.
+	register: ({ firstName, lastName, email, password, instagram, discord }) =>
 		api('/auth/register', {
 			method: 'POST',
-			body: { firstName, lastName, email, password, instagram },
+			body: { firstName, lastName, email, password, instagram, discord },
 			auth: false,
 		}),
 
