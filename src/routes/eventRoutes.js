@@ -6,7 +6,7 @@ import { onTreasuryTeam } from '../middleware/treasury.js'
 import { eventPoints } from '../points.js'
 import { mountRoster, requireNotAttendee } from './roster.js'
 import { OFFER_HOURS, acceptOffer, confirmSpot, expireOffers, lockParent, offerNext, startsAt } from '../offers.js'
-import { payable, paymentDueAt } from '../payable.js'
+import { dueOverrideError, payable, paymentDueAt, readDueOverride, resweep } from '../payable.js'
 import { owingLate } from '../payments.js'
 import { log } from '../activity.js'
 import { readEndTime } from '../clubTime.js'
@@ -324,6 +324,8 @@ router.post('/', requireRole('officer'), async (req, res) => {
     if (meetingError) { return res.status(400).json({ message: meetingError }) }
     const { price, error: priceError } = readPrice(req.body.nonmemberPrice)
     if (priceError) { return res.status(400).json({ message: priceError }) }
+    const { due, error: dueError } = readDueOverride(req.body.paymentDueOverride)
+    if (dueError) { return res.status(400).json({ message: dueError }) }
     const forJboard = track === 'jboard'
     const viewer = await viewerOf(req)
     // j-board files for their own team or all of j-board — another team's
@@ -359,6 +361,11 @@ router.post('/', requireRole('officer'), async (req, res) => {
     }
     const { endTime, error: endError } = readEndTime(req.body.endTime ?? null, startTime || null)
     if (endError) { return res.status(400).json({ message: endError }) }
+    // a due date of its own only where anyone pays — a members-only one, as
+    // the price
+    const paymentDueOverride = (track ?? 'members') === 'members' ? due ?? null : null
+    const badDue = dueOverrideError({ date: eventDate, startTime: startTime || null, paymentDueOverride })
+    if (badDue) { return res.status(400).json({ message: badDue }) }
     if (capacity !== undefined && capacity !== null && (!Number.isInteger(capacity) || capacity < 1)) {
         return res.status(400).json({ message: 'capacity must be a positive integer (or omitted for unlimited)' })
     }
@@ -384,6 +391,7 @@ router.post('/', requireRole('officer'), async (req, res) => {
                 // only a members-only event charges anyone at the door
                 // (asksDues) — the column's default 'members' counts too
                 nonmemberPrice: (track ?? 'members') === 'members' ? price ?? 0 : 0,
+                paymentDueOverride,
                 hideFromEvents: hideFromEvents ?? false,
                 links,
                 createdById: req.userId
@@ -445,6 +453,9 @@ router.put('/:id', requireRole('officer'), async (req, res) => {
     const priceRead = readPrice(req.body.nonmemberPrice)
     if (priceRead.error) { return res.status(400).json({ message: priceRead.error }) }
     if (priceRead.price !== undefined) { data.nonmemberPrice = priceRead.price }
+    const dueRead = readDueOverride(req.body.paymentDueOverride)
+    if (dueRead.error) { return res.status(400).json({ message: dueRead.error }) }
+    if (dueRead.due !== undefined) { data.paymentDueOverride = dueRead.due }
     if (req.body.startTime !== undefined) {
         if (req.body.startTime && !TIME.test(req.body.startTime)) {
             return res.status(400).json({ message: 'startTime must be HH:MM' })
@@ -480,13 +491,20 @@ router.put('/:id', requireRole('officer'), async (req, res) => {
         // a team only on a j-board event, a seat cap only off one, a meeting
         // link only on a MEETING_TRACKS one — whichever track it ends up on after
         // this edit
-        const existing = await prisma.event.findUnique({ where: { eventId }, select: { track: true, team: true, startTime: true, endTime: true } })
+        const existing = await prisma.event.findUnique({
+            where: { eventId },
+            select: { track: true, team: true, date: true, startTime: true, endTime: true, paymentDueOverride: true }
+        })
         const track = data.track ?? existing.track
         if (UNCAPPED_TRACKS.includes(track)) { data.capacity = null }
         if (track !== 'jboard') { data.team = null }
         if (!MEETING_TRACKS.includes(track)) { data.meetingUrl = null }
-        // and a non-member price only on a members-only one
-        if (track !== 'members') { data.nonmemberPrice = 0 }
+        // and a non-member price, and a due date to pay it by, only on a
+        // members-only one
+        if (track !== 'members') {
+            data.nonmemberPrice = 0
+            data.paymentDueOverride = null
+        }
         // the end time against the start it'll have after this edit: one
         // sent is checked; one left alone goes if the start went, or moved
         // past it
@@ -500,6 +518,14 @@ router.put('/:id', requireRole('officer'), async (req, res) => {
         }
         if (otherTeam({ track, team: data.team !== undefined ? data.team : existing.team }, viewer)) {
             return res.status(403).json({ message: 'You can only move j-board events to your own team' })
+        }
+        // the due date against the day and start it'll have; moved, the sweep
+        // that enforces it is owed again if it's still to come
+        if (data.paymentDueOverride !== undefined || data.date !== undefined || data.startTime !== undefined) {
+            const after = { ...existing, ...data }
+            const badDue = dueOverrideError(after, existing.paymentDueOverride)
+            if (badDue) { return res.status(400).json({ message: badDue }) }
+            Object.assign(data, resweep(after))
         }
         const event = await prisma.event.update({ where: { eventId }, data, include: { createdBy: CREATOR } })
         res.json(withCreator(event, req.role))

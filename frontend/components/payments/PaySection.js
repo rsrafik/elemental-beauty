@@ -451,8 +451,9 @@ export default function PaySection({ place = {}, noun = 'lab', duesOnly = false,
 				)}
 			</h2>
 
-			{/* when it's due — a week before, 11:59 PM, or their confirmation
-			    deadline if that's sooner — and what happens if it isn't; and
+			{/* when it's due — a week before, 11:59 PM, or the date an officer
+			    set, or their confirmation deadline if that's sooner — and
+			    what happens if it isn't; and
 			    that it isn't refunded. A lab's or event's only: /vip's dues
 			    aren't for one day. */}
 			{!duesOnly && !hideDue && options.dueAt && (
@@ -463,7 +464,7 @@ export default function PaySection({ place = {}, noun = 'lab', duesOnly = false,
 					text-black/70
 				">
 					{new Date(options.dueAt) > new Date()
-						? <>Pay {{ confirm: 'by your confirmation deadline,', late: 'within 48 hours, by' }[options.dueBy] ?? 'a week before, by'} <b className="text-black">{dueText(options.dueAt)}</b>, or you’ll be moved to the waitlist.</>
+						? <>Pay {{ set: 'by', confirm: 'by your confirmation deadline,', late: 'within 48 hours, by' }[options.dueBy] ?? 'a week before, by'} <b className="text-black">{dueText(options.dueAt)}</b>, or you’ll be moved to the waitlist.</>
 						: <>Payment was due <b className="text-black">{dueText(options.dueAt)}</b>. Pay now to keep your spot.</>}
 				</p>
 			)}

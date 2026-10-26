@@ -8,9 +8,10 @@ import { DUES_EXEMPT, asksDues, schoolYearOf } from './dues.js'
 // (approving one, and moving people who didn't pay to the waitlist).
 //
 // The due date: a week before the lab or event, at 11:59 PM on the club's
-// clock — a Friday lab's is the Friday before — or, for someone asked to
-// confirm their spot by an earlier deadline than that (the check-in page's
-// "confirmation"), that deadline. Anyone signed up who still owes and hasn't
+// clock — a Friday lab's is the Friday before — unless an officer set one of
+// its own in the check-in page's payments popup (paymentDueOverride), or,
+// for someone asked to confirm their spot by an earlier deadline than that
+// (the check-in page's "confirmation"), that deadline. Anyone signed up who still owes and hasn't
 // sent anything in by then is moved to the waitlist. Someone who comes to owe
 // after it's passed — signed up late, or had their entry taken back — gets 48
 // hours from then instead (LATE_HOURS, `payBy` on their row), with a reminder
@@ -58,21 +59,62 @@ export function offerLapse(link, parent, now = new Date()) {
 // `confirmBy` and `payBy`) says: { at, by } — `by` is
 //
 //   'week'     the day a week before, at 23:59 club time
-//   'confirm'  their confirmation deadline, when it's earlier than that
+//   'set'      the one an officer set in its place (paymentDueOverride)
+//   'confirm'  their confirmation deadline, when it's earlier than either
 //   'late'     the 48 hours they were given, owing after it had passed
 //
 // Null for a draft with no date.
 export function paymentDue(row, link = null) {
     if (!row?.date) return null
     if (link?.payBy) return { at: new Date(link.payBy), by: 'late' }
-    const day = new Date(row.date.getTime() - 7 * 86_400_000).toISOString().slice(0, 10)
-    const week = clubInstant(day, '23:59')
+    const usual = row.paymentDueOverride
+        ? { at: new Date(row.paymentDueOverride), by: 'set' }
+        : { at: weekBefore(row), by: 'week' }
     const confirm = link?.confirmBy ? new Date(link.confirmBy) : null
-    return confirm && confirm < week ? { at: confirm, by: 'confirm' } : { at: week, by: 'week' }
+    return confirm && confirm < usual.at ? { at: confirm, by: 'confirm' } : usual
+}
+
+// the usual due date: the day a week before, at 23:59 club time
+function weekBefore(row) {
+    const day = new Date(row.date.getTime() - 7 * 86_400_000).toISOString().slice(0, 10)
+    return clubInstant(day, '23:59')
 }
 
 export function paymentDueAt(row, link = null) {
     return paymentDue(row, link)?.at ?? null
+}
+
+// A due date set by hand (paymentDueOverride) as a request sent it: an ISO
+// instant, or blank / null for the usual week before. Returns { due } (absent
+// when the body didn't carry one) or { error }.
+export function readDueOverride(value) {
+    if (value === undefined) return {}
+    if (value === null || value === '') return { due: null }
+    const due = typeof value === 'string' ? new Date(value) : null
+    if (!due || isNaN(due.getTime())) return { error: 'paymentDueOverride must be a date and time' }
+    return { due }
+}
+
+// What's wrong with the due date set on `row` (its date, startTime and
+// paymentDueOverride as they'll be after a save), or null. It has to come
+// before it starts, and one being changed can't already have passed — the
+// hourly sweep would move everyone owing to the waitlist at once. `was` is
+// the override it had before (undefined on a new one).
+export function dueOverrideError(row, was, now = new Date()) {
+    const due = row.paymentDueOverride ? new Date(row.paymentDueOverride) : null
+    if (!due || !row.date) return null
+    if (due.getTime() >= startsAt(row).getTime()) return 'The payment due date has to be before it starts'
+    const changed = !was || new Date(was).getTime() !== due.getTime()
+    if (changed && due.getTime() <= now.getTime()) return 'That payment due date has already passed'
+    return null
+}
+
+// After a save that moved a lab's or event's due date (its own, or its day):
+// a due date that's still to come is owed the sweep again (paymentsDueSweptAt
+// in src/payments.js). Merged into the update's data.
+export function resweep(row, now = new Date()) {
+    const due = paymentDueAt(row)
+    return due && due.getTime() > now.getTime() ? { paymentsDueSweptAt: null } : {}
 }
 
 // 'Friday, October 22 at 11:59 PM'
@@ -80,13 +122,15 @@ export function dueText(at) {
     return clubFormat(at, { weekday: 'long', month: 'long', day: 'numeric', hour: 'numeric', minute: '2-digit' })
 }
 
-// 'a week before it starts, by Friday, October 22 at 11:59 PM' / 'by your
+// 'a week before it starts, by Friday, October 22 at 11:59 PM' / 'by Monday,
+// October 18 at 5:00 PM' (one set by hand) / 'by your
 // confirmation deadline, Tuesday, October 12 at 5:00 PM' / 'within 48 hours,
 // by …', or null
 export function dueWhen(row, link = null) {
     const due = paymentDue(row, link)
     if (!due) return null
     if (due.by === 'late') return `within ${LATE_HOURS} hours, by ${dueText(due.at)}, since the usual due date had already passed`
+    if (due.by === 'set') return `by ${dueText(due.at)}`
     return due.by === 'confirm'
         ? `by your confirmation deadline, ${dueText(due.at)}`
         : `a week before it starts, by ${dueText(due.at)}`
@@ -128,7 +172,7 @@ export function reviseBy(reviewedAt) {
 //     dueAt      when it's due (a week before, 11:59 PM, or their
 //                confirmation deadline if that's sooner, or the 48 hours
 //                they were given owing late), or null
-//     dueBy      'week' / 'confirm' / 'late' — which it is
+//     dueBy      'week' / 'set' / 'confirm' / 'late' — which it is
 //     sent       they've sent a payment in that covers it, waiting or
 //                approved (paymentSent)
 //     fixBy      their newest payment for it was sent back: the new due

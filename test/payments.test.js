@@ -26,7 +26,7 @@ const QR = 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAA
 
 let prisma, routes
 const tag = `p${Date.now().toString(36)}`
-const made = { users: [], labs: [], methods: [] }
+const made = { users: [], labs: [], events: [], methods: [] }
 
 before(async () => {
     if (skip) { return }
@@ -35,6 +35,7 @@ before(async () => {
         payments: (await import('../src/routes/paymentRoutes.js')).default,
         methods: (await import('../src/routes/paymentMethodRoutes.js')).default,
         labs: (await import('../src/routes/labRoutes.js')).default,
+        events: (await import('../src/routes/eventRoutes.js')).default,
         dues: (await import('../src/routes/duesRoutes.js')).default,
         members: (await import('../src/routes/memberRoutes.js')).default,
         reimbursements: (await import('../src/routes/reimbursementRoutes.js')).default
@@ -56,6 +57,7 @@ after(async () => {
     await prisma.transaction.deleteMany({ where: { source: { contains: tag } } })
     await prisma.activityLog.deleteMany({ where: { OR: [{ targetId: users }, { actorId: users }] } })
     await prisma.lab.deleteMany({ where: { labId: { in: made.labs } } })
+    await prisma.event.deleteMany({ where: { eventId: { in: made.events } } })
     await prisma.paymentMethod.deleteMany({ where: { methodId: { in: made.methods } } })
     await prisma.user.deleteMany({ where: { userId: users } })
     await prisma.yearTarget.deleteMany({ where: { schoolYear: YEAR } })
@@ -494,6 +496,80 @@ test('a payment is due the day a week before, at 11:59 PM on the club’s clock'
     assert.equal(paymentDue(row, { confirmBy: new Date('2026-10-27T21:00:00Z') }).by, 'week')
     // owing late, their own 48 hours win
     assert.equal(paymentDue(row, { payBy: new Date('2026-10-28T12:00:00Z') }).by, 'late')
+})
+
+test('a due date set by hand takes the week before’s place', { skip: false }, async () => {
+    const { paymentDue, dueWhen, dueOverrideError } = await import('../src/payable.js')
+    const set = new Date('2026-10-27T21:00:00Z')
+    const row = { date: new Date('2026-10-30'), startTime: '17:00', paymentDueOverride: set }
+    assert.deepEqual(paymentDue(row), { at: set, by: 'set' })
+    assert.match(dueWhen(row), /^by Tuesday, October 27 at 5:00 PM$/)
+    // a sooner confirmation deadline still wins; a later one doesn't
+    assert.equal(paymentDue(row, { confirmBy: new Date('2026-10-26T21:00:00Z') }).by, 'confirm')
+    assert.equal(paymentDue(row, { confirmBy: new Date('2026-10-28T21:00:00Z') }).by, 'set')
+    // it has to come before it starts (5:00 PM EDT is 21:00Z)
+    const now = new Date('2026-10-01T00:00:00Z')
+    assert.equal(dueOverrideError(row, undefined, now), null)
+    assert.match(dueOverrideError({ ...row, paymentDueOverride: new Date('2026-10-30T21:00:00Z') }, undefined, now), /before it starts/)
+    // and one being changed can't already have passed; one left as it was can
+    assert.match(dueOverrideError(row, undefined, new Date('2026-10-28T00:00:00Z')), /already passed/)
+    assert.equal(dueOverrideError(row, set, new Date('2026-10-28T00:00:00Z')), null)
+})
+
+test('an officer sets a lab’s due date; members see it and the sweep keeps to it', { skip }, async () => {
+    const officer = await person('officer')
+    const member = await person('member')
+    const labId = await lab([member])
+    const due = '2033-02-05T22:00:00.000Z'
+    await as(officer, 'officer', 'labs', async (base) => {
+        // after it starts, or already passed: refused
+        assert.equal((await send(`${base}/${labId}`, 'PUT', { paymentDueOverride: '2033-02-10T12:00:00.000Z' })).status, 400)
+        assert.equal((await send(`${base}/${labId}`, 'PUT', { paymentDueOverride: '2020-01-01T00:00:00.000Z' })).status, 400)
+        assert.equal((await send(`${base}/${labId}`, 'PUT', { paymentDueOverride: 'soon' })).status, 400)
+        const saved = await (await send(`${base}/${labId}`, 'PUT', { paymentDueOverride: due })).json()
+        assert.equal(saved.paymentDueOverride, due)
+    })
+    await as(member, 'member', 'labs', async (base) => {
+        const seen = await json(`${base}/${labId}`)
+        assert.equal(seen.paymentDueAt, due)
+        assert.equal(seen.pay.dueAt, due)
+        assert.equal(seen.pay.dueBy, 'set')
+    })
+
+    const { enforcePaymentRules } = await import('../src/payments.js')
+    const status = async () => (await prisma.memberLab.findUnique({ where: { memberId_labId: { memberId: member, labId } } })).attendanceStatus
+    // the usual week before (Feb 3) passes and nothing happens; the date set does
+    await enforcePaymentRules(new Date('2033-02-04T12:00:00Z'))
+    assert.equal(await status(), 'rsvped')
+    await enforcePaymentRules(new Date(new Date(due).getTime() + 60_000))
+    assert.equal(await status(), 'waitlisted')
+    assert.ok((await prisma.lab.findUnique({ where: { labId } })).paymentsDueSweptAt)
+
+    // moved to one still to come, it's enforced again; blank goes back to
+    // the week before
+    await as(officer, 'officer', 'labs', async (base) => {
+        await send(`${base}/${labId}`, 'PUT', { paymentDueOverride: '2033-02-08T22:00:00.000Z' })
+        assert.equal((await prisma.lab.findUnique({ where: { labId } })).paymentsDueSweptAt, null)
+        assert.equal((await (await send(`${base}/${labId}`, 'PUT', { paymentDueOverride: '' })).json()).paymentDueOverride, null)
+    })
+})
+
+test('a members-only event takes a due date of its own; anything else drops it', { skip }, async () => {
+    const officer = await person('officer')
+    const due = '2033-02-06T22:00:00.000Z'
+    await as(officer, 'officer', 'events', async (base) => {
+        const body = { title: `${tag} due event`, type: 'social', track: 'members', date: DAY, startTime: '18:00', nonmemberPrice: 5 }
+        assert.equal((await send(base, 'POST', { ...body, paymentDueOverride: '2033-02-11T00:00:00.000Z' })).status, 400)
+        const created = await (await send(base, 'POST', { ...body, paymentDueOverride: due })).json()
+        made.events.push(created.eventId)
+        assert.equal(created.paymentDueOverride, due)
+        assert.equal((await json(`${base}/${created.eventId}`)).paymentDueAt, due)
+        // moved earlier than its due date: refused
+        assert.equal((await send(`${base}/${created.eventId}`, 'PUT', { date: '2033-02-06', startTime: '09:00' })).status, 400)
+        // open to all: nobody pays, so no due date
+        const open = await (await send(`${base}/${created.eventId}`, 'PUT', { track: 'open' })).json()
+        assert.equal(open.paymentDueOverride, null)
+    })
 })
 
 test('signing up after the due date gives 48 hours to pay, with a reminder a day', { skip }, async () => {

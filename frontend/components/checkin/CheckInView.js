@@ -7,7 +7,8 @@ import DashboardShell from '@/components/dashboards/DashboardShell'
 import { BackButton, metaLine, useDesignZoom } from '@/components/labs/LabViewParts'
 import QrScanner from '@/components/checkin/QrScanner'
 import FitTitle from '@/components/FitTitle'
-import { INSET, EditorButton, IconLabel, UploadIcon } from '@/components/labs/EditorParts'
+import { INSET, EditorButton, IconLabel, UploadIcon, fieldClass } from '@/components/labs/EditorParts'
+import DateTimeField from '@/components/labs/DateTimeField'
 import EmailAllPopup from '@/components/EmailAllPopup'
 import ConfirmationPopup from '@/components/ConfirmationPopup'
 import LastSent from '@/components/LastSent'
@@ -22,6 +23,7 @@ import {
 	payments as paymentsApi,
 } from '@/lib/api'
 import { prettyTime } from '@/lib/dates'
+import { dueBody, dueInput, dueOk, usualDueText } from '@/lib/finances'
 
 // The officer's check-in page for one lab or one event — where clicking its
 // card on /labs or /events lands. Top: the camera for scanning members' QR
@@ -40,7 +42,8 @@ import { prettyTime } from '@/lib/dates'
 // when the year's are paid, a $ while the door would ask, grey once the entry's
 // been paid or waived for this one — which the treasurer or admin can click to
 // take back. Over the first column, "email unpaid" reminds everyone with a
-// green $ to pay by the due date (a week before, 11:59 PM); and the header's
+// green $ to pay by the due date (a week before, 11:59 PM, unless the form set
+// one); and the header's
 // "payments" is where officers and up approve, send back or reject what
 // members paid on their own (PaymentsPopup).
 //
@@ -530,7 +533,8 @@ function ManualAdd({ onAdd, people }) {
 	)
 }
 
-// The header's "payments", for officers and up: what members paid on their
+// The header's "payments", for officers and up: when payment for this one is
+// due, at the top (PaymentDueSetting), then what members paid on their
 // own for this one — the fee, or VIP dues sent from its page — waiting to be
 // checked. Approving books it as income and settles it (their $ goes grey, or
 // they turn VIP) and confirms their spot; "send back" asks why, and they have
@@ -545,15 +549,154 @@ const PAYMENT_TABS = [
 	{ key: 'rental', label: 'rental', has: (payment) => payment.kind === 'goggles' },
 ]
 
-function PaymentsPopup({ title, payments: all, rentals = false, readOnly, onChange, onClose }) {
+// The top of the payments popup: when payment for this one is due. Blank is
+// the usual, a week before at 11:59 PM; a date and time picked in the calendar
+// takes its place (paymentDueOverride — see paymentDue in src/payable.js), and
+// anyone signed up and still owing with nothing sent in by then is moved to
+// the waitlist. A day picked with no time is 11:59 PM that day (dueBody). Saved
+// with its own button, so picking a day and then a time doesn't save twice.
+// `item` is the lab or event as GET /:id has it; `onSaved` gets the new
+// override.
+function PaymentDueSetting({ kind, item, readOnly, onSaved }) {
+	const saved = item.paymentDueOverride ? new Date(item.paymentDueOverride).toISOString() : null
+	const [value, setValue] = useState(() => dueInput(item.paymentDueOverride))
+	const [busy, setBusy] = useState(false)
+	const [error, setError] = useState(null)
+	const day = String(item.date ?? '').slice(0, 10)
+	const usual = usualDueText(day)
+	const ok = dueOk(value, day, item.startTime ?? '')
+	const dirty = dueBody(value) !== saved
+
+	const save = async () => {
+		if (!ok || !dirty || busy) return
+		setBusy(true)
+		setError(null)
+		try {
+			const reply = await API[kind].update(item[kind === 'lab' ? 'labId' : 'eventId'], { paymentDueOverride: dueBody(value) })
+			onSaved(reply.paymentDueOverride ?? null)
+		} catch (err) {
+			setError(err.message)
+		} finally {
+			setBusy(false)
+		}
+	}
+
+	return (
+		<div className="
+			mt-5
+			flex
+			flex-col
+			items-center
+			text-center
+			rounded-[14px]
+			bg-black/[0.04]
+			px-4
+			py-4
+		">
+			<label
+				htmlFor="payment-due"
+				className="
+					font-vietnam
+					text-[11px]
+					uppercase
+					tracking-[0.12em]
+					text-black/50
+				"
+			>
+				payment due
+			</label>
+			<div className="
+				mt-2
+				flex
+				items-center
+				justify-center
+				gap-3
+			">
+				<div className="w-[250px]">
+					{readOnly ? (
+						<p className="
+							font-vietnam
+							font-semibold
+							text-[15px]
+							text-black
+						">
+							{value ? new Date(dueBody(value)).toLocaleString('en-US', { weekday: 'short', month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' }) : usual ?? 'a week before, 11:59 PM'}
+						</p>
+					) : (
+						<DateTimeField
+							id="payment-due"
+							value={value}
+							onChange={(next) => {
+								setValue(next)
+								setError(null)
+							}}
+							zoom={1}
+							className={`
+								${fieldClass('orange', !ok)}
+								h-[36px]
+								px-[10px]
+								text-[14px]
+								${value ? '' : 'text-black/40'}
+							`}
+						/>
+					)}
+				</div>
+				{!readOnly && dirty && (
+					<PopupButton primary onClick={save} disabled={!ok || busy}>
+						{busy ? 'saving…' : 'save'}
+					</PopupButton>
+				)}
+			</div>
+			<p className="
+				mt-2
+				font-vietnam
+				text-[12px]
+				text-black/50
+			">
+				{error
+					? <span className="text-red">{error}</span>
+					: !ok
+						? <span className="text-red">Has to be before it starts</span>
+						: value
+							? (
+								<>
+									Anyone still owing by then moves to the waitlist.{' '}
+									{!readOnly && (
+										<button
+											type="button"
+											onClick={() => setValue('')}
+											className="
+												underline
+												underline-offset-2
+												cursor-pointer
+												hover:text-black
+											"
+										>
+											use the usual{usual ? ` (${usual})` : ''}
+										</button>
+									)}
+								</>
+							)
+							: `The usual: a week before${usual ? `, ${usual}` : ', 11:59 PM'}. Pick a date to change it.`}
+			</p>
+		</div>
+	)
+}
+
+function PaymentsPopup({ kind, item, title, payments: all, rentals = false, readOnly, onChange, onDueSaved, onClose }) {
 	const [tab, setTab] = useState('fee')
 	const payments = rentals ? all.filter(PAYMENT_TABS.find((one) => one.key === tab).has) : all
+	// only a lab or a members-only event takes payment, so only they have a
+	// due date to set
+	const takesPayment = kind === 'lab' || item?.track === 'members'
 	return (
 		<Popup title="payments" onClose={onClose} width="max-w-[620px]">
 			{() => (
 				<>
+					{takesPayment && <PaymentDueSetting kind={kind} item={item} readOnly={readOnly} onSaved={onDueSaved} />}
+
 					<p className="
-						mt-3
+						mt-4
 						font-vietnam
 						text-sm
 						text-black/60
@@ -1417,6 +1560,9 @@ export default function CheckInView({ kind, id }) {
 			)}
 			{showPayments && item && (
 				<PaymentsPopup
+					kind={kind}
+					item={item}
+					onDueSaved={(paymentDueOverride) => setItem((prev) => ({ ...prev, paymentDueOverride }))}
 					title={item.title}
 					payments={waitingPayments}
 					rentals={kind === 'lab'}
@@ -1473,7 +1619,7 @@ export default function CheckInView({ kind, id }) {
 							">
 								{`The ${unpaid} ${unpaid === 1 ? 'person' : 'people'} with a green $ get a reminder to pay`}
 								{item.nonmemberPrice > 0 ? ` the ${priceText(item.nonmemberPrice)} entry` : ''}
-								{' '}(or their VIP dues) a week before {item.title}, by its due date at 11:59 PM, or they’ll be moved to the waitlist. Every accepted payment’s QR code is attached.
+								{' '}(or their VIP dues) by {item.title}’s payment due date, or they’ll be moved to the waitlist. Every accepted payment’s QR code is attached.
 							</p>
 							<div className="
 								mt-8

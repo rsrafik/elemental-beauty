@@ -308,7 +308,7 @@ export function mountRoster(router, kind) {
                 !DUES_EXEMPT.includes(row.member.role) && !settled.has(row.memberId) && !pending.has(row.memberId))
             if (owing.length === 0) { return res.status(400).json({ message: 'Everyone signed up has paid or sent a payment in' }) }
             const sent = await remindUnpaid(
-                { kind: kindName, id: parentId, title: item.title, date: item.date, price, duesAmount, schoolYear },
+                { kind: kindName, id: parentId, title: item.title, date: item.date, paymentDueOverride: item.paymentDueOverride, price, duesAmount, schoolYear },
                 owing.map(({ member, confirmBy, payBy }) => ({ email: member.user.email, firstName: member.user.firstName, confirmBy, payBy }))
             )
             await recordSend({ kind: 'unpaid_reminder', kindName, id: parentId, sent, by: req.userId })

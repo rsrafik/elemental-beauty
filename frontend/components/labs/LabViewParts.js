@@ -390,12 +390,13 @@ export function PriceBadge({ price }) {
 // or it's open to all, and then there's nothing to say. `noun` is 'lab' or
 // 'event'. Red, like the price on their cards: it's something they owe.
 // `due` is when payment's due (the API's paymentDueAt — a week before, 11:59
-// PM): it's said here too, since signing up means paying by then.
+// PM, or the date an officer set): it's said here too, since signing up means
+// paying by then.
 export function DuesNotice({ dues, noun, due = null }) {
 	if (!dues) return null
 	const { schoolYear, amount, price } = dues
 	const by = due
-		? ` Once you sign up, pay a week before it starts, by ${new Date(due).toLocaleString('en-US', { weekday: 'long', month: 'long', day: 'numeric', hour: 'numeric', minute: '2-digit' })}, or you'll be moved to the waitlist.`
+		? ` Once you sign up, pay by ${new Date(due).toLocaleString('en-US', { weekday: 'long', month: 'long', day: 'numeric', hour: 'numeric', minute: '2-digit' })}, or you'll be moved to the waitlist.`
 		: ''
 	let text
 	if (price > 0) {
@@ -433,8 +434,9 @@ export function DuesNotice({ dues, noun, due = null }) {
 // over the pay card says so:
 //
 //   signed up, not paid   their spot can only be confirmed once they pay, and
-//                         when it's due: a week before, or their confirmation
-//                         deadline if that's sooner, or the 48 hours they were
+//                         when it's due: a week before (or the date an officer
+//                         set), or their confirmation deadline if that's
+//                         sooner, or the 48 hours they were
 //                         given owing late (`pay.dueBy`) — or, their
 //                         payment sent back, the old due date and the new one
 //                         it has to be fixed by (`pay.fixBy`, 48 hours on)
@@ -481,7 +483,7 @@ export function PayToHold({ pay, offered = false, offerBy = null }) {
 				Your spot can only be <b className="text-black">confirmed</b> once you pay. Send your payment below
 				{pay.dueAt && (late
 					? <>. It was due <b className="text-black">{when(pay.dueAt)}</b>, so pay now to keep your spot.</>
-					: <>{{ confirm: ' by your confirmation deadline, ', late: '. The usual due date had passed, so you have 48 hours: pay by ' }[pay.dueBy] ?? ' a week before, by '}<b className="text-black">{when(pay.dueAt)}</b>, or you’ll be moved to the waitlist.</>)}
+					: <>{{ set: ' by ', confirm: ' by your confirmation deadline, ', late: '. The usual due date had passed, so you have 48 hours: pay by ' }[pay.dueBy] ?? ' a week before, by '}<b className="text-black">{when(pay.dueAt)}</b>, or you’ll be moved to the waitlist.</>)}
 				{!pay.dueAt && '.'}
 			</>
 		)

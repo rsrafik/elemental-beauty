@@ -83,8 +83,8 @@ export function itemOf(row) {
 // The include every payment read needs: who, from where, and how.
 export const PAYMENT_INCLUDE = {
     member: { select: { role: true, user: { select: { firstName: true, lastName: true, username: true, email: true } } } },
-    lab: { select: { labId: true, title: true, date: true, startTime: true } },
-    event: { select: { eventId: true, title: true, date: true, startTime: true } }
+    lab: { select: { labId: true, title: true, date: true, startTime: true, paymentDueOverride: true } },
+    event: { select: { eventId: true, title: true, date: true, startTime: true, paymentDueOverride: true } }
 }
 
 // Approve `payment` (read with PAYMENT_INCLUDE) inside `tx`: the income row,
@@ -412,7 +412,7 @@ async function remindOne(kindName, parent, link, standing, now, { record = true 
     await remindUnpaid(
         {
             kind: kindName, id: parent[kind.key], title: parent.title, date: parent.date, startTime: parent.startTime,
-            price: standing.price, duesAmount: standing.choices.find((choice) => choice.kind === 'dues')?.amount ?? 0,
+            paymentDueOverride: parent.paymentDueOverride, price: standing.price, duesAmount: standing.choices.find((choice) => choice.kind === 'dues')?.amount ?? 0,
             schoolYear: standing.schoolYear
         },
         [{ email: user.email, firstName: user.firstName, confirmBy: link.confirmBy, payBy: link.payBy, offerBy }],
@@ -728,9 +728,10 @@ function attachment(dataUrl, name) {
 
 // The check-in page's "email unpaid", and the daily reminders: a reminder to
 // each of `people` ({ email, firstName, confirmBy, payBy, offerBy }) signed up
-// for `item` ({ kind, id, title, date, startTime, price, duesAmount,
-// schoolYear }) and owing for it — pay by the due date (a week before, 11:59
-// PM, their confirmation deadline if that's sooner, or the 48 hours they were
+// for `item` ({ kind, id, title, date, startTime, paymentDueOverride, price,
+// duesAmount, schoolYear }) and owing for it — pay by the due date (a week
+// before, 11:59 PM, or the one an officer set in its place; their
+// confirmation deadline if that's sooner, or the 48 hours they were
 // given owing late) or they're moved to the waitlist — with every accepted
 // payment's QR code attached. `offered` is for people holding an offer of a
 // spot instead: it's theirs once they pay, by when the offer lapses

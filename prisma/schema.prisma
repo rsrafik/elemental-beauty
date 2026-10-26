@@ -286,6 +286,10 @@ model Lab {
   // when the check-in page's "confirmation" last went out — after that,
   // anyone who takes a spot off the waitlist is sent the prelab too
   confirmSentAt DateTime? @map("confirm_sent_at") @db.Timestamptz()
+  // When payment for it is due, set by hand in the check-in page's payments
+  // popup — null is the usual a week before at 11:59 PM (paymentDue in
+  // src/payable.js).
+  paymentDueOverride DateTime? @map("payment_due_override") @db.Timestamptz()
   // when its payment due date (a week before, 11:59 PM) was enforced:
   // everyone still owing with nothing sent in was moved to the waitlist, once
   // (src/payments.js). Set for any lab already past it when this was added.
@@ -430,6 +434,9 @@ model Event {
   createdById Int? @map("created_by")
   // when the check-in page's "confirmation" last went out (src/offers.js)
   confirmSentAt DateTime? @map("confirm_sent_at") @db.Timestamptz()
+  // its payment due date set by hand, as a lab's — only a members-only one
+  // takes payment, so anything else keeps null
+  paymentDueOverride DateTime? @map("payment_due_override") @db.Timestamptz()
   // when its payment due date was enforced, as a lab's (src/payments.js)
   paymentsDueSweptAt DateTime? @map("payments_due_swept_at") @db.Timestamptz()
   // the day-before reminder, same as a lab's (src/reminders.js)

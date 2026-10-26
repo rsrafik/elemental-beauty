@@ -113,15 +113,19 @@ function Picker({ value, onChange, onClose, anchor, rect, zoom }) {
 		const onDown = (event) => {
 			if (!ref.current?.contains(event.target) && !anchor.current?.contains(event.target)) onClose()
 		}
+		// caught on the way down and stopped there, so a popup the field sits
+		// in (the check-in page's payments) doesn't close on the same keypress
 		const onKey = (event) => {
-			if (event.key === 'Escape') onClose()
+			if (event.key !== 'Escape') return
+			event.stopPropagation()
+			onClose()
 		}
 		window.addEventListener('pointerdown', onDown)
-		window.addEventListener('keydown', onKey)
+		window.addEventListener('keydown', onKey, true)
 		window.addEventListener('resize', onClose)
 		return () => {
 			window.removeEventListener('pointerdown', onDown)
-			window.removeEventListener('keydown', onKey)
+			window.removeEventListener('keydown', onKey, true)
 			window.removeEventListener('resize', onClose)
 		}
 	}, [anchor, onClose])

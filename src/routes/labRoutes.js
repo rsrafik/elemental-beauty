@@ -5,7 +5,7 @@ import requireRole from '../middleware/requireRole.js'
 import { POINTS } from '../points.js'
 import { mountRoster, requireNotAttendee } from './roster.js'
 import { OFFER_HOURS, acceptOffer, confirmSpot, expireOffers, lockParent, offerNext, startsAt } from '../offers.js'
-import { payable, paymentDueAt } from '../payable.js'
+import { dueOverrideError, payable, paymentDueAt, readDueOverride, resweep } from '../payable.js'
 import { owingLate } from '../payments.js'
 import { log } from '../activity.js'
 import { readEndTime } from '../clubTime.js'
@@ -59,7 +59,9 @@ const PREVIEW_SELECT = {
     // button off when it isn't
     acceptingRsvps: true,
     // what someone unpaid is charged at the door — read into `dues` below
-    nonmemberPrice: true
+    nonmemberPrice: true,
+    // and when it's due, if set by hand — read into `paymentDueAt`
+    paymentDueOverride: true
 }
 
 // 'HH:MM' — what <input type="time"> hands back, same rule as events.
@@ -405,6 +407,10 @@ function labData(body) {
     const { price, error: priceError } = readPrice(body.nonmemberPrice)
     if (priceError) { return { error: priceError } }
     if (price !== undefined) { data.nonmemberPrice = price }
+    // when payment's due, set by hand (blank = the usual week before)
+    const { due, error: dueError } = readDueOverride(body.paymentDueOverride)
+    if (dueError) { return { error: dueError } }
+    if (due !== undefined) { data.paymentDueOverride = due }
     return { data }
 }
 
@@ -539,6 +545,8 @@ router.post('/', requireRole('officer'), requireLabStaff, async (req, res) => {
     if (publishing && !data.date) {
         return res.status(400).json({ message: 'a published lab needs a date' })
     }
+    const badDue = dueOverrideError(data)
+    if (badDue) { return res.status(400).json({ message: badDue }) }
 
     try {
         const lab = await prisma.lab.create({
@@ -572,7 +580,10 @@ router.put('/:id', requireRole('officer'), requireLabEditor('id'), async (req, r
     }
 
     try {
-        const current = await prisma.lab.findUnique({ where: { labId }, select: { published: true, date: true } })
+        const current = await prisma.lab.findUnique({
+            where: { labId },
+            select: { published: true, date: true, startTime: true, paymentDueOverride: true }
+        })
         if (!current) { return res.status(404).json({ message: 'Lab not found' }) }
 
         // whatever a lab ends up live with has to have a date on it
@@ -591,7 +602,7 @@ router.put('/:id', requireRole('officer'), requireLabEditor('id'), async (req, r
             update = current.published
                 // stored as the body was sent, so the editor can load it back
                 ? { draft: Object.fromEntries(
-                    [...TEXT_FIELDS, 'startTime', 'endTime', 'date', 'capacity', 'nonmemberPrice']
+                    [...TEXT_FIELDS, 'startTime', 'endTime', 'date', 'capacity', 'nonmemberPrice', 'paymentDueOverride']
                         .filter((field) => req.body[field] !== undefined)
                         .map((field) => [field, req.body[field]])
                 ) }
@@ -601,6 +612,14 @@ router.put('/:id', requireRole('officer'), requireLabEditor('id'), async (req, r
         // the live lab moved to another day or time: the day-before reminder
         // is owed again (edits parked in a draft don't count until published)
         if ('date' in update || 'startTime' in update) { update.reminderSentAt = null }
+        // its due date against the day and start it'll have; moved, the sweep
+        // that enforces it is owed again if it's still to come
+        if ('date' in update || 'startTime' in update || 'paymentDueOverride' in update) {
+            const after = { ...current, ...update }
+            const badDue = dueOverrideError(after, current.paymentDueOverride)
+            if (badDue) { return res.status(400).json({ message: badDue }) }
+            Object.assign(update, resweep(after))
+        }
 
         const lab = await prisma.lab.update({ where: { labId }, data: update })
         res.json(lab)

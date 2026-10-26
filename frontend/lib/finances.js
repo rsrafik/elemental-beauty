@@ -53,6 +53,49 @@ export function priceBody(typed) {
 	return trimmed === '' ? 0 : Number(trimmed)
 }
 
+// ---- the payment due date --------------------------------------------------
+
+// Payment for a lab or members-only event is due a week before at 11:59 PM,
+// unless the check-in page's payments popup sets a date and time of its own
+// (paymentDueOverride — see paymentDue in src/payable.js). The box is a
+// DateTimeField: 'YYYY-MM-DDTHH:MM'
+// on this browser's clock, '' for the usual one. A day picked with no time
+// (the field holds that as 00:00) is due at 11:59 PM that day.
+
+const pad = (n) => String(n).padStart(2, '0')
+
+// a stored instant (or null) -> the box
+export function dueInput(value) {
+	if (!value) return ''
+	const at = new Date(value)
+	return `${at.getFullYear()}-${pad(at.getMonth() + 1)}-${pad(at.getDate())}T${pad(at.getHours())}:${pad(at.getMinutes())}`
+}
+
+// the box -> the body's `paymentDueOverride`: an ISO instant, or null for the
+// usual one
+export function dueBody(typed) {
+	if (!typed) return null
+	const [date, time] = typed.split('T')
+	return new Date(`${date}T${!time || time === '00:00' ? '23:59' : time}`).toISOString()
+}
+
+// Blank, or before it starts (`date` 'YYYY-MM-DD', `time` 'HH:MM' or blank
+// for the top of the day) — the API holds it to the same
+export function dueOk(typed, date, time) {
+	if (!typed || !date) return true
+	return new Date(dueBody(typed)) < new Date(`${date}T${time || '00:00'}`)
+}
+
+// What the box falls back to for a day ('YYYY-MM-DD'): 'Fri, Oct 23, 11:59 PM',
+// or null with no day picked yet
+export function usualDueText(date) {
+	if (!date) return null
+	const [y, m, d] = date.split('-').map(Number)
+	return new Date(y, m - 1, d - 7, 23, 59).toLocaleString('en-US', {
+		weekday: 'short', month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit',
+	})
+}
+
 // Where money comes from and where it goes, in slice order. The colours are
 // the donut's and the ledger's dots — one place, so a category can't be green
 // in one card and yellow in the other.
