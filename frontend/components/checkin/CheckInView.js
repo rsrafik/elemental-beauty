@@ -932,10 +932,13 @@ export default function CheckInView({ kind, id }) {
 				// measured on the screen rather than in the design's pixels
 				style={{ zoom, '--design-zoom': zoom }}
 			>
-				{/* ---- camera + header ---------------------------------------- */}
+				{/* ---- camera + header ----------------------------------------
+				    No padding over it: the scanner's top edge lines up with the
+				    sidebar's (the page column already starts level with it), and
+				    the lists under it take the room, the gap between the two
+				    staying as it is. */}
 				<div className="
 					shrink-0
-					lg:pt-[64.5px]
 					flex
 					flex-col
 					lg:flex-row
