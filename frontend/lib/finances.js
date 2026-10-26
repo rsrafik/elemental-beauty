@@ -17,6 +17,9 @@
 // The club's year runs august to july, which is what `schoolYear` means by
 // '2025–26' and the order MONTHS reads in.
 
+import { useCallback, useEffect, useState } from 'react'
+import { financeCategories as financeCategoriesApi } from '@/lib/api'
+
 // ---- shape -----------------------------------------------------------------
 
 export const MONTHS = ['aug', 'sep', 'oct', 'nov', 'dec', 'jan', 'feb', 'mar', 'apr', 'may', 'jun', 'jul']
@@ -50,13 +53,19 @@ export function priceBody(typed) {
 	return trimmed === '' ? 0 : Number(trimmed)
 }
 
-// Where money comes from, in slice order. The colours are the donut's and the
-// ledger's dots — one place, so a category can't be green in one card and
-// yellow in the other.
+// Where money comes from and where it goes, in slice order. The colours are
+// the donut's and the ledger's dots — one place, so a category can't be green
+// in one card and yellow in the other.
+//
+// The treasurer adds and removes these from /analytics (the categories card),
+// so what's below is only the list the club ships with: both pages draw on it
+// until GET /finance-categories answers, and useFinanceCategories then swaps
+// in what the server has. They're `let` so that swap reaches every module that
+// imports them — an import is a live binding, not a copy.
 //
 // 'fees' is what someone who hasn't paid dues pays at the door for a lab or a
 // members-only event — the non-member price (see src/dues.js).
-export const INCOME_CATEGORIES = [
+export let INCOME_CATEGORIES = [
 	{ key: 'grants', label: 'grants', color: '#A7CC70' },
 	{ key: 'fundraisers', label: 'fundraisers', color: '#FFDF2B' },
 	{ key: 'dues', label: 'dues', color: '#FF8A78' },
@@ -64,14 +73,50 @@ export const INCOME_CATEGORIES = [
 	{ key: 'sponsors', label: 'sponsors', color: '#3990FA' },
 ]
 
-// Where it goes. These four are also what a receipt gets filed under, so a
-// settled request lands in one of these slices.
-export const EXPENSE_CATEGORIES = [
+// Where it goes. These are also what a receipt gets filed under, so a settled
+// request lands in one of these slices.
+export let EXPENSE_CATEGORIES = [
 	{ key: 'lab', label: 'lab', color: '#FF7D45' },
 	{ key: 'events', label: 'events', color: '#E35944' },
 	{ key: 'guests', label: 'guests', color: '#FFDF2B' },
 	{ key: 'marketing', label: 'marketing', color: '#4066FF' },
 ]
+
+// What a new category can be coloured: the site's own palette, the donuts'
+// colours first.
+export const CATEGORY_COLORS = [
+	'#A7CC70', '#FFDF2B', '#FF8A78', '#B07CE8', '#3990FA', '#FF7D45',
+	'#E35944', '#4066FF', '#48631D', '#AB9726', '#B3402E', '#A83F13',
+]
+
+// GET /finance-categories, already in slice order, split into the two lists.
+function setCategoryLists(rows) {
+	const pick = (type) => rows
+		.filter((row) => row.type === type)
+		.map(({ key, label, color }) => ({ key, label, color }))
+	INCOME_CATEGORIES = pick('income')
+	EXPENSE_CATEGORIES = pick('expense')
+}
+
+// The categories as the server has them, for a page that draws them. Returns
+// the full rows (with `locked` and `inUse`, for the categories card) — null
+// until they've loaded — and `reload`, for after one is added or removed.
+// The page re-renders when they land, which is what has everything reading
+// INCOME_CATEGORIES / EXPENSE_CATEGORIES pick up the new lists.
+export function useFinanceCategories() {
+	const [categories, setCategories] = useState(null)
+	const reload = useCallback(
+		() => financeCategoriesApi.list().then((rows) => {
+			setCategoryLists(rows)
+			setCategories(rows)
+		}),
+		[]
+	)
+	useEffect(() => {
+		reload().catch(() => {})
+	}, [reload])
+	return { categories, reload }
+}
 
 export function categoryLabel(key) {
 	return [...INCOME_CATEGORIES, ...EXPENSE_CATEGORIES]

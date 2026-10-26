@@ -52,6 +52,7 @@ import {
 	total,
 	today,
 	totalsByCategory,
+	useFinanceCategories,
 	yearLabel,
 	yearsIn,
 } from '@/lib/finances'
@@ -895,6 +896,9 @@ export default function OfficerAnalytics() {
 	// Whose receipts these are. GET /reimbursements/mine already returns only
 	// this officer's, so nothing here filters on it — the API is the gate.
 	const currentUser = useCurrentUser()
+	// the donuts' slices and the receipt form's list — the treasurer can add
+	// and remove them, so they come from the server rather than the defaults
+	useFinanceCategories()
 
 	// The club's books, read-only on this page: an officer can't post to them,
 	// so there's nothing to hold beyond what was fetched.
@@ -1168,8 +1172,8 @@ export default function OfficerAnalytics() {
 					title="revoke this receipt?"
 					body={
 						revoking.status === 'approved'
-							? `${revoking.what} — ${money(revoking.amount)}. The treasurer has already agreed to pay this back, and revoking it says you're not asking for it after all. It comes off your history too, so there'd be nothing left to point at.`
-							: `${revoking.what} — ${money(revoking.amount)}. It leaves the treasurer's queue and your own history with it. If you want it back you'd have to file it again.`
+							? `${revoking.what} (${money(revoking.amount)}). The treasurer has already agreed to pay this back, and revoking it says you're not asking for it after all. It comes off your history too, so there'd be nothing left to point at.`
+							: `${revoking.what} (${money(revoking.amount)}). It leaves the treasurer's queue and your own history with it. If you want it back you'd have to file it again.`
 					}
 					confirmLabel="revoke it"
 					onCancel={() => setRevoking(null)}

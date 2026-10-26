@@ -40,7 +40,8 @@ before(async () => {
         transactions: (await import('../src/routes/transactionRoutes.js')).default,
         yearTargets: (await import('../src/routes/yearTargetRoutes.js')).default,
         members: (await import('../src/routes/memberRoutes.js')).default,
-        reimbursements: (await import('../src/routes/reimbursementRoutes.js')).default
+        reimbursements: (await import('../src/routes/reimbursementRoutes.js')).default,
+        financeCategories: (await import('../src/routes/financeCategoryRoutes.js')).default
     }
     await prisma.yearTarget.upsert({
         where: { schoolYear: YEAR },
@@ -58,6 +59,7 @@ after(async () => {
     await prisma.activityLog.deleteMany({ where: { OR: [{ targetId: users }, { actorId: users }] } })
     await prisma.reimbursement.deleteMany({ where: { reimbursementId: { in: made.reimbursements } } })
     await prisma.grant.deleteMany({ where: { grantId: { in: made.grants } } })
+    await prisma.financeCategory.deleteMany({ where: { key: { startsWith: tag } } })
     await prisma.event.deleteMany({ where: { eventId: { in: made.events } } })
     await prisma.lab.deleteMany({ where: { labId: { in: made.labs } } })
     await prisma.user.deleteMany({ where: { OR: [{ userId: users }, { username: { startsWith: tag } }] } })
@@ -471,5 +473,130 @@ test('a VIP sees exactly the events a member does', { skip }, async () => {
     await as(vip, 'vip', 'events', async (base) => {
         const seen = (await (await fetch(base)).json()).filter((row) => ids.includes(row.eventId)).map((row) => row.track).sort()
         assert.deepEqual(seen, ['members', 'open'])
+    })
+})
+
+test('the treasurer adds and removes finance categories, but not the ones the app files money under', { skip }, async () => {
+    const treasurer = await person('treasurer')
+    const officer = await person('officer')
+    const label = `${tag} Merch`
+
+    await as(officer, 'officer', 'financeCategories', async (base) => {
+        assert.equal((await send(base, 'POST', { label, type: 'expense', color: '#FF7D45' })).status, 403)
+        assert.equal((await send(`${base}/lab`, 'DELETE')).status, 403)
+    })
+
+    let key
+    await as(treasurer, 'treasurer', 'financeCategories', async (base) => {
+        const added = await send(base, 'POST', { label, type: 'expense', color: '#ff7d45' })
+        assert.equal(added.status, 201)
+        const category = await added.json()
+        key = category.key
+        assert.equal(key, `${tag}_merch`)
+        assert.equal(category.color, '#FF7D45')
+
+        // the same name again, in any case, is refused
+        assert.equal((await send(base, 'POST', { label: label.toUpperCase(), type: 'income', color: '#FF7D45' })).status, 409)
+        assert.equal((await send(base, 'POST', { label: 'x', type: 'both', color: '#FF7D45' })).status, 400)
+        assert.equal((await send(base, 'POST', { label: 'x', type: 'income', color: 'red' })).status, 400)
+
+        for (const locked of ['grants', 'dues', 'fees', 'sponsors']) {
+            const refused = await send(`${base}/${locked}`, 'DELETE')
+            assert.equal(refused.status, 409, locked)
+            assert.match((await refused.json()).message, /can't be removed/)
+        }
+
+        const listed = (await (await fetch(base)).json()).find((row) => row.key === key)
+        assert.equal(listed.locked, null)
+        assert.equal(listed.inUse, 0)
+        assert.ok((await (await fetch(base)).json()).find((row) => row.key === 'dues').locked)
+    })
+
+    // a receipt can be filed under the new one, but not under an income one
+    let receipt
+    await as(officer, 'officer', 'reimbursements', async (base) => {
+        assert.equal((await send(base, 'POST', { title: `${tag} tote bags`, amountRequested: 30, category: 'dues' })).status, 400)
+        const filed = await send(base, 'POST', { title: `${tag} tote bags`, amountRequested: 30, category: key })
+        assert.equal(filed.status, 201)
+        receipt = (await filed.json()).reimbursementId
+        made.reimbursements.push(receipt)
+    })
+
+    // and a ledger row only under one of its own half
+    await as(treasurer, 'treasurer', 'transactions', async (base) => {
+        assert.equal((await send(base, 'POST', { type: 'income', source: `${tag} totes`, amount: 5, category: key })).status, 400)
+        assert.equal((await send(base, 'POST', { type: 'expense', source: `${tag} totes`, amount: 5, category: 'nope' })).status, 400)
+    })
+
+    await as(treasurer, 'treasurer', 'financeCategories', async (base) => {
+        // still filed under, so it stays
+        const inUse = await send(`${base}/${key}`, 'DELETE')
+        assert.equal(inUse.status, 409)
+        assert.match((await inUse.json()).message, /1 receipt is still filed/)
+
+        await prisma.reimbursement.delete({ where: { reimbursementId: receipt } })
+        assert.equal((await send(`${base}/${key}`, 'DELETE')).status, 200)
+        assert.equal(await prisma.financeCategory.count({ where: { key } }), 0)
+    })
+})
+
+test('the $ settles the entry ahead of time, and checking them in then doesn’t ask', { skip }, async () => {
+    const officer = await person('officer')
+    const member = await person('member')
+    const waived = await person('member')
+    const eventId = await event('members')
+    for (const memberId of [member, waived]) {
+        await prisma.memberEvent.create({ data: { memberId, eventId } })
+    }
+
+    await as(officer, 'officer', 'events', async (base) => {
+        const roster = async () => (await (await fetch(`${base}/${eventId}/roster`)).json())
+        const row = async (memberId) => (await roster()).find((entry) => entry.memberId === memberId)
+
+        const before = await row(member)
+        assert.equal(before.duesPaid, false)
+        assert.equal(before.owesDues, true)
+        assert.equal(before.doorPayment, null)
+        assert.equal((await row(officer)), undefined)
+
+        assert.equal((await send(`${base}/${eventId}/roster`, 'POST', { action: 'dues', memberId: member, dues: 'bogus' })).status, 400)
+        assert.equal((await send(`${base}/${eventId}/roster`, 'POST', { action: 'dues', memberId: member, dues: 'fee' })).status, 200)
+        assert.equal((await send(`${base}/${eventId}/roster`, 'POST', { action: 'dues', memberId: waived, dues: 'waive' })).status, 200)
+        // once is enough
+        assert.equal((await send(`${base}/${eventId}/roster`, 'POST', { action: 'dues', memberId: member, dues: 'fee' })).status, 409)
+
+        const after = await row(member)
+        assert.equal(after.doorPayment, 'fee')
+        assert.equal(after.owesDues, false)
+        assert.equal((await row(waived)).doorPayment, 'waive')
+
+        // the tick checks them straight in
+        assert.equal((await send(`${base}/${eventId}/roster`, 'POST', { action: 'checkin', memberId: member })).status, 200)
+        assert.equal((await send(`${base}/${eventId}/roster`, 'POST', { action: 'checkin', memberId: waived })).status, 200)
+    })
+
+    // the entry's in the ledger once — paid ahead, not again at the tick —
+    // and the waived one isn't
+    const name = async (userId) => (await prisma.user.findUnique({ where: { userId } })).lastName
+    const feesFor = async (userId) => prisma.transaction.count({
+        where: { category: 'fees', source: { startsWith: `${tag} ${await name(userId)} — ${tag} members` } }
+    })
+    assert.equal(await feesFor(member), 1)
+    assert.equal(await feesFor(waived), 0)
+})
+
+test('paying dues ahead of time from the $ makes them VIP — a crown, not a $', { skip }, async () => {
+    const officer = await person('officer')
+    const member = await person('member')
+    const labRow = await prisma.lab.create({ data: { title: `${tag} crown lab`, date: new Date(DAY), nonmemberPrice: 5 } })
+    made.labs.push(labRow.labId)
+    await prisma.memberLab.create({ data: { memberId: member, labId: labRow.labId } })
+
+    await as(officer, 'officer', 'labs', async (base) => {
+        assert.equal((await send(`${base}/${labRow.labId}/roster`, 'POST', { action: 'dues', memberId: member, dues: 'paid' })).status, 200)
+        const row = (await (await fetch(`${base}/${labRow.labId}/roster`)).json()).find((entry) => entry.memberId === member)
+        assert.equal(row.duesPaid, true)
+        assert.equal(row.owesDues, false)
+        assert.equal(row.doorPayment, null)
     })
 })
