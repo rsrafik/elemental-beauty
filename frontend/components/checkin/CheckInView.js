@@ -1220,7 +1220,7 @@ export default function CheckInView({ kind, id }) {
 				    rather than design ones, which the zoom would scale. */}
 				<div className="
 					mt-8
-					lg:mt-[54.5px]
+					lg:mt-[24px]
 					flex-1
 					min-h-0
 					w-full
