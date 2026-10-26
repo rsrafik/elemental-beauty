@@ -278,7 +278,7 @@ function Person({ row, number, note = null }) {
 					shrink-0
 					font-vietnam
 					font-semibold
-					text-[18px]
+					text-[16px]
 					leading-none
 					text-black
 				">
@@ -288,8 +288,8 @@ function Person({ row, number, note = null }) {
 			<div className="min-w-0">
 				<p className="
 					font-vietnam
-					text-[18px]
-					leading-[22px]
+					text-[16px]
+					leading-[20px]
 					text-black
 					truncate
 				">
@@ -298,8 +298,8 @@ function Person({ row, number, note = null }) {
 				<p className="
 					mt-[1.2px]
 					font-vietnam
-					text-[15px]
-					leading-[18px]
+					text-[13px]
+					leading-[16px]
 					text-black
 					truncate
 				">
