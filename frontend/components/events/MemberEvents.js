@@ -5,7 +5,7 @@ import Link from 'next/link'
 import DashboardShell from '@/components/dashboards/DashboardShell'
 import { events as eventsApi } from '@/lib/api'
 import { isoDate, longDate, prettyTimeRange, today } from '@/lib/dates'
-import { PriceBadge, priceText } from '@/components/labs/LabViewParts'
+import { LeavePopup, PriceBadge, priceText } from '@/components/labs/LabViewParts'
 import { calendarOnly } from '@/lib/calendar'
 
 // /events for a user or member: browse what's running now and rsvp to what's
@@ -291,7 +291,7 @@ function EventCard({ title, lines, image, action, availability, price, href }) {
 			{href && (
 				<Link
 					href={href}
-					aria-label={`${title} — details`}
+					aria-label={`${title} details`}
 					className="
 						absolute
 						inset-0
@@ -379,22 +379,48 @@ function EventCard({ title, lines, image, action, availability, price, href }) {
 				    hasn't paid dues, takes the right-hand column — its own
 				    column, so the two can't overlap on a narrow card. Both side
 				    columns are the sticker's width, and the row its height, so the
-				    button sits at the same spot on every card, priced or not */}
+				    button sits at the same spot on every card, priced or not.
+				    A card too narrow for the three (under 16rem — the grid's two
+				    or three across, squeezed) stacks them instead: the sticker
+				    centred over the button, which keeps the middle to itself. */}
 				{(action || price) && (
 					<div className="
 						relative
 						z-10
+						@container
 						mt-3
-						grid
-						grid-cols-[3rem_1fr_3rem]
-						min-h-12
-						items-center
-						gap-2
 					">
-						<span />
-						<div className="flex justify-center">{action}</div>
-						<div className="flex justify-end">
-							{price && <PriceBadge price={price} />}
+						<div className="
+							flex
+							flex-col
+							items-center
+							gap-2
+							@min-[16rem]:grid
+							@min-[16rem]:grid-cols-[3rem_1fr_3rem]
+							@min-[16rem]:min-h-12
+						">
+							<span className="
+								hidden
+								@min-[16rem]:block
+							" />
+							<div className="
+								order-2
+								flex
+								justify-center
+								@min-[16rem]:order-none
+							">
+								{action}
+							</div>
+							{price && (
+								<div className="
+									order-1
+									flex
+									justify-end
+									@min-[16rem]:order-none
+								">
+									<PriceBadge price={price} />
+								</div>
+							)}
 						</div>
 					</div>
 				)}
@@ -540,6 +566,8 @@ export default function MemberEvents() {
 	// ids with a request in flight, so a button can't be pressed twice into two
 	// opposite calls that then race each other
 	const [busy, setBusy] = useState(() => new Set())
+	// the event being left, while LeavePopup asks
+	const [leaving, setLeaving] = useState(null)
 	// What the API refused the last change with. A revert on its own looks like
 	// the click missed; the reason is the only thing that makes it make sense.
 	const [error, setError] = useState(null)
@@ -569,12 +597,19 @@ export default function MemberEvents() {
 	// call: `code` in the reply says which. A waitlist place is not a seat, so
 	// it doesn't put the event in "current" — but it does go on the card's
 	// count, which adds the waitlist to the seats ('25/20').
-	const toggleRsvp = async (event) => {
+	//
+	// Leaving asks first (LeavePopup — it also says a paid entry isn't
+	// refunded) and comes back here with `confirmed`.
+	const toggleRsvp = async (event, confirmed = null) => {
 		if (busy.has(event.id)) return
+		const leaving = event.going || event.waitlisted
+		if (leaving && !confirmed) {
+			setLeaving(event)
+			return
+		}
 		setBusy((prev) => new Set(prev).add(event.id))
 		setError(null)
 
-		const leaving = event.going || event.waitlisted
 		const patch = (changes) =>
 			setRows((prev) =>
 				prev.map((row) => (row.id === event.id ? { ...row, ...changes } : row))
@@ -825,6 +860,18 @@ export default function MemberEvents() {
 					</div>
 				</section>
 			</div>
+			{leaving && (
+				<LeavePopup
+					title={leaving.title}
+					mine={leaving.mine}
+					place={{ eventId: leaving.id }}
+					onConfirm={() => {
+						setLeaving(null)
+						toggleRsvp(leaving, { ok: true })
+					}}
+					onClose={() => setLeaving(null)}
+				/>
+			)}
 		</DashboardShell>
 	)
 }

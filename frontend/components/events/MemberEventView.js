@@ -5,9 +5,10 @@ import { useSearchParams } from 'next/navigation'
 import DashboardShell from '@/components/dashboards/DashboardShell'
 import { events as eventsApi } from '@/lib/api'
 import { isoDate, today } from '@/lib/dates'
-import { BackButton, Scaled, LabIntro, ChunkyButton, ButtonCaption, DuesNotice } from '@/components/labs/LabViewParts'
+import { BackButton, FitScaled, LabIntro, ChunkyButton, ButtonCaption, DuesNotice, LeavePopup, PayToHold } from '@/components/labs/LabViewParts'
 import { ShowQrButton, QrPopup } from '@/components/labs/MemberLabQuiz'
 import { LinkList } from '@/components/events/EventLinks'
+import PaySection from '@/components/payments/PaySection'
 
 // /events/view?id=N for a user or member: one event — its date, time and room,
 // what it is, and the one button that is your relationship with it. The same
@@ -28,8 +29,11 @@ import { LinkList } from '@/components/events/EventLinks'
 // Whether an rsvp lands a seat or a waitlist place is the server's call: the
 // button flips straight to "going" and the re-read corrects it.
 //
-// A members-only event warns someone who hasn't paid the year's dues what
-// it'll cost them at the door (DuesNotice). Its links sit under the photo.
+// The button sits under the title, description and photo, in the middle of
+// the content column — as a lab's does. A members-only event with a price
+// shows someone holding a spot who hasn't paid the year's dues how to pay
+// before they come (PaySection), and warns anyone else what it'll cost
+// (DuesNotice). Its links sit under the photo.
 
 const CLOCK_MS = 30_000
 const fmtDeadline = (at) =>
@@ -61,6 +65,8 @@ export default function MemberEventView() {
 	// the flip shown while the request is out, so the click answers at once
 	const [pending, setPending] = useState(null)
 	const [showQr, setShowQr] = useState(false)
+	// "are you sure?" before giving up a spot
+	const [askingLeave, setAskingLeave] = useState(false)
 	// bumped on a timer, with a re-read, so "has it started" (or has the door
 	// opened early — checkinOpen) is re-asked
 	const [, setTick] = useState(0)
@@ -111,7 +117,7 @@ export default function MemberEventView() {
 
 	let body = null
 	if (!id) {
-		body = <Message>No event picked — head back to the events page and choose one.</Message>
+		body = <Message>No event picked. Head back to the events page and choose one.</Message>
 	} else if (error && !event) {
 		body = <Message>{error}</Message>
 	} else if (event) {
@@ -125,15 +131,16 @@ export default function MemberEventView() {
 		const left = unlimited ? Infinity : Math.max(0, event.capacity - event.taken)
 
 		const rsvp = () => act(() => eventsApi.rsvp(event.eventId), 'rsvped')
-		const leave = () => act(() => eventsApi.unrsvp(event.eventId), 'none')
+		// leaving asks first (LeavePopup, below)
+		const leave = () => setAskingLeave(true)
 		const confirm = () => act(() => eventsApi.confirm(event.eventId))
 
 		let button = null
 		let caption = null
 		if (mine === 'attended') {
-			caption = ended ? 'you were there — thanks for coming!' : 'you’re checked in — enjoy!'
+			caption = ended ? 'you were there, thanks for coming!' : 'you’re checked in, enjoy!'
 		} else if (ended) {
-			caption = mine === 'absent' ? 'this event has happened — we missed you!' : 'this event has already happened'
+			caption = mine === 'absent' ? 'this event already happened, and we missed you!' : 'this event has already happened'
 		} else if (event.started || (event.checkinOpen && (going || offered))) {
 			// the door opens at the start time, or earlier from the check-in
 			// page's "start check-in" — then it's only the QR that's early
@@ -143,24 +150,26 @@ export default function MemberEventView() {
 					? 'it’s on! show your QR code at the door to check in'
 					: 'check-in is open! show your QR code at the door'
 			} else if (waitlisted) {
-				caption = 'it’s started — if there’s room, an e-board member can let you in at the door'
+				caption = 'it’s started, but if there’s room, an e-board member can let you in at the door'
 			} else {
 				caption = 'this event has already started'
 			}
-		} else if (going && event.confirmPending) {
+		} else if (going && event.confirmPending && !event.pay) {
+			// someone who owes confirms by paying (PayToHold), not with this
 			button = <ChunkyButton tone="green" onClick={confirm} disabled={busy}>CONFIRM MY SPOT</ChunkyButton>
 			caption = (
 				<>
 					{`please confirm you're still coming${event.confirmBy ? ` by ${fmtDeadline(event.confirmBy)}` : ''}, or your spot may go to the waitlist`}
 					<br />
-					<LinkButton onClick={leave}>I can&apos;t make it — give up my spot</LinkButton>
+					<LinkButton onClick={leave}>I can&apos;t make it, give up my spot</LinkButton>
 				</>
 			)
 		} else if (going) {
 			button = <ChunkyButton tone="green" onClick={leave} disabled={busy}>YOU&apos;RE GOING!</ChunkyButton>
 			caption = 'click again to cancel your rsvp'
 		} else if (offered) {
-			button = <ChunkyButton tone="green" onClick={rsvp} disabled={busy}>ACCEPT MY SPOT</ChunkyButton>
+			// owing, there's nothing to press: paying below accepts it
+			if (!event.pay) button = <ChunkyButton tone="green" onClick={rsvp} disabled={busy}>ACCEPT MY SPOT</ChunkyButton>
 			caption = (
 				<>
 					a spot opened up and it&apos;s being held for you
@@ -188,7 +197,7 @@ export default function MemberEventView() {
 			button = <ChunkyButton tone="red" onClick={rsvp} disabled={busy}>RSVP</ChunkyButton>
 			if (!unlimited) caption = left > 0
 				? `${left}/${event.capacity} spots left!`
-				: 'it’s full — rsvping puts you on the waitlist'
+				: 'it’s full, so rsvping puts you on the waitlist'
 		}
 
 		body = (
@@ -199,9 +208,12 @@ export default function MemberEventView() {
 				justify-center
 				lg:pb-[26px]
 			">
-				<Scaled className="
+				{/* sized to fit the window, pay card and all (FitScaled) */}
+				{/* 64px on the right keeps the photo clear of the back arrow
+				    pinned in the window's corner, now the page can reach the top */}
+				<FitScaled className="
 					lg:pl-[48px]
-					lg:pr-[16px]
+					lg:pr-[64px]
 				">
 					<LabIntro
 						lab={event}
@@ -226,32 +238,47 @@ export default function MemberEventView() {
 								{event.category.name}
 							</p>
 						)}
-						<div className="
-							flex
-							flex-col
-							items-center
-							mt-[50px]
-						">
-							{button}
-							{caption && <ButtonCaption>{caption}</ButtonCaption>}
-							{holding && !event.started && !ended && event.confirmedAt && (
-								<ButtonCaption>spot confirmed ✓</ButtonCaption>
-							)}
-							{!ended && mine !== 'attended' && <DuesNotice dues={event.dues} noun="event" />}
-							{actionError && (
-								<p className="
-									font-vietnam
-									text-sm
-									text-salmon-dark
-									text-center
-									mt-2
-								">
-									{actionError}
-								</p>
-							)}
-						</div>
 					</LabIntro>
-				</Scaled>
+
+					{/* centred in the content column: the 48px / 64px padding on
+					    Scaled above is given back, so the middle is the column's */}
+					<div className="
+						flex
+						flex-col
+						items-center
+						mt-8
+						lg:mt-[30px]
+						lg:-ml-[48px]
+						lg:-mr-[64px]
+					">
+						{button}
+						{caption && <ButtonCaption>{caption}</ButtonCaption>}
+						{holding && !event.started && !ended && event.confirmedAt && (
+							<ButtonCaption>spot confirmed ✓</ButtonCaption>
+						)}
+						{!ended && mine !== 'attended' && !(going || offered) && <DuesNotice dues={event.dues} noun="event" due={event.paymentDueAt} />}
+						{actionError && (
+							<p className="
+								font-vietnam
+								text-sm
+								text-salmon-dark
+								text-center
+								mt-2
+							">
+								{actionError}
+							</p>
+						)}
+						{!ended && !event.started && (going || offered) && (
+							<PaySection
+								place={{ eventId: event.eventId }}
+								noun="event"
+								hideDue={Boolean(event.pay)}
+								notice={<PayToHold pay={event.pay} offered={offered} offerBy={event.offerBy} />}
+								onSent={load}
+							/>
+						)}
+					</div>
+				</FitScaled>
 			</div>
 		)
 	}
@@ -266,6 +293,18 @@ export default function MemberEventView() {
 		">
 			<BackButton href="/events" label="Back to events" />
 			{body}
+			{askingLeave && event && (
+				<LeavePopup
+					title={event.title}
+					mine={event.mine}
+					place={{ eventId: event.eventId }}
+					onConfirm={() => {
+						setAskingLeave(false)
+						act(() => eventsApi.unrsvp(event.eventId), 'none')
+					}}
+					onClose={() => setAskingLeave(false)}
+				/>
+			)}
 			{showQr && (
 				<QrPopup
 					note="Show this to an e-board member at the door to check in."

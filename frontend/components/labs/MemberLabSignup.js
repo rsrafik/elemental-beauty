@@ -2,7 +2,8 @@
 
 import { useState } from 'react'
 import { labs as labsApi } from '@/lib/api'
-import { LabIntro, ChunkyButton, ButtonCaption, DuesNotice, LeaveClosedLabPopup } from '@/components/labs/LabViewParts'
+import { LabIntro, ChunkyButton, ButtonCaption, DuesNotice, LeavePopup, PayToHold } from '@/components/labs/LabViewParts'
+import PaySection from '@/components/payments/PaySection'
 
 // Before the lab: one button that is the whole of your relationship with it.
 //
@@ -15,6 +16,10 @@ import { LabIntro, ChunkyButton, ButtonCaption, DuesNotice, LeaveClosedLabPopup 
 //   asked to confirm  signed up, and the officers have asked everyone to
 //                   confirm (the check-in page's "confirmation"): green
 //                   CONFIRM MY SPOT until you do
+//
+// Someone who owes for it gets neither button: paying is how they confirm or
+// accept (src/offers.js), so they keep YOU'RE REGISTERED! — or, offered, just
+// the caption — and a card over the pay card says so (PayToHold).
 //   sign-ups closed  not signed up, and the lab isn't taking sign-ups (its
 //                   "accepting rsvps" switch): no button, just saying so
 //
@@ -25,9 +30,13 @@ import { LabIntro, ChunkyButton, ButtonCaption, DuesNotice, LeaveClosedLabPopup 
 // `ended` is a lab whose day has gone without you checking in: nothing left to
 // sign up for, so it says so instead of offering a button.
 //
-// Under the button: what it'll cost someone who hasn't paid the year's dues
-// (DuesNotice), and — for anyone holding a spot — the prelab the confirmation
-// email attaches, so an email that never arrived doesn't mean going without.
+// The button sits under the title, description and photo, in the middle of
+// the content column. Under it: for anyone holding a spot, the prelab the
+// confirmation email attaches (so an email that never arrived doesn't mean
+// going without) and — when they haven't paid the year's dues — the way to
+// pay before they come (PaySection: the QR codes, and the form that tells the
+// treasurer they've paid). Anyone else who'd owe is told what it'll cost
+// (DuesNotice).
 
 export default function MemberLabSignup({ lab, ended, onChange }) {
 	const [busy, setBusy] = useState(false)
@@ -44,7 +53,9 @@ export default function MemberLabSignup({ lab, ended, onChange }) {
 	const left = unlimited ? Infinity : Math.max(0, lab.capacity - lab.taken)
 
 	const [confirmed, setConfirmed] = useState(false)
-	const confirmPending = going && lab.confirmPending && !confirmed
+	// owes for it: paying confirms (or accepts) it, not a button
+	const payToHold = Boolean(lab.pay)
+	const confirmPending = going && lab.confirmPending && !confirmed && !payToHold
 
 	// the prelab, opened in a new tab — the tab is opened on the click itself,
 	// before the file is fetched, or a popup blocker takes it for an ad
@@ -96,12 +107,14 @@ export default function MemberLabSignup({ lab, ended, onChange }) {
 	// the leave-a-closed-lab warning, while it's up
 	const [askingLeave, setAskingLeave] = useState(false)
 
-	// Leaving a lab that isn't taking sign-ups can't be undone, so that asks
-	// first (LeaveClosedLabPopup) and comes back here with `confirmed`.
-	const toggle = async (confirmed = false) => {
+	// Leaving always asks first (LeavePopup — it also says when sign-ups are
+	// closed, and that a paid entry isn't refunded) and comes back here with
+	// `confirmed`: { ok }. A click hands this an event, which has no `ok`, so
+	// a click always asks.
+	const toggle = async (confirmed = null) => {
 		if (busy) return
 		const leaving = going || waitlisted || offered
-		if (leaving && !lab.acceptingRsvps && confirmed !== true) {
+		if (leaving && !confirmed?.ok) {
 			setAskingLeave(true)
 			return
 		}
@@ -142,7 +155,7 @@ export default function MemberLabSignup({ lab, ended, onChange }) {
 						hover:text-black
 					"
 				>
-					I can&apos;t make it — give up my spot
+					I can&apos;t make it, give up my spot
 				</button>
 			</>
 		)
@@ -150,7 +163,8 @@ export default function MemberLabSignup({ lab, ended, onChange }) {
 		button = <ChunkyButton tone="green" onClick={toggle}>YOU&apos;RE REGISTERED!</ChunkyButton>
 		caption = 'click again to unregister'
 	} else if (offered) {
-		button = <ChunkyButton tone="green" onClick={accept}>ACCEPT MY SPOT</ChunkyButton>
+		// owing, there's nothing to press: paying below accepts it
+		if (!payToHold) button = <ChunkyButton tone="green" onClick={accept}>ACCEPT MY SPOT</ChunkyButton>
 		caption = (
 			<>
 				a spot opened up and it&apos;s being held for you
@@ -193,16 +207,24 @@ export default function MemberLabSignup({ lab, ended, onChange }) {
 		if (unlimited) caption = null
 		else caption = left > 0
 			? `${left}/${lab.capacity} spots left!`
-			: 'the lab is full — signing up puts you on the waitlist'
+			: 'the lab is full, so signing up puts you on the waitlist'
 	}
 
 	return (
-		<LabIntro lab={lab}>
+		<>
+			<LabIntro lab={lab} />
+
+			{/* centred in the content column: MemberLabView pads the page 48px on
+			    the left and 64px on the right, which the margins here give back,
+			    so the middle is the column's and not the padded box's */}
 			<div className="
 				flex
 				flex-col
 				items-center
-				mt-[50px]
+				mt-8
+				lg:mt-[30px]
+				lg:-ml-[48px]
+				lg:-mr-[64px]
 			">
 				{button}
 				{caption && <ButtonCaption>{caption}</ButtonCaption>}
@@ -225,7 +247,7 @@ export default function MemberLabSignup({ lab, ended, onChange }) {
 						open the prelab ({lab.prelabPdfName})
 					</button>
 				)}
-				{!ended && <DuesNotice dues={lab.dues} noun="lab" />}
+				{!ended && !(going || offered) && <DuesNotice dues={lab.dues} noun="lab" due={lab.paymentDueAt} />}
 				{error && (
 					<p className="
 						font-vietnam
@@ -237,19 +259,30 @@ export default function MemberLabSignup({ lab, ended, onChange }) {
 						{error}
 					</p>
 				)}
+				{!ended && (going || offered) && (
+					<PaySection
+						place={{ labId: lab.labId }}
+						noun="lab"
+						hideDue={payToHold}
+						notice={<PayToHold pay={lab.pay} offered={offered} offerBy={lab.offerBy} />}
+						onSent={onChange}
+					/>
+				)}
 			</div>
 
 			{askingLeave && (
-				<LeaveClosedLabPopup
+				<LeavePopup
 					title={lab.title}
 					mine={mine}
+					closed={!lab.acceptingRsvps}
+					place={{ labId: lab.labId }}
 					onConfirm={() => {
 						setAskingLeave(false)
-						toggle(true)
+						toggle({ ok: true })
 					}}
 					onClose={() => setAskingLeave(false)}
 				/>
 			)}
-		</LabIntro>
+		</>
 	)
 }

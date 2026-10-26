@@ -12,10 +12,14 @@ import yearTargetRoutes from './routes/yearTargetRoutes.js'
 import grantRoutes from './routes/grantRoutes.js'
 import reimbursementRoutes from './routes/reimbursementRoutes.js'
 import transactionRoutes from './routes/transactionRoutes.js'
+import financeCategoryRoutes from './routes/financeCategoryRoutes.js'
+import paymentMethodRoutes from './routes/paymentMethodRoutes.js'
+import paymentRoutes from './routes/paymentRoutes.js'
 import authMiddleware from './middleware/authMiddleware.js'
 import requireRole, { booksAccess } from './middleware/requireRole.js'
 import { sweepAbsences } from './sweepAbsences.js'
 import { expireOffers } from './offers.js'
+import { enforcePaymentRules } from './payments.js'
 import offerRoutes from './routes/offerRoutes.js'
 import duesRoutes from './routes/duesRoutes.js'
 import activityRoutes from './routes/activityRoutes.js'
@@ -70,7 +74,7 @@ if (process.env.NODE_ENV === 'production') { app.set('trust proxy', 1) }
 const authLimiter = rateLimit({
     windowMs: 15 * 60 * 1000,
     limit: 30,                 // per IP per window, across all /auth endpoints
-    message: { message: 'Too many attempts — try again in 15 minutes' },
+    message: { message: 'Too many attempts. Try again in 15 minutes' },
     // GET /auth/me is every page load's "who am I", and the onboarding page
     // asks it every few seconds while it waits for the email link — it isn't
     // an attempt at anything, and counting it would lock people out
@@ -129,6 +133,11 @@ app.use('/api/events', authMiddleware, requireRole('member'), eventRoutes)
 // them, officers write them — that split is inside the routers
 app.use('/api/event-categories', authMiddleware, requireRole('member'), eventCategoryRoutes)
 app.use('/api/announcements', authMiddleware, requireRole('member'), announcementRoutes)
+// paying the club on your own: the ways to pay (every member reads them; the
+// treasurer and admin keep them) and the payments members send in for review
+// — the splits are inside the routers (keepsBooks in src/payments.js)
+app.use('/api/payment-methods', authMiddleware, requireRole('member'), paymentMethodRoutes)
+app.use('/api/payments', authMiddleware, requireRole('member'), paymentRoutes)
 // the income goal and spending budget: on the summary cards every officer
 // sees, set by the treasurer alone (enforced inside the router)
 //
@@ -142,6 +151,9 @@ app.use('/api/transactions', authMiddleware, requireRole('officer'), booksAccess
 // tracker is on the analytics page they all see — and only the treasurer
 // writes to them. The write gate is inside the router.
 app.use('/api/grants', authMiddleware, requireRole('officer'), booksAccess, grantRoutes)
+// what money is filed under — the donuts' slices and the receipt form's
+// list: every officer reads it, the treasurer and admin add and remove them
+app.use('/api/finance-categories', authMiddleware, requireRole('officer'), booksAccess, financeCategoryRoutes)
 // dues are the treasurer's to keep — reading as well as writing (the
 // treasury team reads them, see booksAccess)
 app.use('/api/dues', authMiddleware, requireRole('treasurer'), booksAccess, duesRoutes)
@@ -162,6 +174,15 @@ setInterval(
 expireOffers().catch(err => console.error('Offer sweep failed:', err.message))
 setInterval(
     () => expireOffers().catch(err => console.error('Offer sweep failed:', err.message)),
+    60 * 60 * 1000
+)
+
+// Payment due dates (a week before, 11:59 PM) and sent-back payments left
+// unfixed for 48 hours: whoever's owed is moved to the waitlist (see
+// payments.js) — on boot, then hourly, and on each check-in page's roster read.
+enforcePaymentRules().catch(err => console.error('Payment sweep failed:', err.message))
+setInterval(
+    () => enforcePaymentRules().catch(err => console.error('Payment sweep failed:', err.message)),
     60 * 60 * 1000
 )
 

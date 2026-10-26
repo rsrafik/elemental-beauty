@@ -5,7 +5,7 @@ import { useSearchParams } from 'next/navigation'
 import DashboardShell from '@/components/dashboards/DashboardShell'
 import { labs as labsApi } from '@/lib/api'
 import { isoDate, today } from '@/lib/dates'
-import { BackButton, Scaled } from '@/components/labs/LabViewParts'
+import { BackButton, FitScaled, Scaled } from '@/components/labs/LabViewParts'
 import MemberLabSignup from '@/components/labs/MemberLabSignup'
 import MemberLabQuiz from '@/components/labs/MemberLabQuiz'
 import MemberLabContent from '@/components/labs/MemberLabContent'
@@ -103,7 +103,7 @@ export default function MemberLabView() {
 
 	let body = null
 	if (!id) {
-		body = <Message>No lab picked — head back to the labs page and choose one.</Message>
+		body = <Message>No lab picked. Head back to the labs page and choose one.</Message>
 	} else if (error && !lab) {
 		body = <Message>{error}</Message>
 	} else if (stage === 'signup') {
@@ -116,16 +116,19 @@ export default function MemberLabView() {
 				justify-center
 				lg:pb-[26px]
 			">
-				<Scaled className="
+				{/* sized to fit the window, pay card and all (FitScaled) */}
+				{/* 64px on the right keeps the photo clear of the back arrow
+				    pinned in the window's corner, now the page can reach the top */}
+				<FitScaled className="
 					lg:pl-[48px]
-					lg:pr-[16px]
+					lg:pr-[64px]
 				">
 					<MemberLabSignup
 						lab={lab}
 						ended={isoDate(lab.date) < today()}
 						onChange={load}
 					/>
-				</Scaled>
+				</FitScaled>
 			</div>
 		)
 	} else if (stage === 'checkin' || stage === 'quiz') {

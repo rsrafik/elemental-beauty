@@ -74,10 +74,18 @@ function sentence(entry) {
 			return <>{actor} let {target} into {d.title} without paying {d.schoolYear} dues</>
 		case 'fee_paid':
 			return <>{actor} took {money(d.amount)} from {target} for {d.title} (non-member price)</>
+		case 'door_payment_undone':
+			return <>{actor} took back {target}&apos;s {d.was === 'waive' ? 'waived entry' : 'entry payment'} for {d.title}</>
+		case 'payment_rejected':
+			// "reject" (declined) moves them to the waitlist; "send back" doesn't
+			if (d.declined) {
+				return <>{actor} rejected {target}&apos;s {d.kind === 'dues' ? `${d.schoolYear} VIP dues` : `payment for ${d.title}`}{d.reason ? `: ${d.reason}` : ''}{d.moved ? ' (moved to the waitlist)' : ''}</>
+			}
+			return <>{actor} sent back {target}&apos;s {d.kind === 'dues' ? `${d.schoolYear} VIP dues` : `payment for ${d.title}`}: {d.reason}</>
 		case 'dues_reset':
 			return <>{actor} cleared everyone&apos;s {d.schoolYear} dues ({d.count} {d.count === 1 ? 'payment' : 'payments'})</>
 		default:
-			return <>{actor} — {entry.action}</>
+			return <>{actor}: {entry.action}</>
 	}
 }
 
@@ -95,6 +103,8 @@ const DOT = {
 	dues_waived: 'bg-yellow',
 	fee_paid: 'bg-yellow',
 	dues_reset: 'bg-black/30',
+	door_payment_undone: 'bg-black/30',
+	payment_rejected: 'bg-red',
 }
 
 function when(at) {
@@ -145,7 +155,7 @@ export default function ActivityLog({ onClose }) {
 						text-sm
 						text-black/55
 					">
-						Who changed what — roles, points, check-ins, and who was added or removed.
+						Who changed what: roles, points, check-ins, and who was added or removed.
 					</p>
 
 					{error && (
@@ -166,7 +176,7 @@ export default function ActivityLog({ onClose }) {
 							text-sm
 							text-black/45
 						">
-							Nothing yet — it fills in as officers make changes.
+							Nothing yet. It fills in as officers make changes.
 						</p>
 					)}
 

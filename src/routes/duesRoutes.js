@@ -2,6 +2,7 @@ import express from 'express'
 import prisma from '../prismaClient.js'
 import { log } from '../activity.js'
 import { DUES_EXEMPT, recordDues, syncVipRoles } from '../dues.js'
+import { PAYMENT_INCLUDE, notifyPayer, releaseLedgerRow } from '../payments.js'
 
 // Dues, for the treasurer (mounted behind requireRole('treasurer') in
 // server.js). One payment per member per school year; marking one paid writes
@@ -9,7 +10,9 @@ import { DUES_EXEMPT, recordDues, syncVipRoles } from '../dues.js'
 // income donut like any other. See DuesPayment in schema.prisma.
 //
 //   GET    /?schoolYear=2025–26   every member who pays dues (not DUES_EXEMPT)
-//                                  and their payment for that year
+//                                  and their payment for that year — and the
+//                                  VIP dues they've sent in that are waiting
+//                                  (`pending`; the card's "pending" filter)
 //   POST   /                      { memberId, schoolYear, amount, paidOn? }
 //   DELETE /:duesId               take a payment back (and its ledger row)
 //   DELETE /?schoolYear=2025–26   the dues card's "clear": everyone reads as
@@ -39,15 +42,36 @@ router.get('/', async (req, res) => {
                     dues: {
                         where: { schoolYear },
                         select: { duesId: true, amount: true, paidOn: true, transactionId: true }
+                    },
+                    payments: {
+                        where: { schoolYear, kind: 'dues', status: 'pending' },
+                        select: {
+                            paymentId: true, amount: true, methodTitle: true, reference: true,
+                            screenshot: true, submittedAt: true,
+                            lab: { select: { title: true } }, event: { select: { title: true } }
+                        },
+                        orderBy: { submittedAt: 'desc' },
+                        take: 1
                     }
                 }
             })
         ])
-        const rows = members.map(({ user, dues, ...member }) => ({
+        const rows = members.map(({ user, dues, payments, ...member }) => ({
             ...member,
             ...user,
             payment: dues[0]
                 ? { ...dues[0], amount: Number(dues[0].amount), paidOn: dues[0].paidOn.toISOString().slice(0, 10) }
+                : null,
+            pending: payments[0]
+                ? {
+                    paymentId: payments[0].paymentId,
+                    amount: Number(payments[0].amount),
+                    methodTitle: payments[0].methodTitle,
+                    reference: payments[0].reference,
+                    screenshot: payments[0].screenshot,
+                    submittedAt: payments[0].submittedAt,
+                    from: (payments[0].lab ?? payments[0].event)?.title ?? null
+                }
                 : null
         }))
         rows.sort((a, b) => a.lastName.localeCompare(b.lastName) || a.firstName.localeCompare(b.firstName))
@@ -129,7 +153,9 @@ router.delete('/', async (req, res) => {
 
 // Take a payment back — a mistake, or a refund. Its ledger row goes too;
 // deleting that row is what takes the payment with it (the cascade), so a
-// waived year, which has none, is deleted directly.
+// waived year, which has none, is deleted directly. A payment the member sent
+// in for it goes back to pending, and they're emailed to disregard the
+// approval (releaseLedgerRow in src/payments.js).
 router.delete('/:duesId', async (req, res) => {
     const duesId = parseInt(req.params.duesId)
     if (isNaN(duesId)) { return res.status(400).json({ message: 'Invalid dues id' }) }
@@ -138,8 +164,10 @@ router.delete('/:duesId', async (req, res) => {
         const payment = await prisma.duesPayment.findUnique({ where: { duesId } })
         if (!payment) { return res.status(404).json({ message: 'Payment not found' }) }
 
-        await prisma.$transaction(async (tx) => {
+        const released = await prisma.$transaction(async (tx) => {
+            let released = null
             if (payment.transactionId != null) {
+                released = await releaseLedgerRow(tx, payment.transactionId)
                 await tx.transaction.delete({ where: { transactionId: payment.transactionId } })
             } else {
                 await tx.duesPayment.delete({ where: { duesId } })
@@ -150,8 +178,14 @@ router.delete('/:duesId', async (req, res) => {
             }, tx)
             // unpaid again, so no longer VIP
             await syncVipRoles(tx)
+            return released
         })
-        res.json({ message: 'Payment removed' })
+        res.json({ message: released ? 'Payment removed. Their VIP request is pending again' : 'Payment removed' })
+        if (released) {
+            prisma.memberPayment.findUnique({ where: { paymentId: released.payment.paymentId }, include: PAYMENT_INCLUDE })
+                .then((sent) => notifyPayer(sent, released.status))
+                .catch((err) => console.error(`Payment email failed: ${err.message}`))
+        }
     } catch (err) {
         if (err.code === 'P2025') { return res.status(404).json({ message: 'Payment not found' }) }
         console.error(err.message)

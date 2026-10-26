@@ -75,10 +75,17 @@ export default function DashboardShell({
 			    column drifts up as one plane and whatever sits directly inside it
 			    rises in sequence, so arriving on a page reads as movement instead
 			    of a swap. The sidebar deliberately has none — it's the thing that
-			    stays put while the page changes behind it. */}
+			    stays put while the page changes behind it.
+			    `relative` makes the column the containing block for anything
+			    absolutely positioned inside it (sr-only labels, invisible file
+			    inputs). Without it they're placed against the page itself, past
+			    the column's scroll, and stretch the document — so above `lg` a
+			    wheel over the sidebar scrolled the whole page down into blank
+			    cream. */}
 			<section className={`
 				page-enter
 				page-stagger
+				relative
 				flex-1
 				min-w-0
 				lg:overflow-y-auto

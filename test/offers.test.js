@@ -67,6 +67,11 @@ async function member() {
         }
     })
     made.users.push(user.userId)
+    // This year's dues waived: owing for a lab means paying before confirming
+    // or accepting (src/offers.js), which is payments.test.js's business, and
+    // this year's dues amount is whatever the other files have left it at.
+    const { schoolYearOf } = await import('../src/dues.js')
+    await prisma.duesPayment.create({ data: { memberId: user.userId, schoolYear: schoolYearOf(clubTime.clubToday()), amount: 0 } })
     return user.userId
 }
 

@@ -17,6 +17,13 @@ const MEMBER_ONLY = [
 	{ label: 'calendar', href: '/calendar' },
 ]
 
+// A plain member — not a VIP, j-board or staff — can pay the year's dues from
+// here (/vip). It goes once they're approved: they're a VIP then, and the
+// session's role says so.
+const BECOME_VIP = [
+	{ label: 'become VIP', href: '/vip' },
+]
+
 const OFFICER_ONLY = [
 	{ label: 'students', href: '/students' },
 ]
@@ -29,7 +36,7 @@ const ANALYTICS = [
 // `teams` is the session's jboardTeams — only j-board's say anything
 export function navFor(role, teams) {
 	if (!hasRole('member', role)) return BASE
-	if (!hasRole('officer', role)) return [...BASE, ...MEMBER_ONLY]
+	if (!hasRole('officer', role)) return [...BASE, ...MEMBER_ONLY, ...(role === 'member' ? BECOME_VIP : [])]
 	return [
 		...BASE,
 		...MEMBER_ONLY,

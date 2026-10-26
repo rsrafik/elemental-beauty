@@ -105,24 +105,17 @@ enum ReimbursementStatus {
   @@map("reimbursement_status")
 }
 
-// Where money comes from and where it goes, as the two analytics pages actually
-// slice it: the first four are the income summary's donut, the last four the
-// expense summary's — and the last four are also what a receipt gets filed
-// under, so a settled request lands in one of them.
-enum FinanceCategory {
-  grants
-  fundraisers
-  dues
-  sponsors
-  lab
-  events
-  guests
-  marketing
-  // a non-member's price for one lab or members-only event, paid at the door
-  // — income, but not a slice of the four above (see src/dues.js)
-  fees
+// How someone who owes dues got into one lab or members-only event without
+// paying the year's dues: the non-member price for that one ('fee'), or let in
+// free that once ('waive'). Answered at the door's dues popup, or ahead of
+// time from the $ on the check-in page — either way it's kept on their row,
+// so checking them in doesn't ask again (see src/dues.js). Paying the year's
+// dues isn't one of these: that's a DuesPayment, and settles every lab.
+enum DoorPayment {
+  fee
+  waive
 
-  @@map("finance_category")
+  @@map("door_payment")
 }
 
 // How far along a grant application is. Ordered by progress rather than
@@ -159,6 +152,8 @@ enum GrantStatus {
 //   instagram             the sign-up form asks for it (optional) at the moment
 //     an account is created, which is before email verification and the waiver
 //     have made a member row exist.
+//   discord               their discord username, beside instagram on /account's
+//     socials card — optional, and anyone with an account can set it.
 //   profilePicture        /account shows the photo picker to role 'user' too —
 //     somebody with an account and no membership can still set a picture.
 model User {
@@ -169,6 +164,7 @@ model User {
   firstName      String   @default("") @map("first_name")
   lastName       String   @default("") @map("last_name")
   instagram      String?
+  discord        String?
   profilePicture String?  @map("profile_picture")
   emailVerified  Boolean  @default(false) @map("email_verified")
   waiverSigned   Boolean  @default(false) @map("waiver_signed")
@@ -220,6 +216,7 @@ model Member {
   events         MemberEvent[]
   reimbursements Reimbursement[]
   dues           DuesPayment[]
+  payments       MemberPayment[]
 
   @@map("members")
 }
@@ -288,6 +285,10 @@ model Lab {
   // when the check-in page's "confirmation" last went out — after that,
   // anyone who takes a spot off the waitlist is sent the prelab too
   confirmSentAt DateTime? @map("confirm_sent_at") @db.Timestamptz()
+  // when its payment due date (a week before, 11:59 PM) was enforced:
+  // everyone still owing with nothing sent in was moved to the waitlist, once
+  // (src/payments.js). Set for any lab already past it when this was added.
+  paymentsDueSweptAt DateTime? @map("payments_due_swept_at") @db.Timestamptz()
   // when the day-before reminder went out to everyone signed up (see
   // src/reminders.js). Cleared when the date or time moves, so a rescheduled
   // lab is reminded about again.
@@ -319,6 +320,7 @@ model Lab {
   lessons       LabLesson[]
   quizQuestions LabQuizQuestion[]
   members       MemberLab[]
+  payments      MemberPayment[]
 
   @@map("labs")
 }
@@ -426,6 +428,8 @@ model Event {
   createdById Int? @map("created_by")
   // when the check-in page's "confirmation" last went out (src/offers.js)
   confirmSentAt DateTime? @map("confirm_sent_at") @db.Timestamptz()
+  // when its payment due date was enforced, as a lab's (src/payments.js)
+  paymentsDueSweptAt DateTime? @map("payments_due_swept_at") @db.Timestamptz()
   // the day-before reminder, same as a lab's (src/reminders.js)
   reminderSentAt DateTime? @map("reminder_sent_at") @db.Timestamptz()
 
@@ -434,6 +438,7 @@ model Event {
   category  EventCategory? @relation(fields: [categoryId], references: [categoryId], onDelete: SetNull)
   createdBy User?          @relation(fields: [createdById], references: [userId], onDelete: SetNull)
   members   MemberEvent[]
+  payments  MemberPayment[]
 
   @@index([date])
   @@index([categoryId])
@@ -457,9 +462,19 @@ model MemberLab {
   confirmSentAt    DateTime?        @map("confirm_sent_at") @db.Timestamptz()
   confirmBy        DateTime?        @map("confirm_by") @db.Timestamptz()
   confirmedAt      DateTime?        @map("confirmed_at") @db.Timestamptz()
+  // owing for it after its payment due date had passed (signed up late, or
+  // an entry taken back): the 48 hours they have to pay by, and when they
+  // were last reminded — offered a spot and owing, too (src/payments.js)
+  payBy            DateTime?        @map("pay_by") @db.Timestamptz()
+  payRemindedAt    DateTime?        @map("pay_reminded_at") @db.Timestamptz()
+  // the entry paid or waived for this one, when they owe dues (DoorPayment),
+  // and the income row a paid one wrote — what undoing it takes back out
+  doorPayment       DoorPayment?     @map("door_payment")
+  doorTransactionId Int?             @unique @map("door_transaction_id")
 
-  member Member @relation(fields: [memberId], references: [userId], onDelete: Cascade)
-  lab    Lab    @relation(fields: [labId], references: [labId], onDelete: Cascade)
+  member          Member       @relation(fields: [memberId], references: [userId], onDelete: Cascade)
+  lab             Lab          @relation(fields: [labId], references: [labId], onDelete: Cascade)
+  doorTransaction Transaction? @relation(fields: [doorTransactionId], references: [transactionId], onDelete: SetNull)
 
   @@id([memberId, labId])
   @@index([labId])
@@ -478,9 +493,19 @@ model MemberEvent {
   confirmSentAt    DateTime?        @map("confirm_sent_at") @db.Timestamptz()
   confirmBy        DateTime?        @map("confirm_by") @db.Timestamptz()
   confirmedAt      DateTime?        @map("confirmed_at") @db.Timestamptz()
+  // owing for it after its payment due date had passed (signed up late, or
+  // an entry taken back): the 48 hours they have to pay by, and when they
+  // were last reminded — offered a spot and owing, too (src/payments.js)
+  payBy            DateTime?        @map("pay_by") @db.Timestamptz()
+  payRemindedAt    DateTime?        @map("pay_reminded_at") @db.Timestamptz()
+  // the entry paid or waived for this one, when they owe dues (DoorPayment),
+  // and the income row a paid one wrote — what undoing it takes back out
+  doorPayment       DoorPayment?     @map("door_payment")
+  doorTransactionId Int?             @unique @map("door_transaction_id")
 
-  member Member @relation(fields: [memberId], references: [userId], onDelete: Cascade)
-  event  Event  @relation(fields: [eventId], references: [eventId], onDelete: Cascade)
+  member          Member       @relation(fields: [memberId], references: [userId], onDelete: Cascade)
+  event           Event        @relation(fields: [eventId], references: [eventId], onDelete: Cascade)
+  doorTransaction Transaction? @relation(fields: [doorTransactionId], references: [transactionId], onDelete: SetNull)
 
   @@id([memberId, eventId])
   @@index([eventId])
@@ -488,6 +513,35 @@ model MemberEvent {
 }
 
 // ---------- Finances ----------
+
+// Where money comes from and where it goes, as the two analytics pages slice
+// it: the income ones are the income summary's donut, the expense ones the
+// expense summary's — and the expense ones are also what a receipt gets filed
+// under, so a settled request lands in one of them.
+//
+// A table rather than an enum because the treasurer adds and removes them
+// from /analytics. `key` is what a ledger row or a receipt stores ('dues'),
+// and it never changes once made; `label` is what the page prints. Four can't
+// be removed because the app files money under them itself — grants, dues,
+// fees and sponsors (LOCKED in src/financeCategories.js) — and none can be
+// while a row or a receipt is filed under it (ON DELETE RESTRICT).
+//
+// `position` is the slice order: the seeded ones in the order the donuts have
+// always drawn them, and each one added after them at the end. `description`
+// is the optional line the categories card prints under it.
+model FinanceCategory {
+  key         String          @id
+  label       String
+  type        TransactionType
+  color       String
+  description String?
+  position    Int             @default(autoincrement())
+
+  transactions   Transaction[]
+  reimbursements Reimbursement[]
+
+  @@map("finance_categories")
+}
 
 // A grant application, tracked from before it's sent. `amountRequested` is what
 // was asked for and `status` is what says whether the club ever saw it — only
@@ -554,7 +608,7 @@ model Reimbursement {
   title             String
   explanation       String
   amountRequested   Decimal             @map("amount_requested") @db.Decimal(10, 2)
-  category          FinanceCategory
+  category          String
   status            ReimbursementStatus @default(pending)
   denialExplanation String?             @map("denial_explanation")
   previousDenial    String?             @map("previous_denial")
@@ -566,8 +620,9 @@ model Reimbursement {
   payoutMethod      String?             @map("payout_method")
   payoutHandle      String?             @map("payout_handle")
 
-  member      Member?      @relation(fields: [memberId], references: [userId], onDelete: SetNull)
-  transaction Transaction?
+  member       Member?         @relation(fields: [memberId], references: [userId], onDelete: SetNull)
+  categoryInfo FinanceCategory @relation(fields: [category], references: [key], onDelete: Restrict)
+  transaction  Transaction?
 
   @@index([memberId])
   @@index([status])
@@ -579,14 +634,18 @@ model Transaction {
   type            TransactionType
   source          String
   amount          Decimal         @db.Decimal(10, 2)
-  category        FinanceCategory
+  category        String
   date            DateTime        @default(dbgenerated("CURRENT_DATE")) @db.Date
   grantId         Int?            @map("grant_id")
   reimbursementId Int?            @unique @map("reimbursement_id")
 
-  grant         Grant?         @relation(fields: [grantId], references: [grantId], onDelete: Restrict)
-  reimbursement Reimbursement? @relation(fields: [reimbursementId], references: [reimbursementId], onDelete: Restrict)
+  grant         Grant?          @relation(fields: [grantId], references: [grantId], onDelete: Restrict)
+  reimbursement Reimbursement?  @relation(fields: [reimbursementId], references: [reimbursementId], onDelete: Restrict)
+  categoryInfo  FinanceCategory @relation(fields: [category], references: [key], onDelete: Restrict)
   dues          DuesPayment?
+  doorLab       MemberLab?
+  doorEvent     MemberEvent?
+  payment       MemberPayment?
 
   @@index([date])
   @@index([grantId])
@@ -617,6 +676,93 @@ model DuesPayment {
   @@unique([memberId, schoolYear])
   @@index([schoolYear])
   @@map("dues_payments")
+}
+
+// ---- Payments members send in ----
+
+// A way to pay the club, kept on /analytics' "accepted payments" card by the
+// treasurer or admin: what members pick from the payment dropdown ('Venmo'),
+// its QR code (a data URL, like a receipt photo) and a line printed under it.
+model PaymentMethod {
+  methodId    Int      @id @default(autoincrement()) @map("method_id")
+  title       String
+  image       String?
+  description String?
+  createdAt   DateTime @default(now()) @map("created_at") @db.Timestamptz()
+
+  payments MemberPayment[]
+
+  @@map("payment_methods")
+}
+
+// What a payment a member sent in was for: the year's dues (they turn VIP) or
+// one lab's or members-only event's non-member price.
+enum PaymentKind {
+  dues
+  fee
+
+  @@map("payment_kind")
+}
+
+// pending -> approved (the money's in the ledger), rejected ("send back": with
+// a reason, they fix it and send it again — within 48 hours, when it's for a
+// lab or event, or they're moved to its waitlist) or declined ("reject": it's
+// not accepted, and they're moved to the waitlist of the lab or event it was
+// sent from; a sent-back one left unfixed for 48 hours ends here too).
+// `reversed` is an approved one taken back from the check-in page's grey $ —
+// they're unpaid again and can send another. See src/payments.js.
+enum PaymentStatus {
+  pending
+  approved
+  rejected
+  declined
+  reversed
+
+  @@map("payment_status")
+}
+
+// A payment a member made on their own — by Venmo, Zelle, whatever's on the
+// accepted payments card — and told the club about from a lab's or event's
+// page, or /vip, with the transaction id the app gave them. The treasurer or
+// admin checks it and approves it (which writes the income row, the same as
+// the door's "paid entry" / "paid dues") or sends it back with a reason. The
+// same shape as a receipt an officer hands in, the other way round.
+//
+// `labId` / `eventId` is where it was sent from — a fee is always for that
+// one; dues sent from /vip have neither. `schoolYear` is the year the dues
+// are for (the lab's year, or this one). `amount` and `methodTitle` are kept
+// as they were when it was sent, so changing the price or removing the method
+// later doesn't rewrite it. `transactionId` is the income row approving it
+// wrote.
+model MemberPayment {
+  paymentId       Int           @id @default(autoincrement()) @map("payment_id")
+  memberId        Int           @map("member_id")
+  kind            PaymentKind
+  labId           Int?          @map("lab_id")
+  eventId         Int?          @map("event_id")
+  schoolYear      String        @map("school_year")
+  amount          Decimal       @db.Decimal(10, 2)
+  methodId        Int?          @map("method_id")
+  methodTitle     String        @map("method_title")
+  reference       String
+  screenshot      String?
+  status          PaymentStatus @default(pending)
+  rejectionReason String?       @map("rejection_reason")
+  submittedAt     DateTime      @default(now()) @map("submitted_at") @db.Timestamptz()
+  reviewedAt      DateTime?     @map("reviewed_at") @db.Timestamptz()
+  transactionId   Int?          @unique @map("transaction_id")
+
+  member      Member         @relation(fields: [memberId], references: [userId], onDelete: Cascade)
+  lab         Lab?           @relation(fields: [labId], references: [labId], onDelete: SetNull)
+  event       Event?         @relation(fields: [eventId], references: [eventId], onDelete: SetNull)
+  method      PaymentMethod? @relation(fields: [methodId], references: [methodId], onDelete: SetNull)
+  transaction Transaction?   @relation(fields: [transactionId], references: [transactionId], onDelete: SetNull)
+
+  @@index([memberId])
+  @@index([labId])
+  @@index([eventId])
+  @@index([status])
+  @@map("member_payments")
 }
 
 // ---- Activity log ----

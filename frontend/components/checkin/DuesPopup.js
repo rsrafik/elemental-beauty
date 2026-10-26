@@ -21,6 +21,76 @@ import { Popup } from '@/components/labs/LabViewParts'
 //                      in; throws if the server refused
 //   onClose                    called once the popup has gone, whichever way —
 //                              after a choice, or for wait
+//   methods            the accepted payments' names ('Venmo'), for the
+//                      optional "how" and transaction id that go in the
+//                      ledger row's title when money changes hands — onChoose
+//                      gets them as its second argument, { method, reference }
+//   ahead              asked from the $ on a row, before they're checked in
+//                      (not by a check-in): the same answers, settled now so
+//                      the check-in doesn't ask, and "cancel" for "wait"
+
+const FIELD = `
+	w-full
+	min-w-0
+	rounded-full
+	border
+	border-black/25
+	bg-white
+	px-4
+	py-2
+	font-vietnam
+	text-xs
+	text-black
+	outline-none
+	focus:border-black
+`
+
+// A select with its chevron drawn rather than the browser's: the native one
+// sits hard against the right edge, this one is inset by the same 16px as the
+// text on the left.
+function Dropdown({ children, ...props }) {
+	return (
+		<div className="
+			relative
+			min-w-0
+		">
+			<select {...props} className={`${FIELD} appearance-none pr-10 cursor-pointer`}>
+				{children}
+			</select>
+			<svg
+				viewBox="0 0 24 24"
+				fill="none"
+				stroke="currentColor"
+				strokeWidth="2.2"
+				strokeLinecap="round"
+				strokeLinejoin="round"
+				aria-hidden="true"
+				className="
+					pointer-events-none
+					absolute
+					right-4
+					top-1/2
+					-translate-y-1/2
+					w-4
+					h-4
+					text-black/70
+				"
+			>
+				<path d="M6 9l6 6 6-6" />
+			</svg>
+		</div>
+	)
+}
+
+// the small word over each of the "how it was paid" fields
+const OPTIONAL = `
+	block
+	mb-1
+	pl-4
+	font-vietnam
+	text-[11px]
+	text-black/45
+`
 
 const money = (amount) => Number(amount).toLocaleString('en-US', { style: 'currency', currency: 'USD' })
 
@@ -67,17 +137,20 @@ function Choice({ tone, onClick, disabled, children }) {
 	)
 }
 
-export default function DuesPopup({ name, schoolYear, amount, price = 0, onChoose, onClose }) {
+export default function DuesPopup({ name, schoolYear, amount, price = 0, onChoose, onClose, ahead = false, methods = [] }) {
 	// which answer is on its way to the server
 	const [busy, setBusy] = useState(null)
 	const [error, setError] = useState(null)
+	// how they paid — both optional, and only sent with money
+	const [method, setMethod] = useState('')
+	const [reference, setReference] = useState('')
 
 	const choose = async (choice, dismiss) => {
 		if (busy) return
 		setBusy(choice)
 		setError(null)
 		try {
-			await onChoose(choice)
+			await onChoose(choice, choice === 'waive' ? {} : { method: method || undefined, reference: reference.trim() || undefined })
 			dismiss(onClose)
 		} catch (err) {
 			setError(err.message)
@@ -96,13 +169,15 @@ export default function DuesPopup({ name, schoolYear, amount, price = 0, onChoos
 						<span className="font-semibold text-black">{name ?? 'This member'}</span>{' '}
 						<span className="font-semibold text-red">
 							hasn’t paid their {schoolYear} dues{amount > 0 ? ` (${money(amount)})` : ''}
-						</span>, so they haven’t been checked in.
+						</span>{ahead ? '.' : ', so they haven’t been checked in.'}
 					</p>
 					<p className={line}>
 						{amount > 0 && <><b className="text-black">paid dues</b> marks them paid for the semester.{' '}</>}
 						{price > 0 && <><b className="text-black">paid entry</b> takes the {money(price)} non-member price for this one.{' '}</>}
 						<b className="text-black">waive</b> lets them in this once.{' '}
-						<b className="text-black">wait</b> leaves them not checked in while they pay.
+						{ahead
+							? <>Checking them in won’t ask again.</>
+							: <><b className="text-black">wait</b> leaves them not checked in while they pay.</>}
 					</p>
 
 					{error && (
@@ -120,11 +195,48 @@ export default function DuesPopup({ name, schoolYear, amount, price = 0, onChoos
 						</p>
 					)}
 
+					{/* how it was paid, when it's money: both optional, and they
+					    go in the ledger row's title */}
+					{(amount > 0 || price > 0) && (
+						<div className="
+							mt-6
+							grid
+							grid-cols-2
+							gap-3
+						">
+							<label className="min-w-0">
+								<span className={OPTIONAL}>optional</span>
+								<Dropdown
+									value={method}
+									onChange={(event) => setMethod(event.target.value)}
+									aria-label="How they paid (optional)"
+								>
+									<option value="">payment platform</option>
+									{[...methods, 'Cash'].map((title) => (
+										<option key={title} value={title}>{title}</option>
+									))}
+								</Dropdown>
+							</label>
+							<label className="min-w-0">
+								<span className={OPTIONAL}>optional</span>
+								<input
+									type="text"
+									value={reference}
+									onChange={(event) => setReference(event.target.value)}
+									maxLength={80}
+									placeholder="transaction id"
+									aria-label="Transaction id (optional)"
+									className={FIELD}
+								/>
+							</label>
+						</div>
+					)}
+
 					{/* the ways they can pay on top, the two that let nothing
 					    change hands underneath */}
 					{(amount > 0 || price > 0) && (
 						<div className="
-							mt-8
+							mt-3
 							flex
 							gap-3
 						">
@@ -149,7 +261,7 @@ export default function DuesPopup({ name, schoolYear, amount, price = 0, onChoos
 							{busy === 'waive' ? 'waiving…' : 'waive'}
 						</Choice>
 						<Choice tone="wait" disabled={!!busy} onClick={() => dismiss(onClose)}>
-							wait
+							{ahead ? 'cancel' : 'wait'}
 						</Choice>
 					</div>
 				</>

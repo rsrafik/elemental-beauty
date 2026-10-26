@@ -4,6 +4,7 @@ import { sendEmail } from './email.js'
 import { actionEmail } from './emailTemplate.js'
 import { APP_URL } from './verification.js'
 import { clubFormat, startsAt } from './clubTime.js'
+import { OFFER_HOURS, dueCallout, dueText, dueWhen, payable, paymentDueAt } from './payable.js'
 
 // Waitlist offers, for labs and events alike.
 //
@@ -34,22 +35,37 @@ import { clubFormat, startsAt } from './clubTime.js'
 // offer counts as confirming, and a lab's prelab is emailed to whoever accepts.
 //
 // Nobody is dropped for not answering — only moved to the back of the line.
+//
+// Paying stands in for both. Someone who owes for a lab or members-only event
+// (not a VIP, nothing paid at the door) has no confirm or accept button: the
+// emails send them to its page, where sending the payment does it (see
+// payable.js). Once it's sent they hold the spot — an offer becomes theirs
+// (acceptByPaying), and neither the offer's 48 hours nor a confirmation
+// deadline can move them — and once it's approved they're officially
+// confirmed (approvePayment in payments.js), so the confirmation round tells
+// them they're set instead of asking. Their confirmation deadline is their
+// payment due date too, when it's sooner than the week before; not paying by
+// it is payments.js's to enforce (enforcePaymentRules), not this file's.
+//
+// Whoever's moved to the back of the waitlist is emailed why
+// (notifyMovedToWaitlist).
 
-export const OFFER_HOURS = 48
+export { OFFER_HOURS }
 const HOUR = 60 * 60 * 1000
 
 // waitlisted -> offered. Any confirmation left over from a spot they lost is
 // cleared: they start fresh with this one.
 export const OFF_WAITLIST = {
     attendanceStatus: 'offered', waitlistedAt: null, offerSentAt: null,
-    confirmSentAt: null, confirmBy: null, confirmedAt: null
+    confirmSentAt: null, confirmBy: null, confirmedAt: null, payBy: null, payRemindedAt: null
 }
 
 // A lapsed offer or a missed confirmation: to the back of the waitlist. A
 // missed confirmation keeps its `confirmBy`, which is how enforceConfirmations
 // tells them apart from people who joined the waitlist themselves.
 const BACK_OF_WAITLIST = {
-    attendanceStatus: 'waitlisted', offerSentAt: null, confirmSentAt: null, confirmedAt: null
+    attendanceStatus: 'waitlisted', offerSentAt: null, confirmSentAt: null, confirmedAt: null,
+    payBy: null, payRemindedAt: null
 }
 
 export const KINDS = {
@@ -108,6 +124,69 @@ export async function offerNext(tx, kindName, parentId) {
     return next.memberId
 }
 
+// signed up (or offered) -> the back of the waitlist, inside `tx` (which has
+// taken lockParent): the seat they held goes on down the waitlist, if the cap
+// leaves room for it. Returns whether they were moved — false if they weren't
+// holding a spot.
+export async function moveToWaitlist(tx, kindName, parentId, memberId) {
+    const kind = KINDS[kindName]
+    const row = await tx[kind.link].findUnique({ where: where(kind, parentId, memberId) })
+    if (!row || !['rsvped', 'offered'].includes(row.attendanceStatus)) { return false }
+    await tx[kind.link].update({
+        where: where(kind, parentId, memberId),
+        data: { ...BACK_OF_WAITLIST, waitlistedAt: new Date() }
+    })
+    const parent = await tx[kind.parent].findUnique({ where: { [kind.key]: parentId }, select: { capacity: true } })
+    if (parent?.capacity != null) {
+        const taken = await tx[kind.link].count({ where: { [kind.key]: parentId, attendanceStatus: HELD } })
+        if (taken < parent.capacity) { await offerNext(tx, kindName, parentId) }
+    }
+    return true
+}
+
+// Why someone was moved to the back of a waitlist, in the email that says so
+const MOVED = {
+    unpaid: () => 'You hadn’t sent a payment in by the payment due date, so your spot has gone to the waitlist.',
+    declined: (note) => `Your payment wasn’t accepted${note ? `: ${note}` : '.'}`,
+    not_revised: () => 'Your payment was sent back to be fixed, and it wasn’t sent again within 48 hours.',
+    unconfirmed: () => 'You didn’t confirm your spot by the deadline, and someone on the waitlist needed it.'
+}
+
+// Tell `memberId` they're on the waitlist for it now, and why (`reason` is a
+// key of MOVED; `note` is a rejection's reason). The payment ones carry the
+// due date, big. Never throws: a mail hiccup is logged.
+export async function notifyMovedToWaitlist({ kindName, parentId, memberId, reason, note = null, missedBy = null }) {
+    try {
+        const kind = KINDS[kindName]
+        const row = await prisma[kind.link].findUnique({
+            where: where(kind, parentId, memberId),
+            include: { [kind.parent]: true, member: { select: { user: { select: { email: true, firstName: true } } } } }
+        })
+        if (!row) { return }
+        const parent = row[kind.parent]
+        const about = reason !== 'unconfirmed'
+        // the due date they missed (moving them cleared a late one's payBy,
+        // so it's handed in)
+        await sendEmail({
+            to: row.member.user.email,
+            subject: `You’ve been moved to the waitlist: ${parent.title}`,
+            ...actionEmail({
+                heading: 'You’re on the waitlist now',
+                ...(about ? { callout: dueCallout(parent, { confirmBy: row.confirmBy, payBy: missedBy }) } : {}),
+                lines: [
+                    `You were signed up for ${parent.title} on ${when(parent)}, but you’ve been moved to the back of its waitlist.`,
+                    `Why: ${MOVED[reason](note)}`,
+                    'If a spot opens up, you’ll be offered it, and you can pay then to take it.'
+                ],
+                button: { label: `See the ${kind.noun}`, url: `${APP_URL}${kind.page(parentId)}` },
+                reason: `You’re getting this because you signed up for ${parent.title}.`
+            })
+        })
+    } catch (err) {
+        console.error(`Waitlist email failed: ${err.message}`)
+    }
+}
+
 // 'Tuesday, September 29 at 5:00 PM in WTHR 200'
 function when(row) {
     const day = row.date.toISOString().slice(0, 10)
@@ -143,18 +222,31 @@ export async function sendOffer(kindName, parentId, memberId) {
         process.env.JWT_SECRET,
         { expiresIn: '14d' }
     )
+    // someone who owes for it accepts by paying, on its page
+    const standing = await payable(prisma, memberId, kindName, parentId)
+    const payFirst = Boolean(standing?.owes && !standing.sent)
     const sent = await sendEmail({
         to: user.email,
         subject: `A spot opened up: ${parent.title}`,
         ...actionEmail({
             heading: user.firstName ? `Good news, ${user.firstName}!` : 'Good news!',
+            ...(payFirst ? { callout: dueCallout(parent) } : {}),
             lines: [
-                `You’re off the waitlist — a spot opened up in ${parent.title} on ${when(parent)}.`,
-                'It’s yours if you want it. Accept below and you’re officially signed up.'
+                `You’re off the waitlist! A spot opened up in ${parent.title} on ${when(parent)}.`,
+                ...(payFirst
+                    ? [
+                        'It’s yours if you want it, but your spot can only be accepted once you pay. Send your payment on its page and the spot is yours. It’s officially confirmed once we approve the payment.',
+                        'Payments aren’t refunded if you can’t make it, because we buy your materials ahead of time.'
+                    ]
+                    : ['It’s yours if you want it. Accept below and you’re officially signed up.'])
             ],
-            button: { label: 'Accept my spot', url: `${APP_URL}/offer?token=${token}` },
+            button: payFirst
+                ? { label: 'Pay to accept my spot', url: `${APP_URL}${kind.page(parentId)}` }
+                : { label: 'Accept my spot', url: `${APP_URL}/offer?token=${token}` },
             after: [
-                `Please accept within ${OFFER_HOURS} hours — after that the spot may go to the next person on the waitlist, and you’ll move to the back of it.`
+                payFirst
+                    ? `Please pay within ${OFFER_HOURS} hours. After that the spot may go to the next person on the waitlist, and you’ll move to the back of it.`
+                    : `Please accept within ${OFFER_HOURS} hours. After that the spot may go to the next person on the waitlist, and you’ll move to the back of it.`
             ],
             reason: `You’re getting this because you joined the waitlist for ${parent.title}.`
         })
@@ -167,7 +259,8 @@ export async function sendOffer(kindName, parentId, memberId) {
 }
 
 // offered -> rsvped. Anything else is left as it is and said back: already
-// accepted, already checked in, back on the waitlist, or the offer's gone.
+// accepted, already checked in, back on the waitlist, or the offer's gone —
+// or 'pay_first' for someone who owes for it, who accepts by paying instead.
 export async function acceptOffer(kindName, parentId, memberId) {
     const kind = KINDS[kindName]
     const row = await prisma[kind.link].findUnique({
@@ -181,19 +274,40 @@ export async function acceptOffer(kindName, parentId, memberId) {
     }
     if (row.attendanceStatus === 'waitlisted') { return { status: 'waitlisted', title } }
     if (row.attendanceStatus !== 'offered') { return { status: 'gone', title } }
-    // once a confirmation round has gone out, taking a spot counts as
-    // confirming it — and the prelab follows them
+    const standing = await payable(prisma, memberId, kindName, parentId)
+    if (standing?.owes && !standing.sent) { return { status: 'pay_first', title } }
+    // one who owes and has paid holds it, but isn't confirmed until the
+    // payment's approved
+    await takeOffer(kindName, parentId, memberId, { confirm: !standing?.owes })
+    return { status: 'accepted', title }
+}
+
+// Someone holding an offer just sent a payment for it: that accepts it — the
+// spot's theirs, confirmed once the payment's approved. Anything but an open
+// offer is left alone. Returns whether it was taken.
+export async function acceptByPaying(kindName, parentId, memberId) {
+    const kind = KINDS[kindName]
+    const row = await prisma[kind.link].findUnique({ where: where(kind, parentId, memberId) })
+    if (row?.attendanceStatus !== 'offered') { return false }
+    await takeOffer(kindName, parentId, memberId, { confirm: false })
+    return true
+}
+
+// offered -> rsvped. Once a confirmation round has gone out, taking a spot
+// counts as confirming it (`confirm` — not for one who's paid, whose approval
+// does) — and either way the prelab follows them.
+async function takeOffer(kindName, parentId, memberId, { confirm }) {
+    const kind = KINDS[kindName]
     const parent = await prisma[kind.parent].findUnique({ where: { [kind.key]: parentId }, select: { confirmSentAt: true } })
-    const confirming = Boolean(parent?.confirmSentAt)
+    const late = Boolean(parent?.confirmSentAt)
     await prisma[kind.link].update({
         where: where(kind, parentId, memberId),
-        data: { attendanceStatus: 'rsvped', offerSentAt: null, ...(confirming ? { confirmedAt: new Date() } : {}) }
+        data: { attendanceStatus: 'rsvped', offerSentAt: null, ...(late && confirm ? { confirmedAt: new Date() } : {}) }
     })
-    if (confirming) {
+    if (late) {
         await sendPrelabTo(kindName, parentId, memberId).catch((err) =>
             console.error(`Prelab email failed: ${err.message}`))
     }
-    return { status: 'accepted', title }
 }
 
 const HELD = { in: ['rsvped', 'attended', 'offered'] }
@@ -255,6 +369,9 @@ export async function expireOffers() {
 // Someone already moved back for missing the deadline doesn't count as
 // waiting — otherwise two who both missed it would keep swapping places.
 //
+// Nor does it count anyone who owes for it: for them the deadline is a
+// payment due date, and paying meets it (enforcePaymentRules in payments.js).
+//
 // No cap means no queue for seats, so there's nothing to enforce.
 async function enforceConfirmations(kindName, now) {
     const kind = KINDS[kindName]
@@ -266,20 +383,21 @@ async function enforceConfirmations(kindName, now) {
     const byParent = new Map()
     for (const row of missed) {
         const id = row[kind.key]
+        if ((await payable(prisma, row.memberId, kindName, id))?.owes) { continue }
         if (!byParent.has(id)) { byParent.set(id, []) }
         byParent.get(id).push(row.memberId)
     }
 
     let removed = 0
     for (const [parentId, memberIds] of byParent) {
-        await prisma.$transaction(async (tx) => {
+        const moved = await prisma.$transaction(async (tx) => {
             await lockParent(tx, kindName, parentId)
             const parent = await tx[kind.parent].findUnique({ where: { [kind.key]: parentId }, select: { capacity: true } })
-            if (!parent || parent.capacity == null) { return }
+            if (!parent || parent.capacity == null) { return [] }
             const waiting = await tx[kind.link].count({
                 where: { [kind.key]: parentId, attendanceStatus: 'waitlisted', confirmBy: null }
             })
-            if (waiting === 0) { return }
+            if (waiting === 0) { return [] }
             const taken = await tx[kind.link].count({ where: { [kind.key]: parentId, attendanceStatus: HELD } })
 
             // enough seats to fit everyone waiting under the cap — no more
@@ -297,8 +415,12 @@ async function enforceConfirmations(kindName, now) {
             // than were already waiting, so those just moved back stay there
             let free = parent.capacity - (taken - out.length)
             while (free > 0 && await offerNext(tx, kindName, parentId)) { free-- }
-            removed += out.length
+            return out
         })
+        for (const memberId of moved) {
+            await notifyMovedToWaitlist({ kindName, parentId, memberId, reason: 'unconfirmed' })
+        }
+        removed += moved.length
     }
     return removed
 }
@@ -346,8 +468,18 @@ function deadlineText(at) {
     })
 }
 
-// "confirmation": email everyone signed up who hasn't confirmed yet a link to
-// confirm their spot by `deadline` (a Date), with the prelab attached.
+// "confirmation": email everyone signed up a word about their spot, by
+// `deadline` (a Date), with the prelab attached:
+//
+//   owes, nothing sent   paying is how they confirm — the button goes to its
+//                        page, and the payment's due by the deadline, or a
+//                        week before if that's sooner (the due date, big)
+//   owes, payment        their spot's held while it's checked, and confirmed
+//     waiting            once it's approved: nothing to do
+//   nothing owed         "Confirm my spot" — the one-click link
+//   already confirmed    paid and approved before this went out (that
+//     by paying          confirms them): they're told they're set
+//
 // Returns { sent, attached }.
 export async function sendConfirmations(kindName, parentId, deadline) {
     if (!(deadline instanceof Date) || isNaN(deadline.getTime()) || deadline.getTime() <= Date.now()) {
@@ -357,18 +489,26 @@ export async function sendConfirmations(kindName, parentId, deadline) {
     const parent = await prisma[kind.parent].findUnique({ where: { [kind.key]: parentId } })
     if (!parent) { throw Object.assign(new Error(`That ${kind.noun} doesn’t exist`), { status: 404 }) }
 
-    const rows = await prisma[kind.link].findMany({
-        where: { [kind.key]: parentId, attendanceStatus: 'rsvped', confirmedAt: null },
-        include: { member: { select: { user: { select: { email: true, firstName: true } } } } }
-    })
-    if (rows.length === 0) {
+    const include = { member: { select: { user: { select: { email: true, firstName: true } } } } }
+    const [asking, paidUp] = await Promise.all([
+        prisma[kind.link].findMany({ where: { [kind.key]: parentId, attendanceStatus: 'rsvped', confirmedAt: null }, include }),
+        // confirmed by an approved payment, and never asked
+        prisma[kind.link].findMany({ where: { [kind.key]: parentId, attendanceStatus: 'rsvped', confirmedAt: { not: null }, confirmSentAt: null }, include })
+    ])
+    if (asking.length === 0 && paidUp.length === 0) {
         throw Object.assign(new Error('Everyone signed up has already confirmed'), { status: 409 })
     }
     const prelab = await prelabOf(kindName, parentId)
+    const page = `${APP_URL}${kind.page(parentId)}`
+    const prelabLine = prelab ? ['The prelab is attached. Please read through it before the lab.'] : []
+    const why = `You’re getting this because you signed up for ${parent.title}.`
 
+    const later = `If we don’t hear back by then, your spot may go to someone on the waitlist, and you’ll move to the back of it.`
     let sent = 0
-    for (const row of rows) {
+    for (const row of asking) {
         const user = row.member.user
+        const standing = await payable(prisma, row.memberId, kindName, parentId)
+        const owes = Boolean(standing?.owes)
         const token = jwt.sign(
             { purpose: 'confirm', kind: kindName, parentId, memberId: row.memberId },
             process.env.JWT_SECRET,
@@ -377,18 +517,46 @@ export async function sendConfirmations(kindName, parentId, deadline) {
         await sendEmail({
             to: user.email,
             subject: `Please confirm your spot: ${parent.title}`,
-            ...actionEmail({
-                heading: user.firstName ? `Still coming, ${user.firstName}?` : 'Still coming?',
-                lines: [
-                    `You’re signed up for ${parent.title} on ${when(parent)}. Please confirm you’re still coming.`
-                ],
-                button: { label: 'Confirm my spot', url: `${APP_URL}/offer?token=${token}` },
-                after: [
-                    `Please confirm by ${deadlineText(deadline)} — if we don’t hear back by then, your spot may go to someone on the waitlist, and you’ll move to the back of it.`,
-                    ...(prelab ? ['The prelab is attached — please read through it before the lab.'] : [])
-                ],
-                reason: `You’re getting this because you signed up for ${parent.title}.`
-            }),
+            ...actionEmail(owes && !standing.sent
+                ? {
+                    heading: user.firstName ? `Pay to confirm your spot, ${user.firstName}` : 'Pay to confirm your spot',
+                    // sent back: the 48 hours to fix it are the due date now
+                    callout: standing.fixBy
+                        ? { label: 'New payment due', text: dueText(standing.fixBy) }
+                        : dueCallout(parent, { confirmBy: deadline, payBy: row.payBy }),
+                    lines: [
+                        `You’re signed up for ${parent.title} on ${when(parent)}.`,
+                        'To officially confirm your spot, you need to pay. Send your payment on its page. Once it’s sent your spot is held, and it’s confirmed when we approve it.',
+                        standing.fixBy
+                            ? `Your payment was sent back, so the due date has moved. It was due ${dueText(paymentDueAt(parent, { confirmBy: deadline }))}. Fix it and send it again by ${dueText(standing.fixBy)}, or you’ll be moved to the waitlist.`
+                            : `Payment is due ${dueWhen(parent, { confirmBy: deadline, payBy: row.payBy })}. If you haven’t paid by then, you’ll be moved to the waitlist.`,
+                        'Payments aren’t refunded if you can’t make it, because we buy your materials ahead of time.'
+                    ],
+                    button: { label: 'Pay to confirm my spot', url: page },
+                    after: prelabLine,
+                    reason: why
+                }
+                : owes
+                ? {
+                    heading: user.firstName ? `Your spot is held, ${user.firstName}` : 'Your spot is held',
+                    callout: dueCallout(parent, { confirmBy: deadline, payBy: row.payBy }),
+                    lines: [
+                        `You’re signed up for ${parent.title} on ${when(parent)}, and we’ve got the payment you sent.`,
+                        'It’s being checked now. Your spot is held until then, and it’s officially confirmed once we approve it. There’s nothing else to do.'
+                    ],
+                    button: { label: `See the ${kind.noun}`, url: page },
+                    after: prelabLine,
+                    reason: why
+                }
+                : {
+                    heading: user.firstName ? `Still coming, ${user.firstName}?` : 'Still coming?',
+                    lines: [
+                        `You’re signed up for ${parent.title} on ${when(parent)}. Please confirm you’re still coming.`
+                    ],
+                    button: { label: 'Confirm my spot', url: `${APP_URL}/offer?token=${token}` },
+                    after: [`Please confirm by ${deadlineText(deadline)}. ${later}`, ...prelabLine],
+                    reason: why
+                }),
             ...(prelab ? { attachments: [prelab] } : {})
         })
         await prisma[kind.link].update({
@@ -397,11 +565,37 @@ export async function sendConfirmations(kindName, parentId, deadline) {
         })
         sent++
     }
+    for (const row of paidUp) {
+        const user = row.member.user
+        await sendEmail({
+            to: user.email,
+            subject: `You’re confirmed: ${parent.title}`,
+            ...actionEmail({
+                heading: user.firstName ? `You’re all set, ${user.firstName}` : 'You’re all set',
+                callout: dueCallout(parent),
+                lines: [
+                    `You already paid for ${parent.title} on ${when(parent)}, so your spot is confirmed. There’s nothing else to do.`,
+                    ...prelabLine
+                ],
+                button: { label: `See the ${kind.noun}`, url: page },
+                reason: why
+            }),
+            ...(prelab ? { attachments: [prelab] } : {})
+        })
+        await prisma[kind.link].update({
+            where: where(kind, parentId, row.memberId),
+            data: { confirmSentAt: new Date() }
+        })
+        sent++
+    }
     await prisma[kind.parent].update({ where: { [kind.key]: parentId }, data: { confirmSentAt: new Date() } })
     return { sent, attached: prelab?.filename ?? null }
 }
 
-// rsvped + asked -> confirmed. Anything else is said back as it is.
+// rsvped + asked -> confirmed. Anything else is said back as it is —
+// 'already' if they're confirmed (an approved payment confirms them too),
+// 'pay_first' if they owe and haven't sent a payment in yet, and 'held' if
+// they owe and have: their payment's approval confirms them, not this.
 export async function confirmSpot(kindName, parentId, memberId) {
     const kind = KINDS[kindName]
     const row = await prisma[kind.link].findUnique({
@@ -413,6 +607,8 @@ export async function confirmSpot(kindName, parentId, memberId) {
     if (row.attendanceStatus === 'attended' || row.confirmedAt) { return { status: 'already', title } }
     if (row.attendanceStatus === 'waitlisted') { return { status: 'waitlisted', title } }
     if (row.attendanceStatus !== 'rsvped') { return { status: 'gone', title } }
+    const standing = await payable(prisma, memberId, kindName, parentId)
+    if (standing?.owes) { return { status: standing.sent ? 'held' : 'pay_first', title } }
     await prisma[kind.link].update({
         where: where(kind, parentId, memberId),
         data: { confirmedAt: new Date() }
@@ -441,7 +637,7 @@ async function sendPrelabTo(kindName, parentId, memberId) {
             heading: 'Here’s your prelab',
             lines: [
                 `You’re signed up for ${parent.title} on ${when(parent)}.`,
-                'The prelab is attached — please read through it before the lab.'
+                'The prelab is attached. Please read through it before the lab.'
             ],
             reason: `You’re getting this because you took a spot in ${parent.title}.`
         }),

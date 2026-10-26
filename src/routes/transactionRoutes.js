@@ -5,6 +5,9 @@ import { csvCell } from '../csv.js'
 import { log } from '../activity.js'
 import { syncVipRoles } from '../dues.js'
 import { SPONSORS_ONLY, isSponsorship, onTreasuryTeam } from '../middleware/treasury.js'
+import { categoryError } from '../financeCategories.js'
+import { PAYMENT_INCLUDE, notifyPayer, releaseLedgerRow } from '../payments.js'
+import { notifyRequester, quietly } from '../reimbursementEmails.js'
 
 const router = express.Router()
 // mounted behind requireRole('officer') — officers get the read/analytics
@@ -18,7 +21,7 @@ const router = express.Router()
 // the ledger doesn't edit or delete it on its own, and nothing else can be
 // filed as one: a grant's `grantId` on an income row is the triggers' alone.
 // (On an expense, grantId is spending out of a grant, and is the treasurer's.)
-const GRANT_ROW = 'That row is an awarded grant — change it from the grant tracker'
+const GRANT_ROW = 'That row is an awarded grant. Change it from the grant tracker'
 
 // helper: build a where clause from ?type=&category=&from=&to=
 function buildLedgerWhere(query) {
@@ -165,6 +168,9 @@ router.post('/', requireRole('treasurer'), async (req, res) => {
     if (onTreasuryTeam(req) && !isSponsorship({ type, category, grantId })) {
         return res.status(403).json({ message: SPONSORS_ONLY })
     }
+    // income under an expense category would count toward the wrong donut
+    const wrongCategory = await categoryError(category, type)
+    if (wrongCategory) { return res.status(400).json({ message: wrongCategory }) }
 
     const data = { type, source, amount: parsedAmount, category }
     if (date !== undefined) {
@@ -239,6 +245,10 @@ router.put('/:id', requireRole('treasurer'), async (req, res) => {
         if ((data.type ?? existing.type) === 'income' && (data.grantId ?? existing.grantId) != null) {
             return res.status(400).json({ message: 'An awarded grant writes its own income row' })
         }
+        if (data.type !== undefined || data.category !== undefined) {
+            const wrongCategory = await categoryError(data.category ?? existing.category, data.type ?? existing.type)
+            if (wrongCategory) { return res.status(400).json({ message: wrongCategory }) }
+        }
         const transaction = await prisma.transaction.update({ where: { transactionId }, data })
         res.json(transaction)
     } catch (err) {
@@ -268,6 +278,11 @@ router.put('/:id', requireRole('treasurer'), async (req, res) => {
 //   a dues payment   the payment goes with it (the foreign key cascades), so
 //                    that member reads as unpaid for the year again — and
 //                    stops being VIP (syncVipRoles in dues.js)
+//   a paid entry     their lab or event row reads unpaid again
+//
+// and a payment the member sent in for it is reopened — dues back to pending,
+// an entry to reversed — and they're emailed to disregard the approval
+// (releaseLedgerRow in src/payments.js).
 router.delete('/:id', requireRole('treasurer'), async (req, res) => {
     const transactionId = parseInt(req.params.id)
     if (isNaN(transactionId)) { return res.status(400).json({ message: 'Invalid transaction id' }) }
@@ -285,7 +300,8 @@ router.delete('/:id', requireRole('treasurer'), async (req, res) => {
             return res.status(403).json({ message: SPONSORS_ONLY })
         }
 
-        await prisma.$transaction(async (tx) => {
+        const released = await prisma.$transaction(async (tx) => {
+            const released = await releaseLedgerRow(tx, transactionId)
             await tx.transaction.delete({ where: { transactionId } })
             if (existing.reimbursementId != null) {
                 await tx.reimbursement.update({
@@ -301,12 +317,23 @@ router.delete('/:id', requireRole('treasurer'), async (req, res) => {
                 // the payment went with the row, so a VIP is a member again
                 await syncVipRoles(tx)
             }
+            return released
         })
         res.json({
             message: 'Transaction deleted',
             // the page re-reads the receipts when this is set
             reopenedRequest: existing.reimbursementId ?? null
         })
+        // a paid receipt went back to approved: its officer hears so
+        if (existing.reimbursementId != null) {
+            quietly(prisma.reimbursement.findUnique({ where: { reimbursementId: existing.reimbursementId } })
+                .then((request) => request && notifyRequester(request, { undone: true })))
+        }
+        if (released) {
+            prisma.memberPayment.findUnique({ where: { paymentId: released.payment.paymentId }, include: PAYMENT_INCLUDE })
+                .then((payment) => notifyPayer(payment, released.status))
+                .catch((err) => console.error(`Payment email failed: ${err.message}`))
+        }
     } catch (err) {
         if (err.code === 'P2025') { return res.status(404).json({ message: 'Transaction not found' }) }
         console.error(err.message)

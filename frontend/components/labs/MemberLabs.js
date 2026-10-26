@@ -5,7 +5,7 @@ import { useRouter } from 'next/navigation'
 import DashboardShell from '@/components/dashboards/DashboardShell'
 import { labs as labsApi } from '@/lib/api'
 import { isoDate, longDate, prettyTimeRange, today } from '@/lib/dates'
-import { LeaveClosedLabPopup, PriceBadge, priceText } from '@/components/labs/LabViewParts'
+import { LeavePopup, PriceBadge, priceText } from '@/components/labs/LabViewParts'
 
 // /labs for a user or member: browse upcoming labs, RSVP, look back at the
 // ones they've attended.
@@ -524,20 +524,46 @@ function LabCard({ title, lines, image, icon, action, availability, price, onOpe
 				    hasn't paid dues, takes the right-hand column — its own
 				    column, so the two can't overlap on a narrow card. Both side
 				    columns are the sticker's width, and the row its height, so the
-				    button sits at the same spot on every card, priced or not */}
+				    button sits at the same spot on every card, priced or not.
+				    A card too narrow for the three (under 16rem — the grid's two
+				    or three across, squeezed) stacks them instead: the sticker
+				    centred over the button, which keeps the middle to itself. */}
 				{(action || price) && (
 					<div className="
+						@container
 						mt-3
-						grid
-						grid-cols-[3rem_1fr_3rem]
-						min-h-12
-						items-center
-						gap-2
 					">
-						<span />
-						<div className="flex justify-center">{action}</div>
-						<div className="flex justify-end">
-							{price && <PriceBadge price={price} />}
+						<div className="
+							flex
+							flex-col
+							items-center
+							gap-2
+							@min-[16rem]:grid
+							@min-[16rem]:grid-cols-[3rem_1fr_3rem]
+							@min-[16rem]:min-h-12
+						">
+							<span className="
+								hidden
+								@min-[16rem]:block
+							" />
+							<div className="
+								order-2
+								flex
+								justify-center
+								@min-[16rem]:order-none
+							">
+								{action}
+							</div>
+							{price && (
+								<div className="
+									order-1
+									flex
+									justify-end
+									@min-[16rem]:order-none
+								">
+									<PriceBadge price={price} />
+								</div>
+							)}
 						</div>
 					</div>
 				)}
@@ -710,12 +736,13 @@ export default function MemberLabs() {
 	// not a seat, so it doesn't put the lab in "current" — but it does go on the
 	// card's count, which adds the waitlist to the seats ('25/20').
 	//
-	// Leaving a lab that isn't taking sign-ups can't be undone, so that asks
-	// first (LeaveClosedLabPopup) and comes back here with `confirmed`.
-	const toggleRsvp = async (lab, confirmed = false) => {
+	// Leaving always asks first (LeavePopup — it also says when sign-ups are
+	// closed, and that a paid entry isn't refunded) and comes back here with
+	// `confirmed`.
+	const toggleRsvp = async (lab, confirmed = null) => {
 		if (busy.has(lab.id)) return
 		const leaving = lab.going || lab.waitlisted
-		if (leaving && !lab.acceptingRsvps && !confirmed) {
+		if (leaving && !confirmed) {
 			setLeavingClosed(lab)
 			return
 		}
@@ -978,12 +1005,14 @@ export default function MemberLabs() {
 			</div>
 
 			{leavingClosed && (
-				<LeaveClosedLabPopup
+				<LeavePopup
 					title={leavingClosed.title}
 					mine={leavingClosed.mine}
+					closed={!leavingClosed.acceptingRsvps}
+					place={{ labId: leavingClosed.id }}
 					onConfirm={() => {
 						setLeavingClosed(null)
-						toggleRsvp(leavingClosed, true)
+						toggleRsvp(leavingClosed, { ok: true })
 					}}
 					onClose={() => setLeavingClosed(null)}
 				/>

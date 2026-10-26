@@ -55,6 +55,13 @@ export function onTreasuryTeam(role, teams) {
 	return role === 'jboard' && (teams ?? []).includes('treasury')
 }
 
+// The treasurer and admin keep the books: they approve the payments members
+// send in, take back an entry paid at the door (the check-in page's grey $)
+// and keep the accepted payments. Mirrors keepsBooks in src/payments.js.
+export function keepsBooks(role) {
+	return role === 'treasurer' || role === 'admin'
+}
+
 // Adding events: officers and up, bar the advisor (who changes nothing) and
 // j-board's treasury team (who keep the books, not the calendar). Mirrors the
 // check on POST /events in src/routes/eventRoutes.js.

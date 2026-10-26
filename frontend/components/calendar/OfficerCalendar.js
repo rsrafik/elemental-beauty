@@ -16,6 +16,7 @@ import { prettyTimeRange, thisMonth } from '@/lib/dates'
 import { canAddEvents, canChange, canEditLab, defaultOffTracks, hiddenTracks, tracksChangedFrom } from '@/lib/roles'
 import { useRole, useSession } from '@/lib/session'
 import { useCalendarEventDialogs } from '@/components/calendar/CalendarEventDialogs'
+import { DUE_CELL, DueLine, useDuesDeadlines } from '@/components/calendar/DuesDeadlines'
 
 // /calendar for officer / treasurer / admin: the member month view, plus the
 // button that puts something new on it.
@@ -630,12 +631,16 @@ function isToday(view, number) {
 // `wave` is the cell's row plus its column, handed to the entrance animation as
 // --wave: every cell on the same diagonal arrives together and each diagonal
 // follows the one before it, so the month washes in from the top-left corner.
-function Day({ number, inMonth, entries: dayEntries, wave = 0, today = false, onOpen }) {
+//
+// `dues` are the viewer's own unpaid due dates that land on it (j-board owe
+// dues too): the box goes light red and each says what's owed by when
+// (DuesDeadlines).
+function Day({ number, inMonth, entries: dayEntries, dues = [], wave = 0, today = false, onOpen }) {
 	const badge = dayBadge(dayEntries, TRACKS)
 	return (
 		<div
 			style={{ '--wave': wave }}
-			className="
+			className={`
 				calendar-cell
 				group
 				min-h-[42px]
@@ -649,7 +654,8 @@ function Day({ number, inMonth, entries: dayEntries, wave = 0, today = false, on
 				md:pt-3
 				pr-0
 				md:pr-2
-			"
+				${dues.length ? DUE_CELL : ''}
+			`}
 		>
 			<span
 				style={inMonth ? badge.style : undefined}
@@ -688,6 +694,16 @@ function Day({ number, inMonth, entries: dayEntries, wave = 0, today = false, on
 					<Entry entry={entry} onOpen={onOpen} />
 				</div>
 			))}
+			{dues.length > 0 && (
+				<div className="
+					hidden
+					md:block
+					mt-2
+					space-y-1
+				">
+					{dues.map((due) => <DueLine key={`${due.kind}-${due.id}`} due={due} />)}
+				</div>
+			)}
 		</div>
 	)
 }
@@ -726,9 +742,14 @@ function Agenda({ days, onOpen }) {
 				flex-col
 				gap-3
 			">
-				{days.map(({ number, entries: dayEntries }) => {
+				{days.map(({ number, entries: dayEntries, dues = [] }) => {
 					const badge = dayBadge(dayEntries, TRACKS)
-					return dayEntries.map((entry, i) => (
+					// what's due that day rides along as rows of its own
+					const rows = [
+						...dayEntries.map((entry) => ({ entry })),
+						...dues.map((due) => ({ due })),
+					]
+					return rows.map(({ entry, due }, i) => (
 						<li
 							key={`${number}-${i}`}
 							className="
@@ -758,11 +779,12 @@ function Agenda({ days, onOpen }) {
 							>
 								{number}
 							</span>
-							<div className="
+							<div className={`
 								min-w-0
 								flex-1
-							">
-								<Entry entry={entry} onOpen={onOpen} />
+								${due ? 'rounded-[10px] bg-red/10 px-2 py-1.5' : ''}
+							`}>
+								{entry ? <Entry entry={entry} onOpen={onOpen} /> : <DueLine due={due} />}
 							</div>
 						</li>
 					))
@@ -1127,7 +1149,7 @@ function EventDialog({ categories, onClose, onSave }) {
 									inputMode="decimal"
 									value={form.price}
 									onChange={set('price')}
-									placeholder="$ — blank = free"
+									placeholder="$ (blank means free)"
 									className={`${FIELD} ${priceFine ? '' : 'border-red focus:border-red'}`}
 								/>
 							</label>
@@ -1318,6 +1340,8 @@ export default function OfficerCalendar() {
 	// through locally — the club's calendar is small enough that a request per
 	// month would be more round trips than rows.
 	const [months, setMonths] = useState({})
+	// what they owe and by when, on the day it's due
+	const dueOn = useDuesDeadlines()
 	// The rows behind them, for the editor: an entry only carries what the
 	// cell prints, and the form wants the whole event.
 	const [eventRows, setEventRows] = useState([])
@@ -1484,11 +1508,11 @@ export default function OfficerCalendar() {
 
 	// The same days the grid draws a badge for, in date order — what the narrow
 	// layout lists under the month.
-	const agendaDays = Object.keys(monthEntries)
-		.map(Number)
-		.sort((a, b) => a - b)
-		.map((number) => ({ number, entries: shown(number) }))
-		.filter(({ entries: dayEntries }) => dayEntries.length)
+	// (and any day something's due on, even with nothing else on it)
+	const lastDay = new Date(view.year, view.month + 1, 0).getDate()
+	const agendaDays = Array.from({ length: lastDay }, (_, i) => i + 1)
+		.map((number) => ({ number, entries: shown(number), dues: dueOn(view.year, view.month, number) }))
+		.filter(({ entries: dayEntries, dues }) => dayEntries.length || dues.length)
 
 	return (
 		// my-auto rather than justify-center: it centers the sheet in the page but
@@ -1849,6 +1873,7 @@ export default function OfficerCalendar() {
 									inMonth={day.inMonth}
 									today={day.inMonth && isToday(view, day.number)}
 									entries={day.inMonth ? shown(day.number) : []}
+									dues={day.inMonth ? dueOn(view.year, view.month, day.number) : []}
 									onOpen={openEntry}
 								/>
 							))}

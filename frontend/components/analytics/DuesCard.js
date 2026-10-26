@@ -5,6 +5,7 @@ import { Card, CardNote, CardTitle, ConfirmDialog, FIELD } from '@/components/an
 import { dues as duesApi, yearTargets } from '@/lib/api'
 import { money, prettyDate, today } from '@/lib/finances'
 import { roleLabel } from '@/lib/roles'
+import { PaymentDetails, ReviewButtons, ScreenshotCircle } from '@/components/payments/PaymentReview'
 
 // The treasurer's dues sheet for the year on screen: every member, paid or
 // not, and the button that marks them paid. Paying writes an income row under
@@ -18,6 +19,12 @@ import { roleLabel } from '@/lib/roles'
 // the year as settled with no money moving (and no ledger row). Anyone not
 // marked reads "unpaid" in red, so who still owes stands out.
 //
+// "pending" is the VIP dues members have paid on their own and sent in — from
+// /vip or a lab's page — waiting to be checked: approve writes the income row
+// and makes them VIP, reject sends it back with a reason, and both email them
+// (src/routes/paymentRoutes.js). Undoing one that was approved puts it back
+// to pending, and emails them to disregard the approval.
+//
 // Taking a payment back deletes its ledger row too (src/routes/duesRoutes.js).
 // "clear" is the other way round: everyone reads as unpaid again, a fresh
 // round, and the money already paid stays in the ledger.
@@ -26,6 +33,7 @@ const FILTERS = [
 	{ key: 'all', label: 'all' },
 	{ key: 'unpaid', label: 'unpaid' },
 	{ key: 'paid', label: 'paid' },
+	{ key: 'pending', label: 'pending' },
 ]
 
 function SmallButton({ onClick, disabled, tone = 'plain', title, children }) {
@@ -136,7 +144,8 @@ export default function DuesCard({ year, onChange, readOnly = false }) {
 	const collected = paid.reduce((total, member) => total + member.payment.amount, 0)
 	const needle = query.trim().toLowerCase()
 	const shown = members
-		.filter((member) => filter === 'all' || (filter === 'paid') === Boolean(member.payment))
+		.filter((member) => filter === 'all'
+			|| (filter === 'pending' ? Boolean(member.pending) && !member.payment : (filter === 'paid') === Boolean(member.payment)))
 		.filter((member) =>
 			needle === '' ||
 			[member.firstName, member.lastName, member.username].some((field) => field.toLowerCase().includes(needle)))
@@ -223,7 +232,7 @@ export default function DuesCard({ year, onChange, readOnly = false }) {
 				{!readOnly && <SmallButton
 					onClick={() => setClearing(true)}
 					disabled={paid.length === 0 || busy === 'clear'}
-					title={`Mark everyone unpaid for ${year} — the money already paid stays in the ledger`}
+					title={`Mark everyone unpaid for ${year}. The money already paid stays in the ledger`}
 				>
 					{busy === 'clear' ? 'clearing…' : 'clear'}
 				</SmallButton>}
@@ -262,23 +271,40 @@ export default function DuesCard({ year, onChange, readOnly = false }) {
 								py-2.5
 							"
 						>
-							<div className="min-w-0">
-								<p className="
-									font-vietnam
-									font-semibold
-									text-sm
-									text-black
-									truncate
-								">
-									{name}
-								</p>
-								<p className="
-									font-vietnam
-									text-xs
-									text-black/45
-								">
-									@{member.username} · {roleLabel(member.role)}
-								</p>
+							{/* a pending payment's screenshot, as a receipt's photo
+							    sits: a circle at the left that opens it */}
+							<div className="
+								min-w-0
+								flex
+								items-center
+								gap-3
+							">
+								{member.pending?.screenshot && !member.payment && (
+									<ScreenshotCircle src={member.pending.screenshot} who={name} />
+								)}
+								<div className="min-w-0">
+									<p className="
+										font-vietnam
+										font-semibold
+										text-sm
+										text-black
+										truncate
+									">
+										{name}
+									</p>
+									<p className="
+										font-vietnam
+										text-xs
+										text-black/45
+									">
+										@{member.username} · {roleLabel(member.role)}
+									</p>
+									{member.pending && !member.payment && (
+										<div className="mt-1.5">
+											<PaymentDetails payment={{ ...member.pending, kind: 'dues', schoolYear: year }} />
+										</div>
+									)}
+								</div>
 							</div>
 
 							{member.payment ? (
@@ -302,6 +328,22 @@ export default function DuesCard({ year, onChange, readOnly = false }) {
 											{working ? '…' : 'undo'}
 										</SmallButton>
 									)}
+								</div>
+							) : member.pending ? (
+								<div className="
+									flex
+									items-center
+									gap-2
+								">
+									<PendingLabel />
+									<ReviewButtons
+										payment={member.pending}
+										readOnly={readOnly}
+										onDone={async () => {
+											await reload()
+											await onChange?.()
+										}}
+									/>
 								</div>
 							) : readOnly ? (
 								<UnpaidLabel />
@@ -337,7 +379,7 @@ export default function DuesCard({ year, onChange, readOnly = false }) {
 						text-sm
 						text-black/45
 					">
-						{members.length === 0 ? 'no members yet' : 'nobody matches that'}
+						{members.length === 0 ? 'no members yet' : filter === 'pending' ? 'no VIP dues waiting to be looked at' : 'nobody matches that'}
 					</li>
 				)}
 			</ul>
@@ -352,6 +394,20 @@ export default function DuesCard({ year, onChange, readOnly = false }) {
 				/>
 			)}
 		</Card>
+	)
+}
+
+// Beside someone who's sent their dues in and is waiting on the treasurer
+function PendingLabel() {
+	return (
+		<span className="
+			font-vietnam
+			text-xs
+			font-semibold
+			text-yellow-dark
+		">
+			pending
+		</span>
 	)
 }
 

@@ -5,10 +5,12 @@ import requireRole from '../middleware/requireRole.js'
 import { onTreasuryTeam } from '../middleware/treasury.js'
 import { eventPoints } from '../points.js'
 import { mountRoster, requireNotAttendee } from './roster.js'
-import { acceptOffer, confirmSpot, expireOffers, lockParent, offerNext, startsAt } from '../offers.js'
+import { OFFER_HOURS, acceptOffer, confirmSpot, expireOffers, lockParent, offerNext, startsAt } from '../offers.js'
+import { payable, paymentDueAt } from '../payable.js'
+import { owingLate } from '../payments.js'
 import { log } from '../activity.js'
 import { readEndTime } from '../clubTime.js'
-import { DUES_ANSWERS, asksDues, duesAnswerProblem, duesLookup, duesOwed, duesUnpaid, readPrice, settleDues } from '../dues.js'
+import { DUES_ANSWERS, asksDues, duesAnswerProblem, duesLookup, doorOwed, duesUnpaid, readPaidBy, readPrice, settleDues } from '../dues.js'
 
 const router = express.Router()
 
@@ -266,6 +268,10 @@ router.get('/:id', async (req, res) => {
             })
             waitlistPosition = ahead + 1
         }
+        // what paying would do for them, holding a spot or an offer of one
+        const standing = ['rsvped', 'offered'].includes(link?.attendanceStatus)
+            ? await payable(prisma, req.userId, 'event', eventId)
+            : null
 
         res.json({
             ...withCreator(event, req.role),
@@ -276,7 +282,23 @@ router.get('/:id', async (req, res) => {
             confirmBy: link?.confirmBy ?? null,
             confirmedAt: link?.confirmedAt ?? null,
             waitlistPosition,
-            dues: duesFor(event, owe),
+            // nothing owed once their entry for this one is settled
+            dues: link?.doorPayment ? null : duesFor(event, owe),
+            // when payment's due, and whether their confirm / accept waits on
+            // one (as a lab's — see labRoutes.js)
+            paymentDueAt: paymentDueAt(event),
+            // for someone holding a spot or an offer of one, and owing for it:
+            // paying is how they confirm or accept it (src/offers.js) — { sent:
+            // they have, dueAt: when it's due (the week before, or their
+            // confirmation deadline if that's sooner), dueBy: which, fixBy:
+            // the new due date once one's sent back } — else null
+            pay: standing?.owes
+                ? { sent: standing.sent, dueAt: standing.dueAt, dueBy: standing.dueBy, fixBy: standing.fixBy }
+                : null,
+            // when an offer they've had emailed lapses, if it can
+            offerBy: link?.attendanceStatus === 'offered' && link.offerSentAt
+                ? new Date(link.offerSentAt.getTime() + OFFER_HOURS * 3_600_000)
+                : null,
             // true once it's begun — the page stops offering the rsvp button
             started: startsAt(event).getTime() <= Date.now()
         })
@@ -544,8 +566,12 @@ router.post('/:eventId/rsvp', async (req, res) => {
         if (existing) {
             // pressing the button while holding an offer accepts it
             if (existing.attendanceStatus === 'offered') {
-                await acceptOffer('event', eventId, req.userId)
-                return res.status(201).json({ code: 'ACCEPTED', message: 'Spot accepted — you\'re signed up' })
+                const accepted = await acceptOffer('event', eventId, req.userId)
+                // someone who owes sends their payment in first (src/offers.js)
+                if (accepted.status === 'pay_first') {
+                    return res.status(409).json({ code: 'PAY_FIRST', message: 'Your spot can only be accepted once you pay. Send your payment on this page' })
+                }
+                return res.status(201).json({ code: 'ACCEPTED', message: 'Spot accepted. You\'re signed up' })
             }
             if (existing.attendanceStatus === 'waitlisted') {
                 return res.status(202).json({ code: 'ALREADY_WAITLISTED', message: 'You are already on the waitlist' })
@@ -585,10 +611,13 @@ router.post('/:eventId/rsvp', async (req, res) => {
             expireOffers().catch((err) => console.error(`Offer sweep failed: ${err.message}`))
             return res.status(202).json({
                 code: 'WAITLISTED',
-                message: 'Event is full — you are on the waitlist and will be offered a spot if one opens',
+                message: 'Event is full. You are on the waitlist and will be offered a spot if one opens',
                 rsvp: result.rsvp
             })
         }
+        // signed up after its payment due date: 48 hours to pay, and the
+        // first reminder now (src/payments.js)
+        owingLate('event', eventId, req.userId).catch((err) => console.error(`Late payment clock failed: ${err.message}`))
         res.status(201).json({ code: 'RSVPED', message: 'RSVP confirmed', rsvp: result.rsvp })
     } catch (err) {
         // the same button pressed twice at once: the second insert loses
@@ -606,14 +635,21 @@ router.post('/:eventId/confirm', async (req, res) => {
     try {
         const result = await confirmSpot('event', eventId, req.userId)
         if (result.status === 'gone') { return res.status(404).json({ message: 'You have no spot to confirm' }) }
-        res.json({ message: 'Spot confirmed', ...result })
+        if (result.status === 'pay_first') {
+            return res.status(409).json({ code: 'PAY_FIRST', message: 'Your spot can only be confirmed once you pay. Send your payment on this page', ...result })
+        }
+        if (result.status === 'held') {
+            return res.status(409).json({ code: 'PAYMENT_PENDING', message: 'Your payment’s being checked. Your spot is confirmed once it’s approved', ...result })
+        }
+        res.json({ message: result.status === 'already' ? 'You’re already confirmed' : 'Spot confirmed', ...result })
     } catch (err) {
         console.error(err.message)
         res.sendStatus(500)
     }
 })
 
-// Un-RSVP (or turn down an offer). If a held seat frees up, the oldest
+// Un-RSVP (or turn down an offer). A paid entry isn't refunded — the club
+// buys the materials ahead — and the page says so before they go. If a held seat frees up, the oldest
 // waitlisted member is offered it in the same transaction — see src/offers.js.
 router.delete('/:eventId/rsvp', async (req, res) => {
     const eventId = parseInt(req.params.eventId)
@@ -627,7 +663,6 @@ router.delete('/:eventId/rsvp', async (req, res) => {
         if (existing.attendanceStatus === 'attended') {
             return res.status(409).json({ message: 'You are already checked in and cannot un-RSVP' })
         }
-
         const promoted = await prisma.$transaction(async (tx) => {
             await lockParent(tx, 'event', eventId)
             await tx.memberEvent.delete({
@@ -695,7 +730,7 @@ router.post('/:eventId/checkin', requireRole('officer'), requireNotAttendee('eve
             })
             return res.status(202).json({
                 code: 'WAITLISTED',
-                message: 'No RSVP found — added to the waitlist',
+                message: 'No RSVP found, so they were added to the waitlist',
                 attendance: waitlisted
             })
         }
@@ -708,7 +743,7 @@ router.post('/:eventId/checkin', requireRole('officer'), requireNotAttendee('eve
         }
 
         const owed = asksDues('event', event)
-            ? await duesOwed(prisma, decoded.id, event.date.toISOString().slice(0, 10), event.nonmemberPrice)
+            ? await doorOwed(prisma, existing, event.date.toISOString().slice(0, 10), event.nonmemberPrice)
             : null
         if (owed && !dues) { return duesUnpaid(res, decoded.id, owed) }
         const problem = owed && duesAnswerProblem(owed, dues)
@@ -716,12 +751,12 @@ router.post('/:eventId/checkin', requireRole('officer'), requireNotAttendee('eve
 
         // rsvped → attended, points awarded atomically with the transition
         const attendance = await prisma.$transaction(async (tx) => {
-            if (owed) {
-                await settleDues(tx, { owed, dues, memberId: decoded.id, actorId: req.userId, item: { kind: 'event', id: eventId, title: event.title } })
-            }
+            const door = owed
+                ? await settleDues(tx, { owed, dues, memberId: decoded.id, actorId: req.userId, item: { kind: 'event', id: eventId, title: event.title }, paidBy: readPaidBy(req.body) })
+                : null
             const row = await tx.memberEvent.update({
                 where: { memberId_eventId: { memberId: decoded.id, eventId } },
-                data: { attendanceStatus: 'attended', offerSentAt: null }
+                data: { attendanceStatus: 'attended', offerSentAt: null, ...(door ?? {}) }
             })
             await tx.member.update({
                 where: { userId: decoded.id },
@@ -737,7 +772,7 @@ router.post('/:eventId/checkin', requireRole('officer'), requireNotAttendee('eve
     } catch (err) {
         if (err.code === 'P2003') { return res.status(404).json({ message: 'Event or member not found' }) }
         // the treasurer marked them paid while the popup was up — scan again
-        if (err.code === 'P2002') { return res.status(409).json({ message: 'Their dues were just marked paid — scan them again' }) }
+        if (err.code === 'P2002') { return res.status(409).json({ message: 'Their dues were just marked paid. Scan them again' }) }
         console.error(err.message)
         res.sendStatus(500)
     }

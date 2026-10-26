@@ -3,6 +3,8 @@
 import { useEffect, useState } from 'react'
 import DashboardShell from '@/components/dashboards/DashboardShell'
 import DuesCard from '@/components/analytics/DuesCard'
+import CategoriesCard from '@/components/analytics/CategoriesCard'
+import AcceptedPaymentsCard from '@/components/analytics/AcceptedPaymentsCard'
 import { ReceiptDialog as SubmitReceiptDialog, ReceiptsCard } from '@/components/analytics/OfficerAnalytics'
 import { useCurrentUser, useJboardTeams, useRole } from '@/lib/session'
 import { canChange, onTreasuryTeam } from '@/lib/roles'
@@ -68,6 +70,7 @@ import {
 	today,
 	total,
 	totalsByCategory,
+	useFinanceCategories,
 	yearFrom,
 	yearLabel,
 	yearsIn,
@@ -92,12 +95,18 @@ import {
 //     same card and form the officers' page has, and they land in this queue.
 //     Approving says the club owes it; reimbursing says it's been paid, and
 //     writes the expense row that says where the money went.
-//   dues — who's paid for the year, marked here (DuesCard); paying writes an
+//   accepted payments — how members pay before they come: the platforms and
+//     QR codes on a lab's or event's page and /vip (AcceptedPaymentsCard).
+//   dues — who's paid for the year, marked here (DuesCard), and the VIP dues
+//     members have sent in waiting under its "pending" filter; paying writes an
 //     income row under 'dues'. (The non-member price for a lab or
 //     members-only event isn't — each one sets its own, in its form.)
 //   the years — the picker's last entry adds one, and a year with nothing in
 //     it can be taken back off (YearsDialog).
 //   export — the year's ledger as a CSV, from the button by the year picker.
+//   the categories — what income and spending are filed under, added and
+//     removed on the card at the bottom (CategoriesCard), bar the ones the app
+//     files money under itself.
 //
 // J-board's treasury team gets this page too, to read: the grants (tracker and
 // tab) and the income filed under 'sponsors' are theirs to add, edit and
@@ -140,7 +149,9 @@ const LEDGERS = {
 		filter: {
 			column: 'category',
 			label: 'category',
-			options: categoryOptions(INCOME_CATEGORIES),
+			// a getter, so it's the categories as they are now — the
+			// treasurer adds and removes them (CategoriesCard)
+			get options() { return categoryOptions(INCOME_CATEGORIES) },
 		},
 		columns: [
 			{
@@ -206,7 +217,7 @@ const LEDGERS = {
 		filter: {
 			column: 'category',
 			label: 'category',
-			options: categoryOptions(EXPENSE_CATEGORIES),
+			get options() { return categoryOptions(EXPENSE_CATEGORIES) },
 		},
 		columns: [
 			{
@@ -709,7 +720,7 @@ function EntryDialog({ kind, entry, only, onClose, onSave }) {
 						type="text"
 						value={form.description}
 						onChange={set('description')}
-						placeholder={income ? 'Fall dues — first wave' : 'Bath bomb lab supplies'}
+						placeholder={income ? 'Fall dues, first wave' : 'Bath bomb lab supplies'}
 						className={FIELD}
 					/>
 				</label>
@@ -1195,6 +1206,16 @@ function DenyDialog({ request, onClose, onSave }) {
 	)
 }
 
+// a curl back on itself — the queue's "undo"
+function UndoIcon({ className = '' }) {
+	return (
+		<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round" className={className} aria-hidden="true">
+			<path d="M9 14L4 9l5-5" />
+			<path d="M4 9h10.5a5.5 5.5 0 0 1 0 11H11" />
+		</svg>
+	)
+}
+
 function QueueAction({ label, tint, onClick, children }) {
 	return (
 		<button
@@ -1232,8 +1253,10 @@ function QueueAction({ label, tint, onClick, children }) {
 
 // Every officer's receipts, and the two decisions that move one along:
 // approving says the club agrees it owes the money, reimbursing says it's been
-// handed back — and that second one is what writes the expense row.
-function RequestQueue({ requests, filter, onFilter, onApprove, onDeny, onReimburse, onView }) {
+// handed back — and that second one is what writes the expense row. `onUndo`
+// takes the last one back a step (reimbursed to approved, approved to
+// pending), and emails the officer where it's gone.
+function RequestQueue({ requests, filter, onFilter, onApprove, onDeny, onReimburse, onUndo, onView }) {
 	const rows = filter === 'all'
 		? requests
 		: requests.filter((request) => request.status === filter)
@@ -1575,7 +1598,17 @@ function RequestQueue({ requests, filter, onFilter, onApprove, onDeny, onReimbur
 											</>
 										)}
 
-										{(request.status === 'reimbursed' || request.status === 'denied') && (
+										{onUndo && (request.status === 'approved' || request.status === 'reimbursed') && (
+											<QueueAction
+												label="undo"
+												tint="bg-black/[0.06] text-black/60"
+												onClick={() => onUndo(request)}
+											>
+												<UndoIcon className="w-3 h-3" />
+											</QueueAction>
+										)}
+
+										{(request.status === 'denied' || (request.status === 'reimbursed' && !onUndo)) && (
 											<span className="
 												font-vietnam
 												text-xs
@@ -1754,7 +1787,7 @@ function YearsDialog({ years, current, contentsOf, onAdd, onRemove, onClose }) {
 // ---- page ------------------------------------------------------------------
 
 // all the treasury team can file income under
-const SPONSORS = INCOME_CATEGORIES.filter((category) => category.key === 'sponsors')
+const sponsors = () => INCOME_CATEGORIES.filter((category) => category.key === 'sponsors')
 
 export default function TreasurerAnalytics() {
 	// The advisor gets this page — every ledger, the whole queue, dues — with
@@ -1771,6 +1804,8 @@ export default function TreasurerAnalytics() {
 	const [expenses, setExpenses] = useState([])
 	const [grants, setGrants] = useState([])
 	const [requests, setRequests] = useState([])
+	// the donuts' slices and the forms' lists, as the server has them
+	const { categories, reload: reloadCategories } = useFinanceCategories()
 
 	const [goals, setGoals] = useState({})
 	const [budgets, setBudgets] = useState({})
@@ -1888,6 +1923,11 @@ export default function TreasurerAnalytics() {
 			setError(err.message)
 		}
 	}
+
+	// how many ledger rows and receipts are filed under a category — any at all
+	// and it can't come off (CategoriesCard)
+	const filedUnder = (key) =>
+		[...income, ...expenses, ...requests].filter((entry) => entry.category === key).length
 
 	const yearIncome = inYear(income, shownYear)
 	const yearExpenses = inYear(expenses, shownYear)
@@ -2039,6 +2079,21 @@ export default function TreasurerAnalytics() {
 	// writes the expense row — dated the day of the purchase rather than today,
 	// so the spending lands in the month the club incurred it.
 	const reimburse = (request) => setStatus(request, 'reimbursed')
+
+	// a receipt being taken back a step, while it's asked about
+	const [undoingRequest, setUndoingRequest] = useState(null)
+	const undoRequest = async () => {
+		const target = undoingRequest
+		setUndoingRequest(null)
+		setError(null)
+		try {
+			await financesApi.undoRequest(target.id)
+			// a payout taken back takes its expense row with it
+			await load()
+		} catch (err) {
+			setError(err.message)
+		}
+	}
 
 	const queue = [...requests].sort((a, b) => b.date.localeCompare(a.date))
 	// their own, not paid out yet — what the receipts card shows
@@ -2284,6 +2339,7 @@ export default function TreasurerAnalytics() {
 							onApprove={changes ? approve : undefined}
 							onDeny={changes ? setDenying : undefined}
 							onReimburse={changes ? reimburse : undefined}
+							onUndo={changes ? setUndoingRequest : undefined}
 							onView={setViewing}
 						/>
 					</div>
@@ -2295,6 +2351,16 @@ export default function TreasurerAnalytics() {
 						year={shownYear}
 						onChange={() => load().catch((err) => setError(err.message))}
 						readOnly={!changes}
+					/>
+				)}
+
+				{changes && <AcceptedPaymentsCard />}
+
+				{changes && (
+					<CategoriesCard
+						categories={categories}
+						filedUnder={filedUnder}
+						onChange={reloadCategories}
 					/>
 				)}
 			</div>
@@ -2311,7 +2377,7 @@ export default function TreasurerAnalytics() {
 				<EntryDialog
 					kind={editing.kind}
 					entry={editing.row}
-					only={treasury ? SPONSORS : undefined}
+					only={treasury ? sponsors() : undefined}
 					onClose={() => setEditing(null)}
 					onSave={save}
 				/>
@@ -2330,12 +2396,24 @@ export default function TreasurerAnalytics() {
 					title={`delete this ${LEDGERS[deleting.kind].noun}?`}
 					body={
 						deleting.row.requestId
-							? `${deleting.row.title} — ${money(deleting.row.amount)}. This row is ${deleting.row.who}'s reimbursement. Deleting it takes the payout off the books and moves their request back to approved, so it can be paid again.`
-							: `${deleting.row.source ?? deleting.row.title ?? deleting.row.name} — ${money(deleting.row.amount)}. Every total on this page is a sum over these rows, so they all move. This can't be undone.`
+							? `${deleting.row.title} (${money(deleting.row.amount)}). This row is ${deleting.row.who}'s reimbursement. Deleting it takes the payout off the books and moves their request back to approved, so it can be paid again.`
+							: `${deleting.row.source ?? deleting.row.title ?? deleting.row.name} (${money(deleting.row.amount)}). Every total on this page is a sum over these rows, so they all move. This can't be undone.`
 					}
 					confirmLabel="delete it"
 					onCancel={() => setDeleting(null)}
 					onConfirm={remove}
+				/>
+			)}
+
+			{undoingRequest && (
+				<ConfirmDialog
+					title={undoingRequest.status === 'reimbursed' ? 'undo this payout?' : 'undo this approval?'}
+					body={undoingRequest.status === 'reimbursed'
+						? `${undoingRequest.what} (${money(undoingRequest.amount)}) goes back to approved: its expense row comes out of the books, and it can be paid again. ${undoingRequest.who || 'The officer'} is emailed that it's back to approved.`
+						: `${undoingRequest.what} (${money(undoingRequest.amount)}) goes back to pending, to be approved or denied again. ${undoingRequest.who || 'The officer'} is emailed that it's pending.`}
+					confirmLabel={undoingRequest.status === 'reimbursed' ? 'move it back to approved' : 'move it back to pending'}
+					onCancel={() => setUndoingRequest(null)}
+					onConfirm={undoRequest}
 				/>
 			)}
 
@@ -2357,7 +2435,7 @@ export default function TreasurerAnalytics() {
 			{revoking && (
 				<ConfirmDialog
 					title="revoke this receipt?"
-					body={`${revoking.what} — ${money(revoking.amount)}. It leaves the queue and comes off the books' history. If you want it back you'd have to file it again.`}
+					body={`${revoking.what} (${money(revoking.amount)}). It leaves the queue and comes off the books' history. If you want it back you'd have to file it again.`}
 					confirmLabel="revoke it"
 					onCancel={() => setRevoking(null)}
 					onConfirm={revokeReceipt}

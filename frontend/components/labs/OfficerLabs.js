@@ -9,7 +9,7 @@ import { isoDate, prettyTimeRange, today } from '@/lib/dates'
 import { splitByDate, CompletedDivider, COMPLETED_CARD } from '@/components/CardSections'
 import { ClosedTag, RsvpButton } from '@/components/labs/MemberLabs'
 import { QrPopup } from '@/components/labs/MemberLabQuiz'
-import { LeaveClosedLabPopup } from '@/components/labs/LabViewParts'
+import { LeavePopup } from '@/components/labs/LabViewParts'
 import { canEditLab, canManageLabs } from '@/lib/roles'
 import { useSession } from '@/lib/session'
 
@@ -582,12 +582,13 @@ export default function OfficerLabs({ openNew = false }) {
 	// an offered spot — the same calls a member's card makes — then the list
 	// is re-read for where they've landed and the seat count.
 	//
-	// Leaving a lab that isn't taking sign-ups can't be undone, so that asks
-	// first (LeaveClosedLabPopup) and comes back here with `confirmed`.
-	const toggleRsvp = async (lab, confirmed = false) => {
+	// Leaving always asks first (LeavePopup — it also says when sign-ups are
+	// closed, and that a paid entry isn't refunded) and comes back here with
+	// `confirmed`.
+	const toggleRsvp = async (lab, confirmed = null) => {
 		if (rsvping.has(lab.id)) return
 		const leaving = lab.mine === 'rsvped' || lab.mine === 'waitlisted'
-		if (leaving && !lab.acceptingRsvps && !confirmed) {
+		if (leaving && !confirmed) {
 			setLeavingClosed(lab)
 			return
 		}
@@ -830,12 +831,14 @@ export default function OfficerLabs({ openNew = false }) {
 			)}
 
 			{leavingClosed && (
-				<LeaveClosedLabPopup
+				<LeavePopup
 					title={leavingClosed.title}
 					mine={leavingClosed.mine}
+					closed={!leavingClosed.acceptingRsvps}
+					place={{ labId: leavingClosed.id }}
 					onConfirm={() => {
 						setLeavingClosed(null)
-						toggleRsvp(leavingClosed, true)
+						toggleRsvp(leavingClosed, { ok: true })
 					}}
 					onClose={() => setLeavingClosed(null)}
 				/>

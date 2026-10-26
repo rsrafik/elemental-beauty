@@ -19,7 +19,7 @@ function Offer() {
 		let live = true
 		const run = token
 			? offers.accept(token).catch((err) => ({ error: err.message }))
-			: Promise.resolve({ error: 'This link is missing its code — open the one in the email again' })
+			: Promise.resolve({ error: 'This link is missing its code. Open the one in the email again' })
 		run.then((outcome) => live && setResult(outcome))
 		return () => { live = false }
 	}, [token])
@@ -34,10 +34,18 @@ function Offer() {
 		if (result.error) {
 			title = "that didn't work"
 			body = `${result.error}. If the spot's still yours, you can also do this from the club's site.`
+		} else if (result.status === 'pay_first') {
+			// owes for it and hasn't sent a payment in (src/offers.js)
+			title = 'pay first'
+			body = `Your spot in ${what} can only be ${result.action === 'confirm' ? 'confirmed' : 'accepted'} once you pay. Send your payment on its page and that does it.`
+		} else if (result.status === 'held') {
+			// owes for it and has sent a payment in, still being checked
+			title = 'your spot is held'
+			body = `We've got your payment for ${what}. Your spot is held, and it's officially confirmed once we approve the payment.`
 		} else if (result.action === 'confirm') {
 			if (result.status === 'confirmed') {
 				title = "you're confirmed!"
-				body = `Thanks — your spot in ${what} is locked in. See you there.`
+				body = `Thanks! Your spot in ${what} is locked in. See you there.`
 			} else if (result.status === 'already') {
 				title = 'already confirmed'
 				body = `Your spot in ${what} was already confirmed. Nothing else to do.`
@@ -46,11 +54,11 @@ function Offer() {
 				body = `The confirmation deadline for ${what} passed, so your spot went to someone waiting and you've moved to the back of the waitlist. You'll get an email if a spot opens up again.`
 			} else {
 				title = 'this spot has ended'
-				body = `You're no longer signed up for ${what} — the spot may have gone to someone on the waitlist.`
+				body = `You're no longer signed up for ${what}. The spot may have gone to someone on the waitlist.`
 			}
 		} else if (result.status === 'accepted') {
 			title = "you're in!"
-			body = `Your spot in ${what} is confirmed — see you there.`
+			body = `Your spot in ${what} is confirmed. See you there!`
 		} else if (result.status === 'already') {
 			title = 'already yours'
 			body = `You'd already accepted your spot in ${what}. Nothing else to do.`
@@ -59,7 +67,7 @@ function Offer() {
 			body = `The offer for ${what} ran out, so you've moved to the back of the waitlist. You'll get an email if a spot opens up again.`
 		} else {
 			title = 'this offer has ended'
-			body = `The spot in ${what} isn't being held for you any more — it may have gone to the next person on the waitlist.`
+			body = `The spot in ${what} isn't being held for you any more. It may have gone to the next person on the waitlist.`
 		}
 	}
 

@@ -1,7 +1,7 @@
 'use client'
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import { canChange } from '@/lib/roles'
+import { canChange, keepsBooks } from '@/lib/roles'
 import { useRole } from '@/lib/session'
 import DashboardShell from '@/components/dashboards/DashboardShell'
 import { BackButton, metaLine, useDesignZoom } from '@/components/labs/LabViewParts'
@@ -11,7 +11,15 @@ import { INSET, EditorButton, IconLabel, UploadIcon } from '@/components/labs/Ed
 import EmailAllPopup from '@/components/EmailAllPopup'
 import ConfirmationPopup from '@/components/ConfirmationPopup'
 import DuesPopup from '@/components/checkin/DuesPopup'
-import { labs as labsApi, events as eventsApi, members as membersApi } from '@/lib/api'
+import { PaymentDetails, ReviewButtons, ScreenshotCircle } from '@/components/payments/PaymentReview'
+import { Popup, PopupButton, priceText } from '@/components/labs/LabViewParts'
+import {
+	labs as labsApi,
+	events as eventsApi,
+	members as membersApi,
+	paymentMethods as methodsApi,
+	payments as paymentsApi,
+} from '@/lib/api'
 import { prettyTime } from '@/lib/dates'
 
 // The officer's check-in page for one lab or one event — where clicking its
@@ -19,12 +27,21 @@ import { prettyTime } from '@/lib/dates'
 // codes beside the date line and title. Below: three columns.
 //
 //   not checked in   signed up and not here yet — tick checks them in by
-//                    hand, x drops their spot (which goes to the waitlist)
+//                    hand, x drops their spot (which goes to the waitlist),
+//                    and $ settles what they owe before they're here
 //   checked in       here — x undoes the check-in
 //   waitlist         in the order they joined — the yellow button offers them
 //                    a spot (they move up with a blue envelope, which emails
 //                    them an "accept" link — src/offers.js), x takes them off,
 //                    and manual add puts someone on by username
+//
+// Beside anyone's buttons, where they stand on dues (DuesMark): a gold crown
+// when the year's are paid, a $ while the door would ask, grey once the entry's
+// been paid or waived for this one — which the treasurer or admin can click to
+// take back. Over the first column, "email unpaid" reminds everyone with a
+// green $ to pay by the due date (a week before, 11:59 PM); and the header's
+// "payments" is where officers and up approve, send back or reject what
+// members paid on their own (PaymentsPopup).
 //
 // Laid out in the design's pixels and zoomed to the window like the member
 // lab pages (see Scaled in LabViewParts). The columns run to the bottom of the
@@ -107,6 +124,34 @@ function AdmitIcon({ className }) {
 	)
 }
 
+function DollarIcon({ className }) {
+	return (
+		<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={className} aria-hidden="true">
+			<path d="M12 4.5v15" />
+			<path d="M15.6 8.4c-.6-1.2-1.9-1.9-3.6-1.9-2.1 0-3.5 1.1-3.5 2.7 0 3.8 7.1 2.1 7.1 5.8 0 1.7-1.5 2.9-3.7 2.9-1.8 0-3.2-.8-3.8-2" />
+		</svg>
+	)
+}
+
+// gold, on nothing — it takes the $'s place once the year's dues are paid
+function CrownIcon({ className }) {
+	return (
+		<svg viewBox="0 0 24 24" className={className} aria-hidden="true">
+			<path
+				d="M4.2 8.8l4.1 3.5L12 5.8l3.7 6.5 4.1-3.5-1.6 9.2H5.8z"
+				fill="#F5C842"
+				stroke="#B8860B"
+				strokeWidth="1.3"
+				strokeLinejoin="round"
+			/>
+			<path d="M5.8 20h12.4" stroke="#B8860B" strokeWidth="1.8" strokeLinecap="round" />
+			<circle cx="4.2" cy="8.4" r="1.5" fill="#F5C842" stroke="#B8860B" strokeWidth="1" />
+			<circle cx="12" cy="5" r="1.5" fill="#F5C842" stroke="#B8860B" strokeWidth="1" />
+			<circle cx="19.8" cy="8.4" r="1.5" fill="#F5C842" stroke="#B8860B" strokeWidth="1" />
+		</svg>
+	)
+}
+
 function AddPersonIcon({ className }) {
 	return (
 		<svg viewBox="0 0 24 24" fill="currentColor" className={className} aria-hidden="true">
@@ -126,6 +171,9 @@ const TONES = {
 	// the envelope: solid until the offer's gone out, pale after
 	blue: 'bg-blue text-white',
 	'blue-sent': 'bg-blue-light text-blue-med',
+	// the $: owed, and settled for this one
+	dues: 'bg-green-dark text-white',
+	'dues-done': 'bg-black/15 text-white',
 }
 
 function RowButton({ tone, label, onClick, disabled, children }) {
@@ -159,6 +207,60 @@ function RowButton({ tone, label, onClick, disabled, children }) {
 			{children}
 		</button>
 	)
+}
+
+// Where someone stands on dues for this one's school year (the roster's
+// duesPaid / doorPayment / owesDues — src/routes/roster.js):
+//
+//   crown    the year's dues are paid — a VIP (or j-board who've paid)
+//   $        the door would ask them — click it to settle it before they're
+//            here (`onSettle`: the same dues popup a check-in opens)
+//   grey $   the entry paid, or waived, for this one — the tick won't ask
+//
+// Nothing for staff, who never pay, nor where nobody's asked (an event open
+// to everyone, or no dues or price set). The $ only on the not-checked-in
+// column, where there's still a door to settle — `onSettle` says it's that one.
+// `onUndo` (the treasurer's and admin's) makes the grey $ a button that takes
+// the entry back.
+function DuesMark({ row, onSettle, onUndo, disabled }) {
+	const slot = `
+		w-[22px]
+		h-[22px]
+		shrink-0
+		flex
+		items-center
+		justify-center
+	`
+	if (row.duesPaid) {
+		return (
+			<span role="img" aria-label="Dues paid" title={`${fullName(row)}'s dues are paid for the year`} className={slot}>
+				<CrownIcon className="w-[22px] h-[22px]" />
+			</span>
+		)
+	}
+	if (row.doorPayment) {
+		const what = row.doorPayment === 'fee' ? 'Entry paid' : 'Entry waived'
+		if (onUndo) {
+			return (
+				<RowButton tone="dues-done" label={`${what} for this one. Click to take it back`} onClick={onUndo} disabled={disabled}>
+					<DollarIcon className="w-[15px] h-[15px]" />
+				</RowButton>
+			)
+		}
+		return (
+			<span role="img" aria-label={what} title={`${what} for this one`} className={`${slot} rounded-full ${TONES['dues-done']}`}>
+				<DollarIcon className="w-[15px] h-[15px]" />
+			</span>
+		)
+	}
+	if (row.owesDues && onSettle) {
+		return (
+			<RowButton tone="dues" label={`${fullName(row)} hasn't paid dues. Settle it now`} onClick={onSettle} disabled={disabled}>
+				<DollarIcon className="w-[15px] h-[15px]" />
+			</RowButton>
+		)
+	}
+	return null
 }
 
 // `note` is a small line after the handle — where they are with confirming
@@ -211,6 +313,10 @@ function Person({ row, number, note = null }) {
 // Where someone signed up stands with the "confirmation" round: confirmed,
 // or asked and not yet — nothing until a round has gone out.
 function ConfirmNote({ row }) {
+	// sent a payment in that's waiting on the treasurer — the payments popup
+	if (row.paymentPending && !row.duesPaid && !row.doorPayment) {
+		return <span className="ml-1.5 text-[12px] font-semibold text-yellow-dark">· payment pending</span>
+	}
 	if (row.status !== 'rsvped') return null
 	if (row.confirmedAt) {
 		return <span className="ml-1.5 text-[12px] font-semibold text-green-dark">· confirmed</span>
@@ -229,8 +335,9 @@ function ConfirmNote({ row }) {
 }
 
 // One column: its name and count over the card, the card running to the
-// bottom of the page with its list scrolling inside it.
-function Column({ title, count, footer, children }) {
+// bottom of the page with its list scrolling inside it. `action` sits between
+// the two — "email unpaid", over the first.
+function Column({ title, count, action = null, footer, children }) {
 	return (
 		<div className="
 			flex
@@ -250,7 +357,14 @@ function Column({ title, count, footer, children }) {
 				text-black
 			">
 				<h2>{title}</h2>
-				<span>{count}</span>
+				<span className="
+					flex
+					items-baseline
+					gap-3
+				">
+					{action}
+					<span>{count}</span>
+				</span>
 			</div>
 			<div className="
 				mt-[6px]
@@ -415,6 +529,86 @@ function ManualAdd({ onAdd, people }) {
 	)
 }
 
+// The header's "payments", for officers and up: what members paid on their
+// own for this one — the fee, or VIP dues sent from its page — waiting to be
+// checked. Approving books it as income and settles it (their $ goes grey, or
+// they turn VIP) and confirms their spot; "send back" asks why, and they have
+// 48 hours to fix it; "reject" moves them to the waitlist. Each emails them.
+//
+// `readOnly` is the advisor's copy: all of it to see, none of it to settle.
+function PaymentsPopup({ title, payments, readOnly, onChange, onClose }) {
+	return (
+		<Popup title="payments" onClose={onClose} width="max-w-[620px]">
+			{() => (
+				<>
+					<p className="
+						mt-3
+						font-vietnam
+						text-sm
+						text-black/60
+					">
+						What members say they paid for {title}. Check it’s in the account before you approve it.
+					</p>
+
+					{payments.length === 0 ? (
+						<p className="
+							mt-6
+							font-vietnam
+							text-sm
+							text-black/40
+						">
+							nothing waiting
+						</p>
+					) : (
+						<ul className="
+							mt-5
+							divide-y
+							divide-black/10
+						">
+							{payments.map((payment) => (
+								<li
+									key={payment.paymentId}
+									className="
+										flex
+										flex-wrap
+										items-start
+										justify-between
+										gap-3
+										py-3
+									"
+								>
+									<div className="
+										min-w-0
+										flex
+										items-center
+										gap-3
+									">
+										<ScreenshotCircle src={payment.screenshot} who={fullName(payment)} blank />
+										<div className="min-w-0">
+											<p className="
+												font-vietnam
+												font-semibold
+												text-sm
+												text-black
+											">
+												{fullName(payment)} <span className="font-normal text-black/45">@{payment.username}</span>
+											</p>
+											<div className="mt-1">
+												<PaymentDetails payment={payment} />
+											</div>
+										</div>
+									</div>
+									<ReviewButtons payment={payment} onDone={onChange} readOnly={readOnly} />
+								</li>
+							))}
+						</ul>
+					)}
+				</>
+			)}
+		</Popup>
+	)
+}
+
 // ---- page ------------------------------------------------------------------
 
 export default function CheckInView({ kind, id }) {
@@ -422,8 +616,21 @@ export default function CheckInView({ kind, id }) {
 	// The advisor sees the door as it stands — who's signed up, who's in, the
 	// waitlist — and can email everyone or download the attendance, but runs
 	// none of it: no camera, no ticks or crosses, no confirmations or prelab.
-	const changes = canChange(useRole())
+	const role = useRole()
+	const changes = canChange(role)
+	// the treasurer and admin: payments to approve, and the grey $ to undo
+	const books = keepsBooks(role)
 	const zoom = useDesignZoom()
+	// the accepted payments' names, for the dues popup's "paid how?"
+	const [methods, setMethods] = useState([])
+	// what members sent in for this one, waiting — the header's "payments"
+	const [waitingPayments, setWaitingPayments] = useState([])
+	const [showPayments, setShowPayments] = useState(false)
+	// the grey $ being taken back, while it's asked about
+	const [undoing, setUndoing] = useState(null)
+	// "email unpaid": asked, then the answer
+	const [reminding, setReminding] = useState(false)
+	const [notice, setNotice] = useState(null)
 	const [emailing, setEmailing] = useState(false)
 	const [confirming, setConfirming] = useState(false)
 	const [exporting, setExporting] = useState(false)
@@ -453,9 +660,19 @@ export default function CheckInView({ kind, id }) {
 		}
 	}, [api, id])
 
+	const loadPayments = useCallback(async () => {
+		const place = kind === 'lab' ? { labId: id } : { eventId: id }
+		try {
+			setWaitingPayments(await paymentsApi.list({ ...place, status: 'pending' }))
+		} catch {}
+	}, [kind, id])
+
 	useEffect(() => {
 		if (!id) return
 		let live = true
+		methodsApi.list()
+			.then((rows) => live && setMethods(rows.map((method) => method.title)))
+			.catch(() => {})
 		api.get(id)
 			.then((row) => live && setItem(row))
 			.catch((err) => live && setError(err.message))
@@ -473,6 +690,22 @@ export default function CheckInView({ kind, id }) {
 			clearInterval(timer)
 		}
 	}, [api, id])
+
+	// the payments too, on the roster's beat
+	useEffect(() => {
+		if (!id) return
+		let live = true
+		const place = kind === 'lab' ? { labId: id } : { eventId: id }
+		const read = () => paymentsApi.list({ ...place, status: 'pending' })
+			.then((waiting) => live && setWaitingPayments(waiting))
+			.catch(() => {})
+		read()
+		const timer = setInterval(read, POLL_MS)
+		return () => {
+			live = false
+			clearInterval(timer)
+		}
+	}, [kind, id])
 
 	// "start check-in" / "close check-in": before the start time, whether the
 	// people signed up get their QR code on its page yet (members' pages read
@@ -505,11 +738,13 @@ export default function CheckInView({ kind, id }) {
 			const reply = await api.rosterAction(id, { memberId, action })
 			// the green tick on someone who owes dues: ask first, and send
 			// the tick again with the answer
+			// (the $ asks the same, without checking them in)
 			if (reply?.code === 'DUES_UNPAID') {
 				setDuesAsk({
 					reply,
-					answer: async (dues) => {
-						await api.rosterAction(id, { memberId, action, dues })
+					ahead: action === 'dues',
+					answer: async (dues, paidBy = {}) => {
+						await api.rosterAction(id, { memberId, action, dues, ...paidBy })
 						await loadRoster()
 					},
 					close: () => {},
@@ -541,7 +776,7 @@ export default function CheckInView({ kind, id }) {
 		const text = {
 			CHECKED_IN: `${name} checked in`,
 			ALREADY_CHECKED_IN: `${name} is already checked in`,
-			WAITLISTED: `${name} wasn't signed up — added to the waitlist`,
+			WAITLISTED: `${name} wasn't signed up, so they were added to the waitlist`,
 			ALREADY_WAITLISTED: `${name} is on the waitlist`,
 		}[reply.code] ?? reply.message
 		return { tone, text }
@@ -566,10 +801,10 @@ export default function CheckInView({ kind, id }) {
 			return new Promise((resolve) => setDuesAsk({
 				reply,
 				// paid / fee / waive: scan them again with the answer
-				answer: async (dues) => resolve(await flashFor(await api.checkin(id, token, dues), reply.memberId)),
+				answer: async (dues, paidBy) => resolve(await flashFor(await api.checkin(id, token, dues, paidBy), reply.memberId)),
 				// wait (or the popup closing after an answer, when this does nothing)
 				// red, like the popup's own "hasn't paid" — they still owe
-				close: () => resolve({ tone: 'red', text: `${reply.name ?? 'member'} not checked in — dues unpaid` }),
+				close: () => resolve({ tone: 'red', text: `${reply.name ?? 'member'} not checked in: dues unpaid` }),
 			}))
 		}
 		return flashFor(reply, who)
@@ -594,6 +829,26 @@ export default function CheckInView({ kind, id }) {
 		.filter((row) => row.status !== 'offered')
 		.map((row) => row.email)
 		.filter(Boolean)
+
+	// who "email unpaid" would email: a green $ and nothing sent in
+	const unpaid = waiting.filter((row) =>
+		(row.status === 'rsvped' || row.status === 'offered') && row.owesDues && !row.paymentPending).length
+
+	const remind = async () => {
+		setError(null)
+		setNotice(null)
+		try {
+			const reply = await api.remindUnpaid(id)
+			setNotice(reply.message)
+		} catch (err) {
+			setError(err.message)
+		}
+	}
+
+	const undoEntry = async (row) => {
+		await act(row.memberId, 'undo-dues')
+		setNotice(`${fullName(row)} is unpaid again, and they’ve been emailed`)
+	}
 
 	// who "confirmation" would email: signed up and not confirmed yet
 	const unconfirmed = waiting.filter((row) => row.status === 'rsvped' && !row.confirmedAt).length
@@ -673,7 +928,9 @@ export default function CheckInView({ kind, id }) {
 					flex
 					flex-col
 				"
-				style={{ zoom }}
+				// --design-zoom is for the columns' spacing below, which is
+				// measured on the screen rather than in the design's pixels
+				style={{ zoom, '--design-zoom': zoom }}
 			>
 				{/* ---- camera + header ---------------------------------------- */}
 				<div className="
@@ -776,6 +1033,19 @@ export default function CheckInView({ kind, id }) {
 											</IconLabel>
 										</EditorButton>
 									)}
+									{/* what members paid on their own, to approve or send
+									    back — lit up while anything's waiting */}
+									<EditorButton
+										className={`
+											${BUTTON}
+											${kind === 'lab' ? 'col-span-2' : ''}
+											${waitingPayments.length ? 'bg-yellow-light!' : ''}
+										`}
+										title="Payments members sent in for this one, waiting to be checked"
+										onClick={() => setShowPayments(true)}
+									>
+										{`payments${waitingPayments.length ? ` · ${waitingPayments.length}` : ''}`}
+									</EditorButton>
 									{early && changes && (
 										<EditorButton
 											className={`
@@ -801,8 +1071,8 @@ export default function CheckInView({ kind, id }) {
 										text-green-dark
 									">
 										{openNow
-											? `check-in is open — it opened at ${prettyTime(item.startTime || '00:00').replace(' ', '').toLowerCase()}, and people signed up can show their QR code`
-											: 'check-in is open — people signed up can show their QR code now'}
+											? `check-in opened at ${prettyTime(item.startTime || '00:00').replace(' ', '').toLowerCase()}, and people signed up can show their QR code`
+											: 'check-in is open, and people signed up can show their QR code now'}
 									</p>
 								)}
 								{kind === 'lab' && (
@@ -860,27 +1130,78 @@ export default function CheckInView({ kind, id }) {
 								{error}
 							</p>
 						)}
+						{notice && !error && (
+							<p className="
+								mt-2
+								font-vietnam
+								text-[13px]
+								text-green-dark
+							">
+								{notice}
+							</p>
+						)}
 					</div>
 				</div>
 
-				{/* ---- the three lists ---------------------------------------- */}
+				{/* ---- the three lists ----------------------------------------
+				    Beside the sidebar they fill the page, three equal columns
+				    with the same 32px on the screen everywhere: from the
+				    sidebar to the first, between each, and from the last to the
+				    window's edge — the sidebar's own margin. The page column
+				    already sits 24px off the sidebar and 32px in from the
+				    window, so the list takes 8px more on the left and none on
+				    the right. Dividing by the zoom keeps those screen pixels
+				    rather than design ones, which the zoom would scale. */}
 				<div className="
 					mt-8
 					lg:mt-[54.5px]
 					flex-1
 					min-h-0
 					w-full
-					lg:w-[905.6px]
-					max-w-full
-					mx-auto
 					grid
 					grid-cols-1
 					md:grid-cols-3
 					gap-y-8
 					gap-x-[24px]
-					lg:gap-x-[42.3px]
+					lg:gap-x-[calc(32px/var(--design-zoom))]
+					lg:pl-[calc(8px/var(--design-zoom))]
 				">
-					<Column title="not checked in" count={waiting.length}>
+					<Column
+						title="not checked in"
+						count={waiting.length}
+						action={changes && (
+							<button
+								type="button"
+								onClick={() => setReminding(true)}
+								disabled={unpaid === 0}
+								title={unpaid === 0
+									? 'Nobody with a green $. Everyone’s paid or sent a payment in'
+									: `Email the ${unpaid} with a green $ to pay before the day`}
+								className="
+									rounded-full
+									border
+									border-black/60
+									px-[10px]
+									py-[2px]
+									font-vietnam
+									font-semibold
+									text-[11px]
+									leading-[16px]
+									text-black
+									cursor-pointer
+									transition-colors
+									hover:bg-black
+									hover:text-cream
+									disabled:opacity-35
+									disabled:cursor-default
+									disabled:hover:bg-transparent
+									disabled:hover:text-black
+								"
+							>
+								email unpaid{unpaid ? ` · ${unpaid}` : ''}
+							</button>
+						)}
+					>
 						{waiting.length === 0 && <Empty>nobody waiting to check in</Empty>}
 						{waiting.map((row) => (
 							<Row key={row.memberId}>
@@ -897,7 +1218,7 @@ export default function CheckInView({ kind, id }) {
 										{changes && <RowButton
 											tone={row.offerSentAt ? 'blue-sent' : 'blue'}
 											label={row.offerSentAt
-												? `Offer sent to ${fullName(row)} ${ago(row.offerSentAt)} — send again`
+												? `Offer sent to ${fullName(row)} ${ago(row.offerSentAt)}. Send again`
 												: `Email ${fullName(row)} their offer`}
 											onClick={() => act(row.memberId, 'offer')}
 											disabled={busy.has(row.memberId)}
@@ -911,27 +1232,35 @@ export default function CheckInView({ kind, id }) {
 										<Person row={row} note={<ConfirmNote row={row} />} />
 									</div>
 								)}
-								{changes && <div className="
+								<div className="
 									flex
 									gap-[15.5px]
 								">
-									<RowButton
-										tone="green"
-										label={`Check in ${fullName(row)}`}
-										onClick={() => act(row.memberId, 'checkin')}
+									<DuesMark
+										row={row}
+										onSettle={changes ? () => act(row.memberId, 'dues') : undefined}
+										onUndo={books ? () => setUndoing(row) : undefined}
 										disabled={busy.has(row.memberId)}
-									>
-										<TickIcon className="w-[20px] h-[20px]" />
-									</RowButton>
-									<RowButton
-										tone="red"
-										label={`Remove ${fullName(row)}`}
-										onClick={() => act(row.memberId, 'remove')}
-										disabled={busy.has(row.memberId)}
-									>
-										<CrossIcon className="w-[20px] h-[20px]" />
-									</RowButton>
-								</div>}
+									/>
+									{changes && <>
+										<RowButton
+											tone="green"
+											label={`Check in ${fullName(row)}`}
+											onClick={() => act(row.memberId, 'checkin')}
+											disabled={busy.has(row.memberId)}
+										>
+											<TickIcon className="w-[20px] h-[20px]" />
+										</RowButton>
+										<RowButton
+											tone="red"
+											label={`Remove ${fullName(row)}`}
+											onClick={() => act(row.memberId, 'remove')}
+											disabled={busy.has(row.memberId)}
+										>
+											<CrossIcon className="w-[20px] h-[20px]" />
+										</RowButton>
+									</>}
+								</div>
 							</Row>
 						))}
 					</Column>
@@ -943,14 +1272,24 @@ export default function CheckInView({ kind, id }) {
 								<div className="pl-[18px] min-w-0">
 									<Person row={row} />
 								</div>
-								{changes && <RowButton
-									tone="red"
-									label={`Undo ${fullName(row)}'s check-in`}
-									onClick={() => act(row.memberId, 'uncheck')}
-									disabled={busy.has(row.memberId)}
-								>
-									<CrossIcon className="w-[20px] h-[20px]" />
-								</RowButton>}
+								<div className="
+									flex
+									gap-[15.5px]
+								">
+									<DuesMark
+										row={row}
+										onUndo={books ? () => setUndoing(row) : undefined}
+										disabled={busy.has(row.memberId)}
+									/>
+									{changes && <RowButton
+										tone="red"
+										label={`Undo ${fullName(row)}'s check-in`}
+										onClick={() => act(row.memberId, 'uncheck')}
+										disabled={busy.has(row.memberId)}
+									>
+										<CrossIcon className="w-[20px] h-[20px]" />
+									</RowButton>}
+								</div>
 							</Row>
 						))}
 					</Column>
@@ -966,27 +1305,30 @@ export default function CheckInView({ kind, id }) {
 								<div className="pl-[27.5px] min-w-0">
 									<Person row={row} number={i + 1} />
 								</div>
-								{changes && <div className="
+								<div className="
 									flex
 									gap-[10px]
 								">
-									<RowButton
-										tone="yellow"
-										label={`Offer ${fullName(row)} a spot`}
-										onClick={() => act(row.memberId, 'admit')}
-										disabled={busy.has(row.memberId)}
-									>
-										<AdmitIcon className="w-[18px] h-[18px]" />
-									</RowButton>
-									<RowButton
-										tone="red"
-										label={`Take ${fullName(row)} off the waitlist`}
-										onClick={() => act(row.memberId, 'remove')}
-										disabled={busy.has(row.memberId)}
-									>
-										<CrossIcon className="w-[20px] h-[20px]" />
-									</RowButton>
-								</div>}
+									<DuesMark row={row} />
+									{changes && <>
+										<RowButton
+											tone="yellow"
+											label={`Offer ${fullName(row)} a spot`}
+											onClick={() => act(row.memberId, 'admit')}
+											disabled={busy.has(row.memberId)}
+										>
+											<AdmitIcon className="w-[18px] h-[18px]" />
+										</RowButton>
+										<RowButton
+											tone="red"
+											label={`Take ${fullName(row)} off the waitlist`}
+											onClick={() => act(row.memberId, 'remove')}
+											disabled={busy.has(row.memberId)}
+										>
+											<CrossIcon className="w-[20px] h-[20px]" />
+										</RowButton>
+									</>}
+								</div>
 							</Row>
 						))}
 					</Column>
@@ -999,11 +1341,90 @@ export default function CheckInView({ kind, id }) {
 					amount={duesAsk.reply.amount}
 					price={duesAsk.reply.price}
 					onChoose={duesAsk.answer}
+					ahead={duesAsk.ahead}
+					methods={methods}
 					onClose={() => {
 						duesAsk.close()
 						setDuesAsk(null)
 					}}
 				/>
+			)}
+			{showPayments && item && (
+				<PaymentsPopup
+					title={item.title}
+					payments={waitingPayments}
+					readOnly={!changes}
+					onChange={async () => {
+						await loadPayments()
+						await loadRoster()
+					}}
+					onClose={() => setShowPayments(false)}
+				/>
+			)}
+			{undoing && (
+				<Popup title="take it back?" onClose={() => setUndoing(null)}>
+					{(dismiss) => (
+						<>
+							<p className="
+								mt-3
+								font-vietnam
+								text-sm
+								text-black/70
+							">
+								{undoing.doorPayment === 'fee'
+									? <>{fullName(undoing)}’s entry payment comes out of the income in analytics, their $ turns green again, and they’re emailed to disregard the approval. They’re unpaid again.</>
+									: <>{fullName(undoing)}’s waiver is taken back, their $ turns green again, and they’re emailed that they’re unpaid.</>}
+							</p>
+							<div className="
+								mt-8
+								flex
+								justify-end
+								gap-3
+							">
+								<PopupButton onClick={() => dismiss(() => setUndoing(null))}>keep it</PopupButton>
+								<PopupButton danger onClick={() => dismiss(() => {
+									const row = undoing
+									setUndoing(null)
+									undoEntry(row)
+								})}>
+									take it back
+								</PopupButton>
+							</div>
+						</>
+					)}
+				</Popup>
+			)}
+			{reminding && item && (
+				<Popup title="email unpaid" onClose={() => setReminding(false)}>
+					{(dismiss) => (
+						<>
+							<p className="
+								mt-3
+								font-vietnam
+								text-sm
+								text-black/70
+							">
+								{`The ${unpaid} ${unpaid === 1 ? 'person' : 'people'} with a green $ get a reminder to pay`}
+								{item.nonmemberPrice > 0 ? ` the ${priceText(item.nonmemberPrice)} entry` : ''}
+								{' '}(or their VIP dues) a week before {item.title}, by its due date at 11:59 PM, or they’ll be moved to the waitlist. Every accepted payment’s QR code is attached.
+							</p>
+							<div className="
+								mt-8
+								flex
+								justify-end
+								gap-3
+							">
+								<PopupButton onClick={() => dismiss(() => setReminding(false))}>cancel</PopupButton>
+								<PopupButton primary onClick={() => dismiss(() => {
+									setReminding(false)
+									remind()
+								})}>
+									send them
+								</PopupButton>
+							</div>
+						</>
+					)}
+				</Popup>
 			)}
 			{confirming && item && (
 				<ConfirmationPopup

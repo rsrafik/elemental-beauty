@@ -4,7 +4,9 @@ import { OFF_WAITLIST, expireOffers, lockParent, offerNext, sendConfirmations, s
 import { emailAll, readMessage } from '../emailAll.js'
 import { log } from '../activity.js'
 import { csvCell } from '../csv.js'
-import { DUES_ANSWERS, asksDues, duesAnswerProblem, duesOwed, duesUnpaid, settleDues } from '../dues.js'
+import { DUES_ANSWERS, DUES_EXEMPT, asksDues, doorOwed, duesAnswerProblem, duesUnpaid, readPaidBy, schoolYearOf, settleDues } from '../dues.js'
+import { clubToday } from '../clubTime.js'
+import { PAYMENT_INCLUDE, enforcePaymentRules, keepsBooks, notifyDoorUndone, notifyPayer, remindUnpaid, undoDoorPayment } from '../payments.js'
 
 // The officer check-in page's roster, shared by labs and events: the same
 // three columns (not checked in / checked in / waitlist) and the same buttons
@@ -18,6 +20,17 @@ import { DUES_ANSWERS, asksDues, duesAnswerProblem, duesOwed, duesUnpaid, settle
 //               owes dues comes back DUES_UNPAID, the same as the QR scan, and
 //               is answered with `dues` ('paid' | 'fee' | 'waive') — see
 //               src/dues.js
+//     dues      the same answer ahead of time, without checking them in (the
+//               $ on a row). Sent without `dues` it comes back DUES_UNPAID
+//               with what they owe, for the popup. 'paid' marks the year paid
+//               (they turn VIP); 'fee' / 'waive' is kept on their row for this
+//               one, and the check-in doesn't ask again
+//               — `method` and `reference` (the platform and transaction id,
+//               both optional, here and on checkin) go in the ledger row's
+//               title
+//     undo-dues the treasurer's or admin's grey $: the entry paid or waived
+//               for this one is taken back (a paid one's income row with it)
+//               and they're emailed to disregard it — see src/payments.js
 //     uncheck   attended -> rsvped, points taken back (the x on checked in)
 //     admit     waitlisted -> offered, seat or no seat — an officer at the
 //               door can overrule the cap (the yellow button). The spot's
@@ -38,6 +51,9 @@ import { DUES_ANSWERS, asksDues, duesAnswerProblem, duesOwed, duesUnpaid, settle
 //                        get their QR code on its page early (members' pages
 //                        read `checkinOpen`). { open: false } closes it again;
 //                        from the start time it's open whatever this says
+//   POST /:id/remind-unpaid  the page's "email unpaid": everyone signed up who
+//                        owes for it and hasn't sent a payment in is reminded
+//                        to pay by the day, with the QR codes attached
 //   POST /:id/confirm-all  { deadline } — the page's "confirmation": everyone
 //                        signed up who hasn't confirmed yet is emailed a link
 //                        to confirm by then, with a lab's prelab attached
@@ -111,39 +127,92 @@ export function mountRoster(router, kind) {
     // its attendees don't run its roster (requireNotAttendee)
     const staffOnly = [requireRole('officer'), requireNotAttendee('id', kindName)]
 
+    // Where everyone in `memberIds` stands on dues for `item` (its row) — the
+    // same rule the door asks by (duesLookup): a payment for the year settles
+    // it, and nobody's asked when neither the year's dues nor its non-member
+    // price is set. `pending` is who's sent a payment in for it (its fee, or
+    // the year's dues) that's waiting to be looked at.
+    const standings = async (item, memberIds) => {
+        const schoolYear = schoolYearOf(item.date ? item.date.toISOString().slice(0, 10) : clubToday())
+        const [paid, target, waiting] = await Promise.all([
+            prisma.duesPayment.findMany({ where: { schoolYear, memberId: { in: memberIds } }, select: { memberId: true } }),
+            prisma.yearTarget.findUnique({ where: { schoolYear }, select: { duesAmount: true } }),
+            prisma.memberPayment.findMany({
+                where: {
+                    memberId: { in: memberIds },
+                    status: 'pending',
+                    OR: [{ kind: 'dues', schoolYear }, { kind: 'fee', [key]: item[key] }]
+                },
+                select: { memberId: true }
+            })
+        ])
+        const duesAmount = Number(target?.duesAmount ?? 0)
+        const price = Number(item.nonmemberPrice ?? 0)
+        return {
+            schoolYear,
+            duesAmount,
+            price,
+            asks: asksDues(kindName, item) && (duesAmount > 0 || price > 0),
+            settled: new Set(paid.map((payment) => payment.memberId)),
+            pending: new Set(waiting.map((payment) => payment.memberId))
+        }
+    }
+
     router.get('/:id/roster', ...staffOnly, async (req, res) => {
         const parentId = parseInt(req.params.id)
         if (isNaN(parentId)) { return res.status(400).json({ message: `Invalid ${label.toLowerCase()} id` }) }
 
         try {
-            // an offer that's run out moves on before anyone sees it
+            // an offer that's run out moves on before anyone sees it, and so
+            // does a payment due date that's passed (src/payments.js)
             await expireOffers()
+            await enforcePaymentRules()
+            const item = await parent.findUnique({ where: { [key]: parentId } })
+            if (!item) { return res.status(404).json({ message: `${label} not found` }) }
             const rows = await link.findMany({
                 where: { [key]: parentId },
                 select: {
                     memberId: true, attendanceStatus: true, waitlistedAt: true,
-                    offerSentAt: true, confirmSentAt: true, confirmBy: true, confirmedAt: true, ...USER_SELECT
+                    offerSentAt: true, confirmSentAt: true, confirmBy: true, confirmedAt: true,
+                    doorPayment: true, ...USER_SELECT
                 }
             })
-            res.json(rows.map(({ member, ...row }) => ({
-                memberId: row.memberId,
-                status: row.attendanceStatus,
-                waitlistedAt: row.waitlistedAt,
-                offerSentAt: row.offerSentAt,
-                confirmSentAt: row.confirmSentAt,
-                confirmBy: row.confirmBy,
-                // past the deadline without confirming, but kept on because
-                // nobody's waiting for the spot (see src/offers.js)
-                confirmMissed: row.attendanceStatus === 'rsvped' && !row.confirmedAt &&
-                    Boolean(row.confirmBy) && row.confirmBy.getTime() <= Date.now(),
-                confirmedAt: row.confirmedAt,
-                username: member.user.username,
-                firstName: member.user.firstName,
-                lastName: member.user.lastName,
-                // for the page's "copy addresses" — officers only, like the
-                // route
-                email: member.user.email
-            })))
+
+            const { asks, settled, pending } = await standings(item, rows.map((row) => row.memberId))
+
+            res.json(rows.map(({ member, doorPayment, ...row }) => {
+                // null for a role that never pays (DUES_EXEMPT)
+                const duesPaid = DUES_EXEMPT.includes(member.role) ? null : settled.has(row.memberId)
+                return {
+                    memberId: row.memberId,
+                    status: row.attendanceStatus,
+                    waitlistedAt: row.waitlistedAt,
+                    offerSentAt: row.offerSentAt,
+                    confirmSentAt: row.confirmSentAt,
+                    confirmBy: row.confirmBy,
+                    // past the deadline without confirming, but kept on because
+                    // nobody's waiting for the spot (see src/offers.js)
+                    confirmMissed: row.attendanceStatus === 'rsvped' && !row.confirmedAt &&
+                        Boolean(row.confirmBy) && row.confirmBy.getTime() <= Date.now(),
+                    confirmedAt: row.confirmedAt,
+                    username: member.user.username,
+                    firstName: member.user.firstName,
+                    lastName: member.user.lastName,
+                    // for the page's "copy addresses" — officers only, like the
+                    // route
+                    email: member.user.email,
+                    role: member.role,
+                    // dues for the year are paid — the page's gold crown
+                    duesPaid,
+                    // the entry paid ('fee') or waived ('waive') for this one —
+                    // the page's grey $
+                    doorPayment,
+                    // the door would ask them — the page's $ to settle it early
+                    owesDues: asks && duesPaid === false && !doorPayment,
+                    // they've sent a payment in for it that's waiting
+                    paymentPending: pending.has(row.memberId)
+                }
+            }))
         } catch (err) {
             console.error(err.message)
             res.sendStatus(500)
@@ -200,6 +269,35 @@ export function mountRoster(router, kind) {
         } catch (err) {
             console.error(err.message)
             res.sendStatus(500)
+        }
+    })
+
+    // Everyone signed up who'd be asked to pay at the door — the page's green
+    // $ — and hasn't sent a payment in, reminded to pay by the day (see
+    // remindUnpaid in src/payments.js).
+    router.post('/:id/remind-unpaid', ...staffOnly, async (req, res) => {
+        const parentId = parseInt(req.params.id)
+        if (isNaN(parentId)) { return res.status(400).json({ message: `Invalid ${label.toLowerCase()} id` }) }
+        try {
+            const item = await parent.findUnique({ where: { [key]: parentId } })
+            if (!item) { return res.status(404).json({ message: `${label} not found` }) }
+            const rows = await link.findMany({
+                where: { [key]: parentId, attendanceStatus: { in: ['rsvped', 'offered'] }, doorPayment: null },
+                select: { memberId: true, confirmBy: true, payBy: true, ...USER_SELECT }
+            })
+            const { asks, settled, pending, price, duesAmount, schoolYear } = await standings(item, rows.map((row) => row.memberId))
+            if (!asks) { return res.status(400).json({ message: `Nobody pays for this ${label.toLowerCase()}` }) }
+            const owing = rows.filter((row) =>
+                !DUES_EXEMPT.includes(row.member.role) && !settled.has(row.memberId) && !pending.has(row.memberId))
+            if (owing.length === 0) { return res.status(400).json({ message: 'Everyone signed up has paid or sent a payment in' }) }
+            const sent = await remindUnpaid(
+                { kind: kindName, id: parentId, title: item.title, date: item.date, price, duesAmount, schoolYear },
+                owing.map(({ member, confirmBy, payBy }) => ({ email: member.user.email, firstName: member.user.firstName, confirmBy, payBy }))
+            )
+            res.json({ message: `Reminded ${sent} ${sent === 1 ? 'person' : 'people'}`, sent })
+        } catch (err) {
+            console.error(err.message)
+            res.status(502).json({ message: err.message })
         }
     })
 
@@ -266,7 +364,7 @@ export function mountRoster(router, kind) {
         } catch (err) {
             if (err.status) { return res.status(err.status).json({ message: err.message }) }
             console.error(err.message)
-            res.status(502).json({ message: 'The confirmations didn’t all go out — check the server log' })
+            res.status(502).json({ message: 'The confirmations didn’t all go out. Check the server log' })
         }
     })
 
@@ -324,16 +422,19 @@ export function mountRoster(router, kind) {
                 }
                 // labs and members-only events ask; one open to all doesn't
                 const owed = asksDues(kindName, row)
-                    ? await duesOwed(prisma, memberId, row.date?.toISOString().slice(0, 10), row.nonmemberPrice)
+                    ? await doorOwed(prisma, existing, row.date?.toISOString().slice(0, 10), row.nonmemberPrice)
                     : null
                 if (owed && !dues) { return duesUnpaid(res, memberId, owed) }
                 const problem = owed && duesAnswerProblem(owed, dues)
                 if (problem) { return res.status(400).json({ message: problem }) }
                 await prisma.$transaction(async (tx) => {
-                    if (owed) {
-                        await settleDues(tx, { owed, dues, memberId, actorId: req.userId, item: { kind: kindName, id: parentId, title: row.title } })
-                    }
-                    await tx[linkName].update({ where: where(parentId, memberId), data: { attendanceStatus: 'attended', offerSentAt: null } })
+                    const door = owed
+                        ? await settleDues(tx, { owed, dues, memberId, actorId: req.userId, item: { kind: kindName, id: parentId, title: row.title }, paidBy: readPaidBy(req.body) })
+                        : null
+                    await tx[linkName].update({
+                        where: where(parentId, memberId),
+                        data: { attendanceStatus: 'attended', offerSentAt: null, ...(door ?? {}) }
+                    })
                     await tx.member.update({ where: { userId: memberId }, data: { points: { increment: worth } } })
                     await log({
                         actorId: req.userId, action: 'checked_in', targetId: memberId, points: worth,
@@ -341,6 +442,49 @@ export function mountRoster(router, kind) {
                     }, tx)
                 })
                 return res.json({ message: `Checked in (+${worth} points)` })
+            }
+
+            if (action === 'dues') {
+                if (!['rsvped', 'absent', 'offered'].includes(status)) {
+                    return res.status(409).json({ message: 'Only someone signed up and not checked in yet' })
+                }
+                const { dues } = req.body
+                if (dues !== undefined && !DUES_ANSWERS.includes(dues)) {
+                    return res.status(400).json({ message: `dues must be one of: ${DUES_ANSWERS.join(', ')}` })
+                }
+                if (!asksDues(kindName, row)) {
+                    return res.status(409).json({ message: `Nobody pays at the door for this ${label.toLowerCase()}` })
+                }
+                const owed = await doorOwed(prisma, existing, row.date?.toISOString().slice(0, 10), row.nonmemberPrice)
+                if (!owed) { return res.status(409).json({ message: 'They don’t owe anything for this one' }) }
+                // no answer yet: what they owe, for the page's dues popup
+                if (dues === undefined) { return duesUnpaid(res, memberId, owed) }
+                const problem = duesAnswerProblem(owed, dues)
+                if (problem) { return res.status(400).json({ message: problem }) }
+                const paidBy = readPaidBy(req.body)
+                await prisma.$transaction(async (tx) => {
+                    const door = await settleDues(tx, { owed, dues, memberId, actorId: req.userId, item: { kind: kindName, id: parentId, title: row.title }, paidBy })
+                    if (door) {
+                        await tx[linkName].update({ where: where(parentId, memberId), data: door })
+                    }
+                })
+                return res.json({ message: { paid: 'Dues marked paid', fee: 'Entry paid', waive: 'Entry waived' }[dues] })
+            }
+
+            if (action === 'undo-dues') {
+                if (!keepsBooks(req)) {
+                    return res.status(403).json({ message: 'Only the treasurer or an admin can take a payment back' })
+                }
+                if (!existing.doorPayment) { return res.status(409).json({ message: 'Nothing’s been paid or waived for this one' }) }
+                const payment = await prisma.$transaction((tx) =>
+                    undoDoorPayment(tx, { kindName, link: existing, actorId: req.userId, title: row.title }))
+                res.json({ message: existing.doorPayment === 'fee' ? 'Payment taken back, and the income is out of the ledger' : 'Waiver taken back' })
+                const email = payment
+                    ? prisma.memberPayment.findUnique({ where: { paymentId: payment.paymentId }, include: PAYMENT_INCLUDE })
+                        .then((full) => notifyPayer(full, 'reversed'))
+                    : notifyDoorUndone({ memberId, kindName, id: parentId, title: row.title })
+                email.catch((err) => console.error(`Payment email failed: ${err.message}`))
+                return
             }
 
             if (action === 'uncheck') {
@@ -373,7 +517,7 @@ export function mountRoster(router, kind) {
                     where: where(parentId, memberId),
                     data: OFF_WAITLIST
                 })
-                return res.json({ message: 'Moved off the waitlist — send them their offer' })
+                return res.json({ message: 'Moved off the waitlist. Send them their offer' })
             }
 
             if (action === 'offer') {
@@ -398,11 +542,12 @@ export function mountRoster(router, kind) {
                 return res.json({ message: 'Removed', offeredTo: promoted })
             }
 
-            res.status(400).json({ message: 'action must be one of: checkin, uncheck, admit, offer, remove, add' })
+            res.status(400).json({ message: 'action must be one of: checkin, dues, undo-dues, uncheck, admit, offer, remove, add' })
         } catch (err) {
             if (err.status) { return res.status(err.status).json({ message: err.message }) }
             // the treasurer marked them paid while the dues popup was up
-            if (err.code === 'P2002' && action === 'checkin') { return res.status(409).json({ message: 'Their dues were just marked paid — check them in again' }) }
+            if (err.code === 'P2002' && action === 'checkin') { return res.status(409).json({ message: 'Their dues were just marked paid. Check them in again' }) }
+            if (err.code === 'P2002' && action === 'dues') { return res.status(409).json({ message: 'Their dues were just marked paid' }) }
             console.error(err.message)
             res.sendStatus(500)
         }

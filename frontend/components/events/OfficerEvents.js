@@ -1,5 +1,6 @@
 'use client'
 
+import { LeavePopup } from '@/components/labs/LabViewParts'
 import { useEffect, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { useDismiss } from '@/lib/dismiss'
@@ -612,7 +613,7 @@ export function EventDialog({ event, categories, onClose, onSave, onDelete }) {
 					text-black/50
 					mt-2
 				">
-					Labs are scheduled from the labs page — they need sign-ups and
+					Labs are scheduled from the labs page, since they need sign-ups and
 					check-in.
 				</p>
 
@@ -775,7 +776,7 @@ export function EventDialog({ event, categories, onClose, onSave, onDelete }) {
 									inputMode="decimal"
 									value={form.price}
 									onChange={set('price')}
-									placeholder="$ — blank = free"
+									placeholder="$ (blank means free)"
 									className={`${FIELD} ${priceFine ? '' : 'border-red focus:border-red'}`}
 								/>
 							</label>
@@ -1013,6 +1014,8 @@ export default function OfficerEvents({ openNew = false }) {
 	const signsUp = role === 'jboard'
 	// events with an rsvp on its way, so a double click can't send two
 	const [rsvping, setRsvping] = useState(() => new Set())
+	// the event j-board's leaving, while LeavePopup asks
+	const [leaving, setLeaving] = useState(null)
 	// j-board's check-in code, up for an officer to scan
 	const [showQr, setShowQr] = useState(false)
 	const [events, setEvents] = useState([])
@@ -1047,8 +1050,14 @@ export default function OfficerEvents({ openNew = false }) {
 	// j-board's rsvp: signing up, leaving (a seat or the waitlist), or taking
 	// an offered spot — the same calls a member's card makes — then the list
 	// is re-read for where they've landed and the seat count.
-	const toggleRsvp = async (row) => {
+	//
+	// Leaving asks first (LeavePopup) and comes back here with `confirmed`.
+	const toggleRsvp = async (row, confirmed = null) => {
 		if (rsvping.has(row.id)) return
+		if ((row.mine === 'rsvped' || row.mine === 'waitlisted') && !confirmed) {
+			setLeaving(row)
+			return
+		}
 		setRsvping((prev) => new Set(prev).add(row.id))
 		setError(null)
 		try {
@@ -1320,6 +1329,18 @@ export default function OfficerEvents({ openNew = false }) {
 					onClose={closeEditor}
 					onSave={saveEvent}
 					onDelete={editing.event ? deleteEvent : undefined}
+				/>
+			)}
+			{leaving && (
+				<LeavePopup
+					title={leaving.title}
+					mine={leaving.mine}
+					place={{ eventId: leaving.id }}
+					onConfirm={() => {
+						setLeaving(null)
+						toggleRsvp(leaving, { ok: true })
+					}}
+					onClose={() => setLeaving(null)}
 				/>
 			)}
 		</DashboardShell>

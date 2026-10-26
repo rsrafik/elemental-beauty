@@ -27,10 +27,13 @@ function escape(value) {
 //   lines     the paragraphs above the button
 //   button    { label, url } — optional: an officer's message has none
 //   after     paragraphs under the button (expiry, what happens next)
+//   callout   { label, text } — optional: one thing that mustn't be missed,
+//             drawn big and bold in its own box under the heading (a lab's
+//             payment due date — see dueCallout in payable.js)
 //   reason    the small print: why this landed in their inbox
 // }
 // -> { text, html }
-export function actionEmail({ heading, lines = [], button, after = [], reason }) {
+export function actionEmail({ heading, callout, lines = [], button, after = [], reason }) {
     const replies = process.env.EMAIL_REPLY_TO
         ? 'Questions? Just reply to this email and it will reach the club.'
         : null
@@ -38,11 +41,11 @@ export function actionEmail({ heading, lines = [], button, after = [], reason })
     const text = [
         heading,
         '',
+        ...(callout ? [`*** ${callout.label.toUpperCase()}: ${callout.text} ***`, ''] : []),
         ...lines.flatMap((line) => [line, '']),
         ...(button ? [`${button.label}: ${button.url}`, ''] : []),
         ...after.flatMap((line) => [line, '']),
         ...(replies ? [replies, ''] : []),
-        '—',
         'Elemental Beauty',
         reason
     ].join('\n')
@@ -59,6 +62,12 @@ export function actionEmail({ heading, lines = [], button, after = [], reason })
 <tr><td style="padding:32px 32px 8px;">
 <p style="margin:0 0 20px;font-family:${FONT};font-size:12px;font-weight:bold;letter-spacing:2px;text-transform:uppercase;color:${ORANGE};">Elemental Beauty</p>
 <h1 style="margin:0 0 16px;font-family:${FONT};font-size:22px;line-height:1.3;color:${INK};">${escape(heading)}</h1>
+${callout ? `<table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="margin:0 0 20px;">
+<tr><td style="padding:16px 20px;border-radius:12px;background:#FFF1EC;border:2px solid ${ORANGE};">
+<p style="margin:0 0 4px;font-family:${FONT};font-size:12px;font-weight:bold;letter-spacing:2px;text-transform:uppercase;color:${ORANGE};">${escape(callout.label)}</p>
+<p style="margin:0;font-family:${FONT};font-size:24px;line-height:1.25;font-weight:800;color:${INK};">${escape(callout.text)}</p>
+</td></tr>
+</table>` : ''}
 ${lines.map(paragraph).join('\n')}
 ${button ? `<table role="presentation" cellpadding="0" cellspacing="0" style="margin:8px 0 20px;">
 <tr><td style="border-radius:999px;background:${ORANGE};">

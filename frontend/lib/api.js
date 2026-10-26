@@ -174,6 +174,8 @@ export const members = {
 	// officer+: signed up, not a member yet (role 'user')
 	accounts: () => api('/members/accounts'),
 	me: () => api('/members/me'),
+	// j-board and up: one person as /students' row popup shows them
+	card: (id) => api(`/members/${id}/card`),
 	// the dashboard's "Email All" — sent by the server to everyone who wants
 	// club-wide email; the reply is { sent }
 	emailAll: (message) => api('/members/email-all', { method: 'POST', body: message }),
@@ -242,9 +244,12 @@ export const events = {
 	// action: checkin | uncheck | admit | offer | remove (with memberId) or add (with username)
 	rosterAction: (id, body) => api(`/events/${id}/roster`, { method: 'POST', body }),
 	// `dues` answers a DUES_UNPAID reply on a members-only event, as a lab's does
-	checkin: (id, qrToken, dues) => api(`/events/${id}/checkin`, { method: 'POST', body: { qrToken, dues } }),
+	// `paidBy` is the dues popup's optional { method, reference }
+	checkin: (id, qrToken, dues, paidBy = {}) => api(`/events/${id}/checkin`, { method: 'POST', body: { qrToken, dues, ...paidBy } }),
 	// the check-in page's "email all": { subject, message } to everyone signed up
 	emailAll: (id, message) => api(`/events/${id}/email-all`, { method: 'POST', body: message }),
+	// the check-in page's "email unpaid": everyone with a green $ reminded to pay
+	remindUnpaid: (id) => api(`/events/${id}/remind-unpaid`, { method: 'POST' }),
 	// the check-in page's "confirmation": everyone signed up who hasn't
 	// confirmed is emailed a link to, by `deadline` (an ISO time)
 	confirmAll: (id, deadline) => api(`/events/${id}/confirm-all`, { method: 'POST', body: { deadline } }),
@@ -318,9 +323,12 @@ export const labs = {
 	rosterAction: (id, body) => api(`/labs/${id}/roster`, { method: 'POST', body }),
 	// `dues` answers a DUES_UNPAID reply: 'paid' (dues taken at the door),
 	// 'fee' (the non-member price, for this one) or 'waive'
-	checkin: (id, qrToken, dues) => api(`/labs/${id}/checkin`, { method: 'POST', body: { qrToken, dues } }),
+	// `paidBy` is the dues popup's optional { method, reference }
+	checkin: (id, qrToken, dues, paidBy = {}) => api(`/labs/${id}/checkin`, { method: 'POST', body: { qrToken, dues, ...paidBy } }),
 	// the check-in page's "email all": { subject, message } to everyone signed up
 	emailAll: (id, message) => api(`/labs/${id}/email-all`, { method: 'POST', body: message }),
+	// the check-in page's "email unpaid": everyone with a green $ reminded to pay
+	remindUnpaid: (id) => api(`/labs/${id}/remind-unpaid`, { method: 'POST' }),
 	// the check-in page's "start check-in": QR codes before the start time
 	setCheckinOpen: (id, open) => api(`/labs/${id}/checkin-open`, { method: 'PUT', body: { open } }),
 	// the check-in page's "confirmation": everyone signed up who hasn't
@@ -381,11 +389,59 @@ export const finances = {
 	submitRequest: (request) => api('/reimbursements', { method: 'POST', body: request }),
 	reviseRequest: (id, request) => api(`/reimbursements/${id}`, { method: 'PUT', body: request }),
 	revokeRequest: (id) => api(`/reimbursements/${id}`, { method: 'DELETE' }),
+	// the treasurer's "undo": reimbursed back to approved (the payout's expense
+	// row comes out), approved back to pending — the officer is emailed
+	undoRequest: (id) => api(`/reimbursements/${id}/undo`, { method: 'PUT' }),
 	setRequestStatus: (id, status, denialExplanation) =>
 		api(`/reimbursements/${id}/status`, {
 			method: 'PUT',
 			body: { status, denialExplanation },
 		}),
+}
+
+// What money is filed under — the donuts' slices and the receipt form's list.
+// Every officer reads it; the treasurer and admin add and remove them. `key`
+// is what a ledger row stores; the four the app files money under itself come
+// back with `locked` set to why (src/financeCategories.js).
+export const financeCategories = {
+	list: () => api('/finance-categories'),
+	// { label, type: 'income' | 'expense', color: '#RRGGBB' }
+	add: (category) => api('/finance-categories', { method: 'POST', body: category }),
+	remove: (key) => api(`/finance-categories/${encodeURIComponent(key)}`, { method: 'DELETE' }),
+}
+
+// The ways to pay the club — /analytics' "accepted payments" card. Every member
+// reads them; the treasurer and admin add and remove them.
+export const paymentMethods = {
+	list: () => api('/payment-methods'),
+	// { title, image?: data URL, description? }
+	add: (method) => api('/payment-methods', { method: 'POST', body: method }),
+	// the same fields; an `image` left out stays as it is, null takes it off
+	update: (id, method) => api(`/payment-methods/${id}`, { method: 'PUT', body: method }),
+	remove: (id) => api(`/payment-methods/${id}`, { method: 'DELETE' }),
+}
+
+// Payments members make on their own and send in for review — see
+// src/routes/paymentRoutes.js. `place` is { labId } or { eventId }, or {} for
+// /vip's dues.
+export const payments = {
+	// { item, schoolYear, duesPaid, door, holds, choices, methods, payments }
+	options: (place = {}) => api(`/payments/options?${new URLSearchParams(place)}`),
+	// { kind: 'dues' | 'fee', labId? | eventId?, methodId, reference, screenshot? }
+	send: (payment) => api('/payments', { method: 'POST', body: payment }),
+	// their own, while it's pending: the same fields (a screenshot left out stays)
+	edit: (id, payment) => api(`/payments/${id}`, { method: 'PUT', body: payment }),
+	// the treasurer's and admin's: filters are labId, eventId, kind, status, schoolYear
+	list: (filters = {}) => api(`/payments?${new URLSearchParams(filters)}`),
+	approve: (id) => api(`/payments/${id}/approve`, { method: 'POST' }),
+	// everything they've paid — the account page's payment history
+	history: () => api('/payments/history'),
+	// their unpaid due dates, for the calendar
+	deadlines: () => api('/payments/deadlines'),
+	// "send back": they fix it and send it again (within 48 hours, for a lab
+	// or event); "reject": not accepted, and they're moved to its waitlist
+	sendBack: (id, reason) => api(`/payments/${id}/send-back`, { method: 'POST', body: { reason } }),
+	reject: (id, reason) => api(`/payments/${id}/reject`, { method: 'POST', body: { reason } }),
 }
 
 // Dues, for the treasurer — one payment per member per school year. Marking

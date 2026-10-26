@@ -23,6 +23,11 @@ import prisma from './prismaClient.js'
 //                    price at the door
 //   dues_reset       the treasurer cleared everyone's     details { schoolYear, count }
 //                    dues for a year (the money stays)
+//   door_payment_undone  the treasurer took back an      details { kind, id, title, was: 'fee' | 'waive' }
+//                    entry paid or waived for one lab or
+//                    event (the check-in page's grey $)
+//   payment_rejected the treasurer sent a payment a      details { kind, schoolYear, title, reason }
+//                    member made back
 //
 // Names are copied in as they are at the time, so the log still reads right
 // after someone is renamed or removed.
@@ -30,7 +35,7 @@ import prisma from './prismaClient.js'
 export const ACTIONS = [
     'role_changed', 'team_changed', 'points_awarded', 'checked_in', 'checkin_undone',
     'member_added', 'member_removed', 'account_deleted', 'dues_paid', 'dues_cleared', 'dues_waived',
-    'fee_paid', 'dues_reset'
+    'fee_paid', 'dues_reset', 'door_payment_undone', 'payment_rejected'
 ]
 
 export const fullName = (user) =>

@@ -27,13 +27,15 @@ export function schoolYearOf(day) {
 // it lands in on the balance line.
 //
 // `user` is the member's { firstName, lastName, username }, for the ledger
-// row's name. Throws P2002 if they're already marked paid for that year.
-export async function recordDues(tx, { memberId, user, schoolYear, amount, day, actorId }) {
+// row's name; `source` is the row's whole title when the caller has a better
+// one (ledgerSource — a payment a member sent in, or one taken at the door).
+// Throws P2002 if they're already marked paid for that year.
+export async function recordDues(tx, { memberId, user, schoolYear, amount, day, actorId, source }) {
     const ledger = amount > 0
         ? await tx.transaction.create({
             data: {
                 type: 'income',
-                source: `Dues ${schoolYear} — ${fullName(user)}`,
+                source: source ?? `Dues ${schoolYear} — ${fullName(user)}`,
                 amount,
                 category: 'dues',
                 ...(day ? { date: day } : {})
@@ -91,7 +93,7 @@ export async function payForVip(tx, { memberId, actorId }) {
     const target = await tx.yearTarget.findUnique({ where: { schoolYear }, select: { duesAmount: true } })
     const amount = Number(target?.duesAmount ?? 0)
     if (amount <= 0) {
-        throw Object.assign(new Error(`Set the ${schoolYear} dues amount on analytics first — making someone VIP marks their dues paid`), { code: 'NO_DUES_AMOUNT' })
+        throw Object.assign(new Error(`Set the ${schoolYear} dues amount on analytics first, because making someone VIP marks their dues paid`), { code: 'NO_DUES_AMOUNT' })
     }
     const user = await tx.user.findUnique({ where: { userId: memberId }, select: { firstName: true, lastName: true, username: true } })
     return recordDues(tx, { memberId, user, schoolYear, amount, day: dateColumn(clubToday()), actorId })
@@ -204,24 +206,64 @@ export function duesAnswerProblem(owed, dues) {
 //            under 'fees', and asked again next time
 //   'waive'  let in this once without paying — logged, and asked again next
 //            time
-export async function settleDues(tx, { owed, dues, memberId, actorId, item }) {
+//
+// `paidBy` is how the money came, when anyone said — { method, reference }:
+// the platform and the transaction id — for the ledger row's title
+// (ledgerSource).
+//
+// Returns what to keep on their row for this one — { doorPayment,
+// doorTransactionId }: 'fee' and the income row it wrote, or 'waive', so
+// checking them in later doesn't ask again and undoing it knows what to take
+// back out — or null for 'paid', which the year's DuesPayment already answers
+// for every lab.
+export async function settleDues(tx, { owed, dues, memberId, actorId, item, paidBy = {} }) {
+    const name = fullName(owed.user)
     if (dues === 'paid') {
-        await recordDues(tx, { memberId, user: owed.user, schoolYear: owed.schoolYear, amount: owed.amount, actorId })
-        return
+        await recordDues(tx, {
+            memberId, user: owed.user, schoolYear: owed.schoolYear, amount: owed.amount, actorId,
+            source: ledgerSource({ name, what: `VIP dues ${owed.schoolYear} (${item.title})`, ...paidBy })
+        })
+        return null
     }
     const details = { schoolYear: owed.schoolYear, kind: item.kind, id: item.id, title: item.title }
     if (dues === 'fee') {
-        await tx.transaction.create({
+        const ledger = await tx.transaction.create({
             data: {
                 type: 'income',
-                source: `${item.title} — ${fullName(owed.user)} (non-member)`,
+                source: ledgerSource({ name, what: item.title, ...paidBy }),
                 amount: owed.price,
                 category: 'fees',
                 date: dateColumn(clubToday())
             }
         })
         await log({ actorId, action: 'fee_paid', targetId: memberId, details: { ...details, amount: owed.price } }, tx)
-        return
+        return { doorPayment: 'fee', doorTransactionId: ledger.transactionId }
     }
     await log({ actorId, action: 'dues_waived', targetId: memberId, details }, tx)
+    return { doorPayment: 'waive', doorTransactionId: null }
+}
+
+// `paidBy` off a request's body — { method, reference }, both optional: the
+// platform ('Venmo') and the transaction id the officer typed into the dues
+// popup.
+export function readPaidBy(body = {}) {
+    const text = (value, max) => typeof value === 'string' ? value.trim().replace(/^#/, '').slice(0, max) || null : null
+    return { method: text(body.method, 60), reference: text(body.reference, 80) }
+}
+
+// A ledger row's title for money a member paid: who, for what (the lab or
+// event, or 'VIP dues 2026–27'), the transaction id their app gave them and
+// the platform — 'Mina Reyes — Body Butter — #4F2K9 — Venmo'. The last two
+// only when someone said.
+export function ledgerSource({ name, what, reference, method }) {
+    return [name, what, reference && `#${reference}`, method].filter(Boolean).join(' — ')
+}
+
+// What checking `link` (their member_lab / member_event row) into a lab or
+// event dated `day` asks for — duesOwed, unless they've already paid the entry
+// or been waived for this one (its doorPayment, set ahead of time from the
+// check-in page's $, or at an earlier check-in that was undone).
+export async function doorOwed(db, link, day, nonmemberPrice) {
+    if (link.doorPayment) return null
+    return duesOwed(db, link.memberId, day, nonmemberPrice)
 }

@@ -8,6 +8,7 @@ import { buildMonths, dayBadge, typesIn } from '@/lib/calendar'
 import { JoinMeetingButton } from '@/components/events/MeetingLink'
 import { thisMonth } from '@/lib/dates'
 import { hiddenTracks } from '@/lib/roles'
+import { DUE_CELL, DueLine, useDuesDeadlines } from '@/components/calendar/DuesDeadlines'
 
 // /calendar for a user or member: month view of labs + events, read only.
 //
@@ -201,13 +202,16 @@ function isToday(view, number) {
 // `wave` is the cell's row plus its column, handed to the entrance animation as
 // --wave: every cell on the same diagonal arrives together and each diagonal
 // follows the one before it, so the month washes in from the top-left corner.
-function Day({ number, inMonth, entries: dayEntries = [], wave = 0, today = false }) {
+//
+// `dues` are the viewer's unpaid due dates that land on it: the box goes light
+// red and each says what's owed by when (DuesDeadlines).
+function Day({ number, inMonth, entries: dayEntries = [], dues = [], wave = 0, today = false }) {
 	const entry = dayEntries[0] ?? null
 	const badge = dayBadge(dayEntries, TRACKS)
 	return (
 		<div
 			style={{ '--wave': wave }}
-			className="
+			className={`
 				calendar-cell
 				group
 				min-h-[42px]
@@ -221,7 +225,8 @@ function Day({ number, inMonth, entries: dayEntries = [], wave = 0, today = fals
 				md:pt-3
 				pr-0
 				md:pr-2
-			"
+				${dues.length ? DUE_CELL : ''}
+			`}
 		>
 			<span
 				style={inMonth ? badge.style : undefined}
@@ -268,6 +273,16 @@ function Day({ number, inMonth, entries: dayEntries = [], wave = 0, today = fals
 					</p>
 					<EntryTitle entry={entry} />
 					<JoinMeetingButton url={entry.meetingUrl} tone={TRACKS[entry.track]?.pill} className="mt-1.5" />
+				</div>
+			)}
+			{dues.length > 0 && (
+				<div className="
+					hidden
+					md:block
+					mt-2
+					space-y-1
+				">
+					{dues.map((due) => <DueLine key={`${due.kind}-${due.id}`} due={due} />)}
 				</div>
 			)}
 		</div>
@@ -338,17 +353,18 @@ function Agenda({ days }) {
 				flex-col
 				gap-3
 			">
-				{days.map(({ number, entries: dayEntries }) => {
+				{days.map(({ number, entries: dayEntries, dues = [] }) => {
 					const entry = dayEntries[0]
 					const badge = dayBadge(dayEntries, TRACKS)
 					return (
 					<li
 						key={number}
-						className="
+						className={`
 							flex
 							items-start
 							gap-3
-						"
+							${dues.length ? 'rounded-[10px] bg-red/10 p-2' : ''}
+						`}
 					>
 						<span
 							style={badge.style}
@@ -369,17 +385,22 @@ function Agenda({ days }) {
 							{number}
 						</span>
 						<div className="min-w-0">
-							<p className="
-								font-vietnam
-								text-[10px]
-								uppercase
-								tracking-[0.12em]
-								text-black/45
-							">
-								{entry.type}
-							</p>
-							<EntryTitle entry={entry} />
-							<JoinMeetingButton url={entry.meetingUrl} tone={TRACKS[entry.track]?.pill} className="mt-1.5" />
+							{entry && (
+								<>
+									<p className="
+										font-vietnam
+										text-[10px]
+										uppercase
+										tracking-[0.12em]
+										text-black/45
+									">
+										{entry.type}
+									</p>
+									<EntryTitle entry={entry} />
+									<JoinMeetingButton url={entry.meetingUrl} tone={TRACKS[entry.track]?.pill} className="mt-1.5" />
+								</>
+							)}
+							{dues.map((due) => <DueLine key={`${due.kind}-${due.id}`} due={due} className={entry ? 'mt-1' : 'mt-1.5'} />)}
 						</div>
 					</li>
 					)
@@ -401,6 +422,8 @@ export default function MemberCalendar() {
 	// request per month would be more round trips than rows.
 	const [months, setMonths] = useState({})
 	const [types, setTypes] = useState(TYPES)
+	// what they owe and by when, on the day it's due
+	const dueOn = useDuesDeadlines()
 
 	// The tags picked under "on the calendar". None picked is no filter; each
 	// one clicked adds its tag to what's shown, and "clear filter" empties it.
@@ -458,11 +481,11 @@ export default function MemberCalendar() {
 
 	// The same days the grid shows a badge for, in date order — what the narrow
 	// layout lists under the month.
-	const agendaDays = Object.keys(monthEntries)
-		.map(Number)
-		.sort((a, b) => a - b)
-		.map((number) => ({ number, entries: visible(monthEntries[number]) }))
-		.filter(({ entries }) => entries.length)
+	// (and any day something's due on, even with nothing else on it)
+	const lastDay = new Date(view.year, view.month + 1, 0).getDate()
+	const agendaDays = Array.from({ length: lastDay }, (_, i) => i + 1)
+		.map((number) => ({ number, entries: visible(monthEntries[number]), dues: dueOn(view.year, view.month, number) }))
+		.filter(({ entries, dues }) => entries.length || dues.length)
 
 	return (
 		// xl:overflow-visible: on a wide screen the page column doesn't scroll —
@@ -798,6 +821,7 @@ export default function MemberCalendar() {
 									inMonth={day.inMonth}
 									today={day.inMonth && isToday(view, day.number)}
 									entries={day.inMonth ? visible(monthEntries[day.number]) : []}
+									dues={day.inMonth ? dueOn(view.year, view.month, day.number) : []}
 								/>
 							))}
 						</div>

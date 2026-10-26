@@ -4,10 +4,12 @@ import prisma from '../prismaClient.js'
 import requireRole from '../middleware/requireRole.js'
 import { POINTS } from '../points.js'
 import { mountRoster, requireNotAttendee } from './roster.js'
-import { acceptOffer, confirmSpot, expireOffers, lockParent, offerNext, startsAt } from '../offers.js'
+import { OFFER_HOURS, acceptOffer, confirmSpot, expireOffers, lockParent, offerNext, startsAt } from '../offers.js'
+import { payable, paymentDueAt } from '../payable.js'
+import { owingLate } from '../payments.js'
 import { log } from '../activity.js'
 import { readEndTime } from '../clubTime.js'
-import { DUES_ANSWERS, duesAnswerProblem, duesLookup, duesOwed, duesUnpaid, readPrice, settleDues } from '../dues.js'
+import { DUES_ANSWERS, duesAnswerProblem, duesLookup, doorOwed, duesUnpaid, readPaidBy, readPrice, settleDues } from '../dues.js'
 
 const router = express.Router()
 // the advisor is in both lists below so they see what staff see — drafts,
@@ -212,6 +214,11 @@ router.get('/:id', async (req, res) => {
             waitlistPosition = ahead + 1
         }
 
+        // what paying would do for them, holding a spot or an offer of one
+        const standing = ['rsvped', 'offered'].includes(link?.attendanceStatus)
+            ? await payable(prisma, req.userId, 'lab', labId)
+            : null
+
         // the file itself is its own request (GET /:id/lesson) — this only says
         // whether there is one
         // the drafts are the officers' business — a member who passed gets the
@@ -233,7 +240,23 @@ router.get('/:id', async (req, res) => {
             confirmPending: link?.attendanceStatus === 'rsvped' && Boolean(link.confirmSentAt) && !link.confirmedAt,
             confirmBy: link?.confirmBy ?? null,
             waitlistPosition,
-            dues: owe(lab.date?.toISOString().slice(0, 10), lab.nonmemberPrice),
+            // nothing owed once their entry for this one is settled (paid or
+            // waived — doorPayment)
+            dues: link?.doorPayment ? null : owe(lab.date?.toISOString().slice(0, 10), lab.nonmemberPrice),
+            // when payment's due (a week before, 11:59 PM)
+            paymentDueAt: paymentDueAt(lab),
+            // for someone holding a spot or an offer of one, and owing for it:
+            // paying is how they confirm or accept it (src/offers.js) — { sent:
+            // they have, dueAt: when it's due (the week before, or their
+            // confirmation deadline if that's sooner), dueBy: which, fixBy:
+            // the new due date once one's sent back } — else null
+            pay: standing?.owes
+                ? { sent: standing.sent, dueAt: standing.dueAt, dueBy: standing.dueBy, fixBy: standing.fixBy }
+                : null,
+            // when an offer they've had emailed lapses, if it can
+            offerBy: link?.attendanceStatus === 'offered' && link.offerSentAt
+                ? new Date(link.offerSentAt.getTime() + OFFER_HOURS * 3_600_000)
+                : null,
             // the prelab the confirmation email attaches, for anyone holding
             // a spot — so it's never only in an inbox (GET /:id/prelab)
             prelabPdfName: officer || HOLDS_SPOT.includes(link?.attendanceStatus)
@@ -461,7 +484,13 @@ router.post('/:labId/confirm', async (req, res) => {
     try {
         const result = await confirmSpot('lab', labId, req.userId)
         if (result.status === 'gone') { return res.status(404).json({ message: 'You have no spot to confirm' }) }
-        res.json({ message: 'Spot confirmed', ...result })
+        if (result.status === 'pay_first') {
+            return res.status(409).json({ code: 'PAY_FIRST', message: 'Your spot can only be confirmed once you pay. Send your payment on this page', ...result })
+        }
+        if (result.status === 'held') {
+            return res.status(409).json({ code: 'PAYMENT_PENDING', message: 'Your payment’s being checked. Your spot is confirmed once it’s approved', ...result })
+        }
+        res.json({ message: result.status === 'already' ? 'You’re already confirmed' : 'Spot confirmed', ...result })
     } catch (err) {
         console.error(err.message)
         res.sendStatus(500)
@@ -812,8 +841,12 @@ router.post('/:labId/rsvp', async (req, res) => {
         if (existing) {
             // pressing the button while holding an offer accepts it
             if (existing.attendanceStatus === 'offered') {
-                await acceptOffer('lab', labId, req.userId)
-                return res.status(201).json({ code: 'ACCEPTED', message: 'Spot accepted — you\'re signed up' })
+                const accepted = await acceptOffer('lab', labId, req.userId)
+                // someone who owes sends their payment in first (src/offers.js)
+                if (accepted.status === 'pay_first') {
+                    return res.status(409).json({ code: 'PAY_FIRST', message: 'Your spot can only be accepted once you pay. Send your payment on this page' })
+                }
+                return res.status(201).json({ code: 'ACCEPTED', message: 'Spot accepted. You\'re signed up' })
             }
             if (existing.attendanceStatus === 'waitlisted') {
                 return res.status(202).json({ code: 'ALREADY_WAITLISTED', message: 'You are already on the waitlist' })
@@ -855,10 +888,13 @@ router.post('/:labId/rsvp', async (req, res) => {
             expireOffers().catch((err) => console.error(`Offer sweep failed: ${err.message}`))
             return res.status(202).json({
                 code: 'WAITLISTED',
-                message: 'Lab is full — you are on the waitlist and will be offered a spot if one opens',
+                message: 'Lab is full. You are on the waitlist and will be offered a spot if one opens',
                 rsvp: result.rsvp
             })
         }
+        // signed up after its payment due date: 48 hours to pay, and the
+        // first reminder now (src/payments.js)
+        owingLate('lab', labId, req.userId).catch((err) => console.error(`Late payment clock failed: ${err.message}`))
         res.status(201).json({ code: 'RSVPED', message: 'RSVP confirmed', rsvp: result.rsvp })
     } catch (err) {
         if (err.code === 'P2003') { return res.status(404).json({ message: 'Lab not found' }) }
@@ -869,7 +905,8 @@ router.post('/:labId/rsvp', async (req, res) => {
     }
 })
 
-// Un-RSVP (or turn down an offer). If a held seat opens, the oldest
+// Un-RSVP (or turn down an offer). A paid entry isn't refunded — the club
+// buys the materials ahead — and the page says so before they go. If a held seat opens, the oldest
 // waitlisted member is offered it in the same transaction — see src/offers.js.
 router.delete('/:labId/rsvp', async (req, res) => {
     const labId = parseInt(req.params.labId)
@@ -883,7 +920,6 @@ router.delete('/:labId/rsvp', async (req, res) => {
         if (existing.attendanceStatus === 'attended') {
             return res.status(409).json({ message: 'You are already checked in and cannot un-RSVP' })
         }
-
         const promoted = await prisma.$transaction(async (tx) => {
             await lockParent(tx, 'lab', labId)
             await tx.memberLab.delete({
@@ -955,7 +991,7 @@ router.post('/:labId/checkin', requireRole('officer'), requireNotAttendee('labId
             })
             return res.status(202).json({
                 code: 'WAITLISTED',
-                message: 'No RSVP found — added to the waitlist',
+                message: 'No RSVP found, so they were added to the waitlist',
                 attendance: waitlisted
             })
         }
@@ -968,7 +1004,7 @@ router.post('/:labId/checkin', requireRole('officer'), requireNotAttendee('labId
         }
 
         // owes dues for the lab's year (today's, for one with no date)?
-        const owed = await duesOwed(prisma, decoded.id, lab.date?.toISOString().slice(0, 10), lab.nonmemberPrice)
+        const owed = await doorOwed(prisma, existing, lab.date?.toISOString().slice(0, 10), lab.nonmemberPrice)
         if (owed && !dues) { return duesUnpaid(res, decoded.id, owed) }
         const problem = owed && duesAnswerProblem(owed, dues)
         if (problem) { return res.status(400).json({ message: problem }) }
@@ -976,12 +1012,12 @@ router.post('/:labId/checkin', requireRole('officer'), requireNotAttendee('labId
         // rsvped → attended; lab points awarded atomically with the transition
         // (only this transition earns — rescans hit the guards above)
         const attendance = await prisma.$transaction(async (tx) => {
-            if (owed) {
-                await settleDues(tx, { owed, dues, memberId: decoded.id, actorId: req.userId, item: { kind: 'lab', id: labId, title: lab.title } })
-            }
+            const door = owed
+                ? await settleDues(tx, { owed, dues, memberId: decoded.id, actorId: req.userId, item: { kind: 'lab', id: labId, title: lab.title }, paidBy: readPaidBy(req.body) })
+                : null
             const row = await tx.memberLab.update({
                 where: { memberId_labId: { memberId: decoded.id, labId } },
-                data: { attendanceStatus: 'attended', offerSentAt: null }
+                data: { attendanceStatus: 'attended', offerSentAt: null, ...(door ?? {}) }
             })
             await tx.member.update({
                 where: { userId: decoded.id },
@@ -997,7 +1033,7 @@ router.post('/:labId/checkin', requireRole('officer'), requireNotAttendee('labId
     } catch (err) {
         if (err.code === 'P2003') { return res.status(404).json({ message: 'Lab or member not found' }) }
         // the treasurer marked them paid while the popup was up — scan again
-        if (err.code === 'P2002') { return res.status(409).json({ message: 'Their dues were just marked paid — scan them again' }) }
+        if (err.code === 'P2002') { return res.status(409).json({ message: 'Their dues were just marked paid. Scan them again' }) }
         console.error(err.message)
         res.sendStatus(500)
     }

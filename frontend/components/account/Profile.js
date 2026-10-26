@@ -7,7 +7,7 @@ import DashboardShell from '@/components/dashboards/DashboardShell'
 import { Popup, PopupButton } from '@/components/labs/LabViewParts'
 import { hasRole, onLeaderboard, roleLabel } from '@/lib/roles'
 import { useRole, useSession, useSignOut } from '@/lib/session'
-import { members as membersApi, auth } from '@/lib/api'
+import { members as membersApi, auth, payments as paymentsApi } from '@/lib/api'
 import { longDate, prettyTimeRange } from '@/lib/dates'
 import { useDismiss } from '@/lib/dismiss'
 import { AVATAR_MAX, shrinkImage } from '@/lib/images'
@@ -231,6 +231,24 @@ function KeyIcon({ className = '' }) {
 			<path d="M12 12h8.5" />
 			<path d="M17 12v3" />
 			<path d="M20.5 12v2" />
+		</svg>
+	)
+}
+
+function DollarIcon({ className = '' }) {
+	return (
+		<svg
+			viewBox="0 0 24 24"
+			fill="none"
+			stroke="currentColor"
+			strokeWidth="2"
+			strokeLinecap="round"
+			strokeLinejoin="round"
+			className={className}
+			aria-hidden="true"
+		>
+			<path d="M12 4.5v15" />
+			<path d="M15.6 8.4c-.6-1.2-1.9-1.9-3.6-1.9-2.1 0-3.5 1.1-3.5 2.7 0 3.8 7.1 2.1 7.1 5.8 0 1.7-1.5 2.9-3.7 2.9-1.8 0-3.2-.8-3.8-2" />
 		</svg>
 	)
 }
@@ -634,7 +652,7 @@ function CounterCell({ value, label, ink, onOpen, className = '' }) {
 	const Tag = onOpen ? 'button' : 'div'
 	return (
 		<Tag
-			{...(onOpen ? { type: 'button', onClick: onOpen, 'aria-label': `${value} ${label} — see the history` } : {})}
+			{...(onOpen ? { type: 'button', onClick: onOpen, 'aria-label': `${value} ${label}, see the history` } : {})}
 			className={`
 				flex
 				flex-col
@@ -838,7 +856,7 @@ function HistoryDialog({ which, history, error, onClose }) {
 			})),
 			...history.awards.map((row) => ({
 				key: `award-${row.id}`,
-				title: `${AWARD_REASON[row.reason] ?? 'bonus points'}${row.undone ? ' — taken back' : ''}`,
+				title: `${AWARD_REASON[row.reason] ?? 'bonus points'}${row.undone ? ' (taken back)' : ''}`,
 				sub: `from ${row.by} · ${longDate(row.at).toLowerCase()}`, points: row.points, at: row.at,
 			})),
 		].sort((a, b) => String(b.at ?? '').localeCompare(String(a.at ?? '')))
@@ -850,7 +868,7 @@ function HistoryDialog({ which, history, error, onClose }) {
 					an official event, 3 for a social one, plus anything e-board gave you.
 				</p>
 				{earned.length === 0 && history.earlier === 0
-					? <p className={hint}>No points yet — check into a lab or event to start.</p>
+					? <p className={hint}>No points yet. Check into a lab or event to start.</p>
 					: (
 						<ul className="mt-3">
 							{earned.map(({ key, ...row }) => (
@@ -1021,7 +1039,7 @@ function DetailsCard({ draft, dirty, ready, saved, saving, error, verified, onCh
 				text-sm
 				text-black/50
 			">
-				What the roster, the board and your Elementist pass call you.
+				What the roster, the board and your Elementist pass call you, and where to find you online if you’d like.
 			</p>
 
 			<div className="
@@ -1100,6 +1118,21 @@ function DetailsCard({ draft, dirty, ready, saved, saving, error, verified, onCh
 						</p>
 					</div>
 				</div>
+
+				{/* the socials: optional, so either can be left blank (or
+				    cleared) and the form still saves */}
+				<Line
+					label="instagram (optional)"
+					value={draft.instagram}
+					onChange={onChange('instagram')}
+					placeholder="@username"
+				/>
+				<Line
+					label="discord (optional)"
+					value={draft.discord}
+					onChange={onChange('discord')}
+					placeholder="@username"
+				/>
 			</div>
 
 			{/* the footer says what state the form is in before it offers to act on
@@ -1316,10 +1349,10 @@ function EmailPrefsCard({ user, onSaved, className = '' }) {
 				text-sm
 				text-black/55
 			">
-				What officers can send you. Emails about your account, and about labs
-				and events you&apos;ve signed up for — confirmations, reminders,
-				messages from the officers running them — always come through.
-				{staff && ' As staff you start opted out of club-wide emails — turn them on if you want them.'}
+				What officers can send you. Emails about your account and about labs
+				and events you&apos;ve signed up for (confirmations, reminders,
+				messages from the officers running them) always come through.
+				{staff && ' As staff you start opted out of club-wide emails. Turn them on if you want them.'}
 			</p>
 			<div className="
 				mt-3
@@ -1429,6 +1462,196 @@ function PasswordCard({ onReset, className = '' }) {
 				reset password
 			</button>
 		</section>
+	)
+}
+
+// ---- payment history -------------------------------------------------------
+
+// A band like the password one, for anyone who pays the club — a member, a
+// VIP, j-board. The button opens everything they've paid (PaymentHistoryDialog).
+function PaymentsCard({ onOpen, className = '' }) {
+	return (
+		<section className={`
+			rounded-[26px]
+			bg-green/40
+			p-6
+			sm:px-8
+			flex
+			flex-wrap
+			items-center
+			justify-between
+			gap-5
+			${className}
+		`}>
+			<div className="
+				flex
+				items-center
+				gap-4
+				min-w-0
+			">
+				<span className="
+					w-11
+					h-11
+					shrink-0
+					flex
+					items-center
+					justify-center
+					rounded-full
+					bg-green
+					text-green-dark
+				">
+					<DollarIcon className="w-5 h-5" />
+				</span>
+				<div className="min-w-0">
+					<h2 className="
+						font-beachday
+						text-[24px]
+						sm:text-[28px]
+						leading-none
+						text-black
+					">
+						payment history
+					</h2>
+					<p className="
+						mt-1.5
+						font-vietnam
+						text-sm
+						text-black/55
+					">
+						Your VIP dues and lab and event fees: what for, how much, and when they went through.
+					</p>
+				</div>
+			</div>
+
+			<button
+				type="button"
+				onClick={onOpen}
+				className="
+					ml-auto
+					rounded-full
+					bg-black
+					px-6
+					py-2.5
+					font-vietnam
+					font-semibold
+					text-sm
+					text-cream
+					cursor-pointer
+					transition-all
+					duration-200
+					ease-out
+					hover:-translate-y-0.5
+					hover:shadow-lg
+					hover:shadow-black/25
+					active:translate-y-0
+					active:shadow-none
+				"
+			>
+				see payments
+			</button>
+		</section>
+	)
+}
+
+const PAID_CHIP = {
+	pending: { text: 'waiting', className: 'bg-yellow-light text-yellow-dark' },
+}
+
+const dollars = (amount) => Number(amount).toLocaleString('en-US', { style: 'currency', currency: 'USD' })
+
+// Everything they've paid, from GET /payments/history: the lab, event or VIP
+// dues it was for, how much, the platform and transaction id when they sent
+// it in themselves, and the day it went through — or that it's still waiting,
+// or was given back when they left.
+function PaymentHistoryDialog({ onClose }) {
+	const [rows, setRows] = useState(null)
+	const [error, setError] = useState(null)
+
+	useEffect(() => {
+		let live = true
+		paymentsApi.history()
+			.then((reply) => live && setRows(reply))
+			.catch((err) => live && setError(err.message))
+		return () => { live = false }
+	}, [])
+
+	const hint = 'font-vietnam text-sm text-black/55 mt-3'
+	let content
+	if (error) content = <p className={hint}>{error}</p>
+	else if (!rows) content = <p className={hint}>loading…</p>
+	else if (rows.length === 0) content = <p className={hint}>No payments yet.</p>
+	else {
+		content = (
+			<ul className="mt-3">
+				{rows.map((row) => {
+					const chip = PAID_CHIP[row.status]
+					const when = row.status === 'pending' ? null : `approved ${longDate(row.approvedOn).toLowerCase()}`
+					return (
+						<HistoryRow
+							key={row.key}
+							title={row.title}
+							sub={[
+								row.kind === 'dues' ? 'VIP dues' : 'entry fee',
+								row.method,
+								// no platform or transaction id: taken at the door, or
+								// marked on the treasurer's dues card
+								row.reference ? `#${row.reference}` : (row.method ? null : 'paid in person'),
+								when,
+							].filter(Boolean).join(' · ')}
+							right={
+								<div className="
+									flex
+									flex-col
+									items-end
+									gap-1
+								">
+									<span className="
+										font-beachday
+										text-[22px]
+										leading-none
+										text-black
+									">
+										{dollars(row.amount)}
+									</span>
+									{chip && (
+										<span className={`
+											rounded-full
+											px-2.5
+											py-0.5
+											font-vietnam
+											font-semibold
+											text-[10px]
+											uppercase
+											tracking-[0.1em]
+											${chip.className}
+										`}>
+											{chip.text}
+										</span>
+									)}
+								</div>
+							}
+						/>
+					)
+				})}
+			</ul>
+		)
+	}
+
+	return (
+		<Popup title="payments" onClose={onClose} width="max-w-[520px]">
+			{(dismiss) => (
+				<>
+					{content}
+					<div className="
+						mt-6
+						flex
+						justify-end
+					">
+						<PopupButton onClick={() => dismiss(onClose)}>close</PopupButton>
+					</div>
+				</>
+			)}
+		</Popup>
 	)
 }
 
@@ -1954,7 +2177,7 @@ function ResetPasswordDialog({ email, onClose }) {
 					text-black/60
 				">
 					{sent
-						? 'It’s on its way. The link works once and runs out after 15 minutes — ask for another if it does.'
+						? 'It’s on its way. The link works once and runs out after 15 minutes, so ask for another if it does.'
 						: 'We’ll email you a link that sets a new password. The one you have now keeps working until you use it.'}
 				</p>
 
@@ -2067,6 +2290,9 @@ export default function Profile() {
 	// than compete on it — they can see the whole thing on the dashboard and the
 	// roster — so their profile is the masthead and the form, nothing else.
 	const onTheBoard = isMember && !hasRole('officer', role)
+	// whoever pays the club — dues and entry fees — has a payment history
+	const pays = role === 'member' || role === 'vip' || role === 'jboard'
+	const [paymentsOpen, setPaymentsOpen] = useState(false)
 
 	// What the server has, and what the form is doing to it. The photo is in the
 	// draft rather than saved on the spot, so one save covers the masthead and
@@ -2080,6 +2306,8 @@ export default function Profile() {
 		last: user?.lastName ?? '',
 		email: user?.email ?? '',
 		photo: user?.profilePicture ?? null,
+		instagram: user?.instagram ?? '',
+		discord: user?.discord ?? '',
 		emailVerified: user?.emailVerified ?? false,
 		joined: user?.dateJoined ?? user?.createdAt ?? null,
 		points: user?.points ?? 0,
@@ -2090,6 +2318,8 @@ export default function Profile() {
 		last: user?.lastName ?? '',
 		email: user?.email ?? '',
 		photo: user?.profilePicture ?? null,
+		instagram: user?.instagram ?? '',
+		discord: user?.discord ?? '',
 	}))
 	const [saved, setSaved] = useState(false)
 	const [error, setError] = useState(null)
@@ -2165,19 +2395,22 @@ export default function Profile() {
 		draft.first !== profile.first ||
 		draft.last !== profile.last ||
 		draft.email !== profile.email ||
-		draft.photo !== profile.photo
+		draft.photo !== profile.photo ||
+		draft.instagram !== profile.instagram ||
+		draft.discord !== profile.discord
 	// leaving with the form changed and not saved asks first
 	useUnsavedChanges(dirty)
 
 	// a name nobody can read is worse than the one you had, so an empty field
-	// greys the save out rather than being taken and complained about after
+	// greys the save out rather than being taken and complained about after —
+	// bar the two handles, which are optional
 	const filled =
 		draft.first.trim() !== '' &&
 		draft.last.trim() !== '' &&
 		draft.email.trim() !== ''
 
-	// PUT /members/me takes all four: the names, the email (which moves the
-	// username with it) and the picture. The picture is still a data URL held in
+	// PUT /members/me takes them all: the names, the email (which moves the
+	// username with it), the picture and the two handles. The picture is still a data URL held in
 	// the browser — there's nowhere to upload a file to yet — so what's stored
 	// is whatever the picker produced.
 	//
@@ -2192,6 +2425,8 @@ export default function Profile() {
 			last: draft.last.trim(),
 			email: draft.email.trim().toLowerCase(),
 			photo: draft.photo,
+			instagram: draft.instagram.trim(),
+			discord: draft.discord.trim(),
 		}
 
 		setSaving(true)
@@ -2202,6 +2437,9 @@ export default function Profile() {
 				lastName: clean.last,
 				email: clean.email,
 				profilePicture: clean.photo,
+				// blank clears it
+				instagram: clean.instagram,
+				discord: clean.discord,
 			})
 			setDraft(clean)
 			setProfile((prev) => ({ ...prev, ...clean }))
@@ -2220,6 +2458,8 @@ export default function Profile() {
 			last: profile.last,
 			email: profile.email,
 			photo: profile.photo,
+			instagram: profile.instagram,
+			discord: profile.discord,
 		})
 		setError(null)
 	}
@@ -2336,6 +2576,13 @@ export default function Profile() {
 				{/* the password runs the full width under the form: it belongs to it
 				    but doesn't go through its save button, and a band across the
 				    bottom is the clearest way to say so */}
+				{pays && (
+					<PaymentsCard
+						className={narrow}
+						onOpen={() => setPaymentsOpen(true)}
+					/>
+				)}
+
 				<PasswordCard
 					className={narrow}
 					onReset={() => setResetting(true)}
@@ -2361,6 +2608,8 @@ export default function Profile() {
 					onClose={() => setHistoryOpen(null)}
 				/>
 			)}
+
+			{paymentsOpen && <PaymentHistoryDialog onClose={() => setPaymentsOpen(false)} />}
 
 			{deleting && (
 				<DeleteAccountDialog
