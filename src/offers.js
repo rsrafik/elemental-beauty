@@ -57,12 +57,14 @@ const HOUR = 60 * 60 * 1000
 // cleared: they start fresh with this one.
 export const OFF_WAITLIST = {
     attendanceStatus: 'offered', waitlistedAt: null, offerSentAt: null,
-    confirmSentAt: null, confirmBy: null, confirmedAt: null, payBy: null, payRemindedAt: null
+    confirmSentAt: null, confirmBy: null, confirmedAt: null, payBy: null, payRemindedAt: null,
+    paymentMissedAt: null
 }
 
-// A lapsed offer or a missed confirmation: to the back of the waitlist. A
-// missed confirmation keeps its `confirmBy`, which is how enforceConfirmations
-// tells them apart from people who joined the waitlist themselves.
+// A lapsed offer or a missed deadline: to the back of the waitlist. A missed
+// confirmation keeps its `confirmBy` and a missed payment its
+// `paymentMissedAt`, which is how waitingFor tells them apart from people who
+// joined the waitlist themselves.
 const BACK_OF_WAITLIST = {
     attendanceStatus: 'waitlisted', offerSentAt: null, confirmSentAt: null, confirmedAt: null,
     payBy: null, payRemindedAt: null
@@ -146,9 +148,9 @@ export async function moveToWaitlist(tx, kindName, parentId, memberId) {
 
 // Why someone was moved to the back of a waitlist, in the email that says so
 const MOVED = {
-    unpaid: () => 'You hadn’t sent a payment in by the payment due date, so your spot has gone to the waitlist.',
+    unpaid: () => 'You hadn’t sent a payment in by the payment due date, and someone on the waitlist needed your spot.',
     declined: (note) => `Your payment wasn’t accepted${note ? `: ${note}` : '.'}`,
-    not_revised: () => 'Your payment was sent back to be fixed, and it wasn’t sent again within 48 hours.',
+    not_revised: () => 'Your payment was sent back to be fixed, it wasn’t sent again within 48 hours, and someone on the waitlist needed your spot.',
     unconfirmed: () => 'You didn’t confirm your spot by the deadline, and someone on the waitlist needed it.'
 }
 
@@ -366,11 +368,8 @@ export async function expireOffers() {
 //                    With 10 seats all taken, 2 who missed it and 1 waiting,
 //                    one of the 2 goes.
 //
-// Someone already moved back for missing the deadline doesn't count as
-// waiting — otherwise two who both missed it would keep swapping places.
-//
-// Nor does it count anyone who owes for it: for them the deadline is a
-// payment due date, and paying meets it (enforcePaymentRules in payments.js).
+// It doesn't count anyone who owes for it: for them the deadline is a payment
+// due date, and paying meets it (enforcePaymentRules in payments.js).
 //
 // No cap means no queue for seats, so there's nothing to enforce.
 async function enforceConfirmations(kindName, now) {
@@ -392,30 +391,7 @@ async function enforceConfirmations(kindName, now) {
     for (const [parentId, memberIds] of byParent) {
         const moved = await prisma.$transaction(async (tx) => {
             await lockParent(tx, kindName, parentId)
-            const parent = await tx[kind.parent].findUnique({ where: { [kind.key]: parentId }, select: { capacity: true } })
-            if (!parent || parent.capacity == null) { return [] }
-            const waiting = await tx[kind.link].count({
-                where: { [kind.key]: parentId, attendanceStatus: 'waitlisted', confirmBy: null }
-            })
-            if (waiting === 0) { return [] }
-            const taken = await tx[kind.link].count({ where: { [kind.key]: parentId, attendanceStatus: HELD } })
-
-            // enough seats to fit everyone waiting under the cap — no more
-            // than missed the deadline, and none if there's already room
-            const needed = Math.min(memberIds.length, Math.max(0, taken + waiting - parent.capacity))
-            const out = shuffle(memberIds).slice(0, needed)
-            const back = new Date()
-            for (const memberId of out) {
-                await tx[kind.link].update({
-                    where: where(kind, parentId, memberId),
-                    data: { ...BACK_OF_WAITLIST, waitlistedAt: back }
-                })
-            }
-            // hand every free seat on, one per person waiting — never more
-            // than were already waiting, so those just moved back stay there
-            let free = parent.capacity - (taken - out.length)
-            while (free > 0 && await offerNext(tx, kindName, parentId)) { free-- }
-            return out
+            return waitingFor(tx, kindName, parentId, memberIds)
         })
         for (const memberId of moved) {
             await notifyMovedToWaitlist({ kindName, parentId, memberId, reason: 'unconfirmed' })
@@ -423,6 +399,47 @@ async function enforceConfirmations(kindName, now) {
         removed += moved.length
     }
     return removed
+}
+
+// A missed deadline, confirmation or payment, as the waitlist's need for the
+// seats, inside `tx` (which has taken lockParent): of `memberIds`, who all
+// missed one, just enough are picked at random and moved to the back of the
+// waitlist to fit everyone waiting under the cap, and every free seat is
+// handed on down it. Returns who moved.
+//
+// Someone already moved back for missing a deadline doesn't count as waiting —
+// otherwise two who both missed it would keep swapping places.
+export async function waitingFor(tx, kindName, parentId, memberIds) {
+    const kind = KINDS[kindName]
+    const parent = await tx[kind.parent].findUnique({ where: { [kind.key]: parentId }, select: { capacity: true } })
+    if (!parent || parent.capacity == null) { return [] }
+    const waiting = await tx[kind.link].count({
+        where: { [kind.key]: parentId, attendanceStatus: 'waitlisted', confirmBy: null, paymentMissedAt: null }
+    })
+    if (waiting === 0) { return [] }
+    const taken = await tx[kind.link].count({ where: { [kind.key]: parentId, attendanceStatus: HELD } })
+    // (a sweep running alongside may have moved some of them already)
+    const holding = await tx[kind.link].findMany({
+        where: { [kind.key]: parentId, memberId: { in: memberIds }, attendanceStatus: { in: ['rsvped', 'offered'] } },
+        select: { memberId: true }
+    })
+
+    // enough seats to fit everyone waiting under the cap — no more than
+    // missed the deadline, and none if there's already room
+    const needed = Math.max(0, taken + waiting - parent.capacity)
+    const out = shuffle(holding.map((row) => row.memberId)).slice(0, needed)
+    const back = new Date()
+    for (const memberId of out) {
+        await tx[kind.link].update({
+            where: where(kind, parentId, memberId),
+            data: { ...BACK_OF_WAITLIST, waitlistedAt: back }
+        })
+    }
+    // hand every free seat on, one per person waiting — never more than were
+    // already waiting, so those just moved back stay there
+    let free = parent.capacity - (taken - out.length)
+    while (free > 0 && await offerNext(tx, kindName, parentId)) { free-- }
+    return out
 }
 
 // Fisher–Yates, on a copy — who loses their spot is left to chance
@@ -548,8 +565,10 @@ export async function sendConfirmations(kindName, parentId, deadline) {
                         `You’re signed up for ${parent.title} on ${when(parent)}.`,
                         'To officially confirm your spot, you need to pay. Send your payment on its page. Once it’s sent your spot is held, and it’s confirmed when we approve it.',
                         standing.fixBy
-                            ? `Your payment was sent back, so the due date has moved. It was due ${dueText(paymentDueAt(parent, { confirmBy: deadline }))}. Fix it and send it again by ${dueText(standing.fixBy)}, or you’ll be moved to the waitlist.`
-                            : `Payment is due ${dueWhen(parent, { confirmBy: deadline, payBy: row.payBy })}. If you haven’t paid by then, you’ll be moved to the waitlist.`,
+                            ? `Your payment was sent back, so the due date has moved. It was due ${dueText(paymentDueAt(parent, { confirmBy: deadline }))}. Fix it and send it again by ${dueText(standing.fixBy)}, or your spot may go to someone on the waitlist.`
+                            : paymentDueAt(parent, { confirmBy: deadline, payBy: row.payBy }) <= new Date()
+                                ? `Payment was due ${dueText(paymentDueAt(parent, { confirmBy: deadline, payBy: row.payBy }))}. Pay now to keep your spot. If someone on the waitlist needs it, it may go to them.`
+                                : `Payment is due ${dueWhen(parent, { confirmBy: deadline, payBy: row.payBy })}. If you haven’t paid by then, your spot may go to someone on the waitlist.`,
                         'Payments aren’t refunded if you can’t make it, because we buy your materials ahead of time.'
                     ],
                     button: { label: 'Pay to confirm my spot', url: page },

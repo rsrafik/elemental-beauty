@@ -7,7 +7,7 @@ import { eventPoints } from '../points.js'
 import { mountRoster, requireNotAttendee } from './roster.js'
 import { OFFER_HOURS, acceptOffer, confirmSpot, expireOffers, lockParent, offerNext, startsAt } from '../offers.js'
 import { dueOverrideError, payable, paymentDueAt, readDueOverride, resweep } from '../payable.js'
-import { owingLate } from '../payments.js'
+import { enforcePaymentRules, owingLate } from '../payments.js'
 import { log } from '../activity.js'
 import { readEndTime } from '../clubTime.js'
 import { DUES_ANSWERS, asksDues, duesAnswerProblem, duesLookup, doorOwed, duesUnpaid, readPaidBy, readPrice, settleDues } from '../dues.js'
@@ -635,9 +635,10 @@ router.post('/:eventId/rsvp', async (req, res) => {
         })
 
         if (result.code === 'WAITLISTED') {
-            // someone waiting is what makes missed confirmation deadlines
-            // count — see enforceConfirmations in src/offers.js
+            // someone waiting is what makes missed confirmation and payment
+            // deadlines count — see waitingFor in src/offers.js
             expireOffers().catch((err) => console.error(`Offer sweep failed: ${err.message}`))
+            enforcePaymentRules().catch((err) => console.error(`Payment sweep failed: ${err.message}`))
             return res.status(202).json({
                 code: 'WAITLISTED',
                 message: 'Event is full. You are on the waitlist and will be offered a spot if one opens',

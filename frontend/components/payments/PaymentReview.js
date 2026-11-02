@@ -16,8 +16,8 @@ import { useDismiss } from '@/lib/dismiss'
 //                    full size in a popup (not a new tab: a data URL can't be)
 //   ReviewButtons    approve (writes the income row, settles it and confirms
 //                    their spot), send back (asks why; they have 48 hours to
-//                    fix it and send it again, for a lab or event, or they're
-//                    moved to its waitlist) or reject (not accepted, and
+//                    fix it and send it again, for a lab or event, or they
+//                    may be moved to its waitlist) or reject (not accepted, and
 //                    they're moved to the waitlist now — the reason's
 //                    optional). Each emails them. A goggle rental's answers
 //                    leave their spot alone: sent back, it's fixed by the

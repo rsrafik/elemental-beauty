@@ -477,6 +477,10 @@ model MemberLab {
   // were last reminded — offered a spot and owing, too (src/payments.js)
   payBy            DateTime?        @map("pay_by") @db.Timestamptz()
   payRemindedAt    DateTime?        @map("pay_reminded_at") @db.Timestamptz()
+  // when the payment sweep first found them past their due date with nothing
+  // sent in. Signed up, it's kept them out of the 48 hours above; moved to the
+  // waitlist for it, it's why they don't count as someone waiting
+  paymentMissedAt  DateTime?        @map("payment_missed_at") @db.Timestamptz()
   // the entry paid or waived for this one, when they owe dues (DoorPayment),
   // and the income row a paid one wrote — what undoing it takes back out
   doorPayment       DoorPayment?     @map("door_payment")
@@ -508,6 +512,10 @@ model MemberEvent {
   // were last reminded — offered a spot and owing, too (src/payments.js)
   payBy            DateTime?        @map("pay_by") @db.Timestamptz()
   payRemindedAt    DateTime?        @map("pay_reminded_at") @db.Timestamptz()
+  // when the payment sweep first found them past their due date with nothing
+  // sent in. Signed up, it's kept them out of the 48 hours above; moved to the
+  // waitlist for it, it's why they don't count as someone waiting
+  paymentMissedAt  DateTime?        @map("payment_missed_at") @db.Timestamptz()
   // the entry paid or waived for this one, when they owe dues (DoorPayment),
   // and the income row a paid one wrote — what undoing it takes back out
   doorPayment       DoorPayment?     @map("door_payment")

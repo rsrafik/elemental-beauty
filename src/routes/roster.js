@@ -170,7 +170,8 @@ export function mountRoster(router, kind) {
 
         try {
             // an offer that's run out moves on before anyone sees it, and so
-            // does a payment due date that's passed (src/payments.js)
+            // does a spot the waitlist needs from someone overdue
+            // (src/payments.js)
             await expireOffers()
             await enforcePaymentRules()
             const item = await parent.findUnique({ where: { [key]: parentId } })
@@ -418,9 +419,10 @@ export function mountRoster(router, kind) {
                         waitlistedAt: new Date()
                     }
                 })
-                // someone waiting is what makes missed confirmation deadlines
-                // count — see enforceConfirmations in src/offers.js
+                // someone waiting is what makes missed confirmation and
+                // payment deadlines count — see waitingFor in src/offers.js
                 await expireOffers()
+                await enforcePaymentRules()
                 return res.status(201).json({ message: 'Added to the waitlist' })
             }
 

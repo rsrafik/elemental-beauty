@@ -5,7 +5,7 @@ import { APP_URL } from './verification.js'
 import { fullName, log } from './activity.js'
 import { clubToday, dateColumn, startsAt } from './clubTime.js'
 import { ledgerSource, recordDues } from './dues.js'
-import { lockParent, moveToWaitlist, notifyMovedToWaitlist } from './offers.js'
+import { lockParent, moveToWaitlist, notifyMovedToWaitlist, waitingFor } from './offers.js'
 import {
     HOLDS, ITEMS, LATE_HOURS, REMIND_HOURS, REVISE_HOURS,
     dueCallout, dueLinkOf, dueText, dueWhen, goggleDueAt, offerLapse, payable, paymentDue, paymentDueAt, reviseBy
@@ -23,15 +23,16 @@ import {
 //   declinePayment   "reject": not accepted, and they're moved to that lab's
 //                    or event's waitlist ("send back" is the gentler one: they
 //                    fix it and send it again, within 48 hours)
-//   enforcePaymentRules  the hourly sweep: a payment due date that's passed
-//                    (a week before, 11:59 PM, or someone's confirmation
-//                    deadline if that's sooner) moves whoever owes and sent
-//                    nothing to the waitlist, and so does a sent-back payment
-//                    left unfixed for 48 hours. One that's sent and waiting
-//                    keeps their spot until somebody looks at it. Whoever
-//                    comes to owe after the due date gets 48 hours of their
-//                    own (owingLate), and they and anyone offered a spot who
-//                    owes are reminded once a day.
+//   enforcePaymentRules  the hourly sweep: past a payment due date (a week
+//                    before, 11:59 PM, or someone's confirmation deadline if
+//                    that's sooner), whoever owes and sent nothing — and
+//                    whoever left a sent-back payment unfixed for 48 hours —
+//                    only loses their spot when it's full and the waitlist
+//                    needs it. One that's sent and waiting keeps their spot
+//                    until somebody looks at it. Whoever comes to owe after
+//                    the due date gets 48 hours of their own (owingLate), and
+//                    they and anyone offered a spot who owes are reminded
+//                    once a day.
 //   undoDoorPayment  the check-in page's grey $: the entry paid (or waived)
 //                    for one lab or event taken back, and its income row out
 //                    of the ledger
@@ -210,52 +211,43 @@ export async function declinePayment(tx, payment, reason) {
 
 // ---- the due date ------------------------------------------------------------
 
-// The hourly sweep (and every check-in page's roster read), three rules:
+// The hourly sweep (and every check-in page's roster read, and whenever someone
+// joins a waitlist). Who's overdue:
 //
+//   the due date          anyone signed up who owes and has sent nothing in,
+//                         once its due date has passed (a week before, 11:59
+//                         PM, or their confirmation deadline if that's sooner)
 //   sent back, not fixed  a payment sent back for a lab or event and not sent
-//                         again within 48 hours: it's declined, and they're
-//                         moved to that one's waitlist
-//   an early deadline     someone asked to confirm by a deadline sooner than
-//                         the week before: that's their due date, so once it
-//                         passes, owing and with nothing sent in, they're
-//                         moved to the waitlist
-//   the due date          once a lab's or event's due date passes (a week
-//                         before, 11:59 PM), everyone signed up who owes and
-//                         has sent nothing in is moved to its waitlist — once
-//                         per lab or event (paymentsDueSweptAt)
-//   owing late            anyone signed up who comes to owe after that (signed
-//                         up late, or an entry taken back) gets 48 hours from
-//                         then (owingLate) and a reminder a day; past them,
-//                         with nothing sent, they're moved to its waitlist
-//   offered, owing        someone holding an offer they'd have to pay for is
-//                         reminded once a day, until they pay or it lapses
+//                         again within 48 hours
+//   owing late            anyone signed up who comes to owe after the due date
+//                         (signed up late, or an entry taken back) gets 48
+//                         hours from then (owingLate) and a reminder a day;
+//                         past them, with nothing sent
 //
-// A payment waiting to be checked keeps their spot through any of them, and
-// so does one sent back that's still inside its 48 hours. Each person moved is
-// emailed why. Returns how many were moved.
+// Being overdue only costs someone their spot when the waitlist needs it, the
+// same as a missed confirmation (waitingFor in offers.js). Per lab or event:
+//
+//   no cap, or room left  nobody's moved — they keep their spot, and can still
+//                         pay, until it fills up and someone's waiting
+//   full, people waiting  just enough of those overdue are picked, at random,
+//                         and moved to the back of the waitlist, each emailed
+//                         why, and their spots offered down it. A sent-back
+//                         payment is declined as it moves them, and until then
+//                         it can still be fixed.
+//
+// Someone holding an offer they'd have to pay for is reminded once a day,
+// until they pay or it lapses.
+//
+// A payment waiting to be checked keeps their spot through all of it, and so
+// does one sent back that's still inside its 48 hours. Returns how many were
+// moved.
 export async function enforcePaymentRules(now = new Date()) {
-    let moved = 0
     const cutoff = new Date(now.getTime() - REVISE_HOURS * 3_600_000)
-
-    // Owes for it, has sent nothing in, and isn't fixing one sent back: the
-    // spot goes to the waitlist (emailed why, with `missedBy` — a late one's
-    // 48 hours, which moving clears). Returns whether it did.
-    const moveUnpaid = async (kindName, id, memberId, missedBy = null) => {
-        const standing = await payable(prisma, memberId, kindName, id)
-        if (!standing?.owes || standing.sent) return false
-        const fixing = await prisma.memberPayment.count({
-            where: { memberId, status: 'rejected', reviewedAt: { gt: cutoff }, [ITEMS[kindName].key]: id }
-        })
-        if (fixing > 0) return false
-        const wasMoved = await prisma.$transaction(async (tx) => {
-            await lockParent(tx, kindName, id)
-            return moveToWaitlist(tx, kindName, id, memberId)
-        })
-        if (wasMoved) {
-            moved++
-            await notifyMovedToWaitlist({ kindName, parentId: id, memberId, reason: 'unpaid', missedBy })
-        }
-        return wasMoved
+    // kindName -> lab or event id -> memberId -> { reason, missedBy, paymentId }
+    const overdue = { lab: new Map(), event: new Map() }
+    const add = (kindName, id, memberId, why) => {
+        if (!overdue[kindName].has(id)) overdue[kindName].set(id, new Map())
+        overdue[kindName].get(id).set(memberId, why)
     }
 
     // sent back and left
@@ -270,65 +262,30 @@ export async function enforcePaymentRules(now = new Date()) {
     })
     for (const payment of stale) {
         const [kindName, id] = itemOf(payment)
+        const kind = ITEMS[kindName]
         const parent = payment.lab ?? payment.event
         // it's happened (or is happening) — the door has it now
         if (!parent?.date || startsAt(parent).getTime() <= now.getTime()) continue
         // they sent another since, which stands on its own
         const newer = await prisma.memberPayment.count({
-            where: { memberId: payment.memberId, submittedAt: { gt: payment.submittedAt }, [ITEMS[kindName].key]: id }
+            where: { memberId: payment.memberId, submittedAt: { gt: payment.submittedAt }, [kind.key]: id }
         })
         if (newer > 0) continue
-        const wasMoved = await prisma.$transaction(async (tx) => {
-            await tx.memberPayment.update({ where: { paymentId: payment.paymentId }, data: { status: 'declined' } })
-            await lockParent(tx, kindName, id)
-            return moveToWaitlist(tx, kindName, id, payment.memberId)
+        const link = await prisma[kind.link].findUnique({
+            where: { [kind.compound]: { memberId: payment.memberId, [kind.key]: id } }
         })
-        if (wasMoved) {
-            moved++
-            await notifyMovedToWaitlist({ kindName, parentId: id, memberId: payment.memberId, reason: 'not_revised' })
+        // no spot left to lose: there's nothing to wait for
+        if (!['rsvped', 'offered'].includes(link?.attendanceStatus)) {
+            await prisma.memberPayment.update({ where: { paymentId: payment.paymentId }, data: { status: 'declined' } })
+            continue
         }
+        const standing = await payable(prisma, payment.memberId, kindName, id)
+        if (!standing?.owes || standing.sent) continue
+        add(kindName, id, payment.memberId, { reason: 'not_revised', paymentId: payment.paymentId })
     }
 
-    // an early deadline — only where the week-before sweep is still to come
-    // (one that's run has had its say)
-    for (const kindName of Object.keys(ITEMS)) {
-        const kind = ITEMS[kindName]
-        const asked = await prisma[kind.link].findMany({
-            where: {
-                attendanceStatus: 'rsvped', confirmedAt: null, confirmBy: { lte: now },
-                [kind.model]: { paymentsDueSweptAt: null }
-            },
-            include: { [kind.model]: true }
-        })
-        for (const link of asked) {
-            const parent = link[kind.model]
-            if (paymentDue(parent, link)?.by !== 'confirm') continue
-            if (startsAt(parent).getTime() <= now.getTime()) continue
-            await moveUnpaid(kindName, link[kind.key], link.memberId)
-        }
-    }
-
-    // the due date
-    for (const kindName of Object.keys(ITEMS)) {
-        const kind = ITEMS[kindName]
-        // (a lab can be a draft with no date; an event always has one)
-        const parents = await prisma[kind.model].findMany({
-            where: { paymentsDueSweptAt: null, ...(kindName === 'lab' ? { date: { not: null } } : {}) }
-        })
-        for (const parent of parents) {
-            const due = paymentDueAt(parent)
-            if (!due || due.getTime() > now.getTime()) continue
-            const id = parent[kind.key]
-            if (startsAt(parent).getTime() > now.getTime()) {
-                // (one already given 48 hours of their own keeps them)
-                const signed = await prisma[kind.link].findMany({ where: { [kind.key]: id, attendanceStatus: 'rsvped', payBy: null } })
-                for (const link of signed) await moveUnpaid(kindName, id, link.memberId)
-            }
-            await prisma[kind.model].update({ where: { [kind.key]: id }, data: { paymentsDueSweptAt: now } })
-        }
-    }
-
-    // owing late, and offered a spot owing: the 48 hours, and a reminder a day
+    // the due date, and the 48 hours of owing late (with their reminders), and
+    // offered a spot owing: a reminder
     const remindedBefore = new Date(now.getTime() - REMIND_HOURS * 3_600_000)
     for (const kindName of Object.keys(ITEMS)) {
         const kind = ITEMS[kindName]
@@ -353,18 +310,69 @@ export async function enforcePaymentRules(now = new Date()) {
                 await remindOne(kindName, parent, link, standing, now)
                 continue
             }
-            if (!link.payBy) {
+            if (paymentDueAt(parent, link).getTime() > now.getTime()) {
+                if (!link.payBy) continue
+                if (link.payRemindedAt && link.payRemindedAt.getTime() > remindedBefore.getTime()) continue
+                const standing = await payable(prisma, link.memberId, kindName, id)
+                if (!standing?.owes || standing.sent || standing.fixBy) continue
+                await remindOne(kindName, parent, link, standing, now)
+                continue
+            }
+            if (overdue[kindName].get(id)?.has(link.memberId)) continue
+            // came to owe since the due date passed (the sweep that finds
+            // everyone overdue has run, and didn't find them)
+            if (parent.paymentsDueSweptAt && !link.payBy && !link.paymentMissedAt) {
                 await owingLate(kindName, id, link.memberId, { now })
                 continue
             }
-            if (link.payBy.getTime() <= now.getTime()) {
-                await moveUnpaid(kindName, id, link.memberId, link.payBy)
-                continue
-            }
-            if (link.payRemindedAt && link.payRemindedAt.getTime() > remindedBefore.getTime()) continue
             const standing = await payable(prisma, link.memberId, kindName, id)
-            if (!standing?.owes || standing.sent || standing.fixBy) continue
-            await remindOne(kindName, parent, link, standing, now)
+            if (!standing?.owes || standing.sent) continue
+            // still fixing one sent back
+            const fixing = await prisma.memberPayment.count({
+                where: { memberId: link.memberId, status: 'rejected', reviewedAt: { gt: cutoff }, [kind.key]: id }
+            })
+            if (fixing > 0) continue
+            // (moving someone late clears their 48 hours, so it's handed in)
+            add(kindName, id, link.memberId, { reason: 'unpaid', missedBy: link.payBy })
+        }
+    }
+
+    // the due date's been seen — once per lab or event, unless it's moved
+    for (const kindName of Object.keys(ITEMS)) {
+        const kind = ITEMS[kindName]
+        // (a lab can be a draft with no date; an event always has one)
+        const parents = await prisma[kind.model].findMany({
+            where: { paymentsDueSweptAt: null, ...(kindName === 'lab' ? { date: { not: null } } : {}) }
+        })
+        for (const parent of parents) {
+            const due = paymentDueAt(parent)
+            if (!due || due.getTime() > now.getTime()) continue
+            await prisma[kind.model].update({ where: { [kind.key]: parent[kind.key] }, data: { paymentsDueSweptAt: now } })
+        }
+    }
+
+    // and the waitlist decides who it costs
+    let moved = 0
+    for (const kindName of Object.keys(ITEMS)) {
+        const kind = ITEMS[kindName]
+        for (const [id, people] of overdue[kindName]) {
+            const memberIds = [...people.keys()]
+            await prisma[kind.link].updateMany({
+                where: { [kind.key]: id, memberId: { in: memberIds }, paymentMissedAt: null },
+                data: { paymentMissedAt: now }
+            })
+            const out = await prisma.$transaction(async (tx) => {
+                await lockParent(tx, kindName, id)
+                const gone = await waitingFor(tx, kindName, id, memberIds)
+                const paymentIds = gone.map((memberId) => people.get(memberId).paymentId).filter(Boolean)
+                await tx.memberPayment.updateMany({ where: { paymentId: { in: paymentIds } }, data: { status: 'declined' } })
+                return gone
+            })
+            for (const memberId of out) {
+                const { reason, missedBy = null } = people.get(memberId)
+                await notifyMovedToWaitlist({ kindName, parentId: id, memberId, reason, missedBy })
+            }
+            moved += out.length
         }
     }
     if (moved > 0) console.log(`Payment sweep: ${moved} moved to a waitlist`)
@@ -517,7 +525,7 @@ const noun = (p) => (p.eventId != null ? 'event' : 'lab')
 const dueLine = (p, link) => {
     const from = p.lab ?? p.event
     const when = dueWhen(from, link)
-    return when ? [`Payment for ${from.title} is due ${when}. Anyone signed up who hasn’t paid by then is moved to the waitlist.`] : []
+    return when ? [`Payment for ${from.title} is due ${when}. Anyone signed up who hasn’t paid by then may lose their spot to someone on the waitlist.`] : []
 }
 
 // a goggle rental's own copy: nothing about their spot
@@ -584,7 +592,7 @@ const PAYER = {
             `Your payment of ${whatFor(p)} by ${p.methodTitle} (transaction #${p.reference}) wasn’t registered or accepted.`,
             `Why: ${p.rejectionReason}`,
             titleOf(p)
-                ? `Fix it and send it again from the same page within 48 hours, by ${dueText(reviseBy(p.reviewedAt))}, or you’ll be moved to the waitlist for ${titleOf(p)}.`
+                ? `Fix it and send it again from the same page within 48 hours, by ${dueText(reviseBy(p.reviewedAt))}, or your spot in ${titleOf(p)} may go to someone on the waitlist.`
                 : 'You can fix it and send it again from the same page.'
         ],
         button: { label: 'Fix it', url: pageFor(p) }
@@ -681,7 +689,7 @@ export async function notifyDoorUndone({ memberId, kindName, id, title }) {
             callout: dueCallout(parent, link),
             lines: [
                 `Your entry for ${title} was marked paid by mistake, so we’ve taken it back and you’re marked unpaid again.`,
-                `You can pay from the page below. It’s due ${dueWhen(parent, link) ?? 'before it starts'}, or you’ll be moved to the waitlist.`
+                `You can pay from the page below. It’s due ${dueWhen(parent, link) ?? 'before it starts'}, or your spot may go to someone on the waitlist.`
             ],
             button: { label: 'Pay for it', url: `${APP_URL}${ITEMS[kindName].page(id)}` },
             reason: 'You’re getting this because you’re signed up for it on Elemental Beauty.'
@@ -703,7 +711,7 @@ function attachment(dataUrl, name) {
 // duesAmount, schoolYear }) and owing for it — pay by the due date (a week
 // before, 11:59 PM, or the one an officer set in its place; their
 // confirmation deadline if that's sooner, or the 48 hours they were
-// given owing late) or they're moved to the waitlist — with every accepted
+// given owing late) or their spot may go to the waitlist — with every accepted
 // payment's QR code attached. `offered` is for people holding an offer of a
 // spot instead: it's theirs once they pay, by when the offer lapses
 // (`offerBy`) or else before it starts. Returns how many went out (or were
@@ -728,16 +736,20 @@ export async function remindUnpaid(item, people, { offered = false } = {}) {
         }
         const due = paymentDueAt(item, person)
         const when = dueWhen(item, person)
+        // past it and kept on: "email unpaid" can still chase them
+        const overdue = due && due.getTime() <= Date.now()
         await sendEmail({
             to: person.email,
-            subject: `Reminder: pay for ${item.title} by ${due ? dueText(due) : 'the day'}`,
+            subject: overdue ? `Reminder: pay for ${item.title}` : `Reminder: pay for ${item.title} by ${due ? dueText(due) : 'the day'}`,
             attachments,
             ...actionEmail({
                 heading: `Pay for ${item.title} before you come`,
                 callout: dueCallout(item, person),
                 lines: [
                     `Hi${person.firstName ? ` ${person.firstName}` : ''}, you’re signed up for ${item.title} on ${dayText(item.date)}, but we haven’t got a payment from you yet. Your spot can only be confirmed once you pay.`,
-                    `Please pay ${amounts.join(', or ')}${when ? ` ${when}` : ''}. If you don’t, you’ll be moved to the waitlist.`,
+                    overdue
+                        ? `Payment was due ${dueText(due)}. Please pay ${amounts.join(', or ')} now to keep your spot. If someone on the waitlist needs it, it may go to them.`
+                        : `Please pay ${amounts.join(', or ')}${when ? ` ${when}` : ''}. If you don’t, your spot may go to someone on the waitlist.`,
                     'Payments aren’t refunded if you can’t make it, because we buy your materials ahead of time.',
                     ...(ways.length
                         ? ['You can pay with any of these. Their QR codes are attached:', ...ways]

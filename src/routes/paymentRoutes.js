@@ -40,8 +40,8 @@ const router = express.Router()
 //                        their spot in the lab or event it was sent from;
 //                        emails them
 //   POST /:id/send-back  { reason } — they fix it and send it again, within 48
-//                        hours when it's for a lab or event, or they're moved
-//                        to its waitlist; emails them why
+//                        hours when it's for a lab or event, or they may be
+//                        moved to its waitlist; emails them why
 //   POST /:id/reject     { reason? } — not accepted, and they're moved to that
 //                        lab's or event's waitlist; emails them
 

@@ -396,7 +396,7 @@ export function DuesNotice({ dues, noun, due = null }) {
 	if (!dues) return null
 	const { schoolYear, amount, price } = dues
 	const by = due
-		? ` Once you sign up, pay by ${new Date(due).toLocaleString('en-US', { weekday: 'long', month: 'long', day: 'numeric', hour: 'numeric', minute: '2-digit' })}, or you'll be moved to the waitlist.`
+		? ` Once you sign up, pay by ${new Date(due).toLocaleString('en-US', { weekday: 'long', month: 'long', day: 'numeric', hour: 'numeric', minute: '2-digit' })}, or your spot may go to someone on the waitlist.`
 		: ''
 	let text
 	if (price > 0) {
@@ -473,7 +473,9 @@ export function PayToHold({ pay, offered = false, offerBy = null }) {
 				Your spot can only be <b className="text-black">confirmed</b> once you pay. Your payment was sent back, so the due date has moved.
 				<br />
 				{pay.dueAt && <>Was due {when(pay.dueAt)}.<br /></>}
-				Now due <b className="text-black">{when(pay.fixBy)}</b>. Fix it and send it again below by then, or you’ll be moved to the waitlist.
+				{new Date(pay.fixBy) <= new Date()
+					? <>It had to be fixed by <b className="text-black">{when(pay.fixBy)}</b>, so fix it and send it again below to keep your spot.</>
+					: <>Now due <b className="text-black">{when(pay.fixBy)}</b>. Fix it and send it again below by then, or your spot may go to someone on the waitlist.</>}
 			</>
 		)
 	} else {
@@ -483,7 +485,7 @@ export function PayToHold({ pay, offered = false, offerBy = null }) {
 				Your spot can only be <b className="text-black">confirmed</b> once you pay. Send your payment below
 				{pay.dueAt && (late
 					? <>. It was due <b className="text-black">{when(pay.dueAt)}</b>, so pay now to keep your spot.</>
-					: <>{{ set: ' by ', confirm: ' by your confirmation deadline, ', late: '. The usual due date had passed, so you have 48 hours: pay by ' }[pay.dueBy] ?? ' a week before, by '}<b className="text-black">{when(pay.dueAt)}</b>, or you’ll be moved to the waitlist.</>)}
+					: <>{{ set: ' by ', confirm: ' by your confirmation deadline, ', late: '. The usual due date had passed, so you have 48 hours: pay by ' }[pay.dueBy] ?? ' a week before, by '}<b className="text-black">{when(pay.dueAt)}</b>, or your spot may go to someone on the waitlist.</>)}
 				{!pay.dueAt && '.'}
 			</>
 		)

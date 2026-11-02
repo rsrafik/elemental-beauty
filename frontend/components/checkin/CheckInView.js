@@ -552,8 +552,8 @@ const PAYMENT_TABS = [
 // The top of the payments popup: when payment for this one is due. Blank is
 // the usual, a week before at 11:59 PM; a date and time picked in the calendar
 // takes its place (paymentDueOverride — see paymentDue in src/payable.js), and
-// anyone signed up and still owing with nothing sent in by then is moved to
-// the waitlist. A day picked with no time is 11:59 PM that day (dueBody). Saved
+// anyone signed up and still owing with nothing sent in by then can lose their
+// spot to the waitlist. A day picked with no time is 11:59 PM that day (dueBody). Saved
 // with its own button, so picking a day and then a time doesn't save twice.
 // `item` is the lab or event as GET /:id has it; `onSaved` gets the new
 // override.
@@ -660,7 +660,7 @@ function PaymentDueSetting({ kind, item, readOnly, onSaved }) {
 						: value
 							? (
 								<>
-									Anyone still owing by then moves to the waitlist.{' '}
+									Anyone still owing by then can lose their spot to the waitlist.{' '}
 									{!readOnly && (
 										<button
 											type="button"
@@ -1624,7 +1624,7 @@ export default function CheckInView({ kind, id }) {
 							">
 								{`The ${unpaid} ${unpaid === 1 ? 'person' : 'people'} with a green $ get a reminder to pay`}
 								{item.nonmemberPrice > 0 ? ` the ${priceText(item.nonmemberPrice)} entry` : ''}
-								{' '}(or their VIP dues) by {item.title}’s payment due date, or they’ll be moved to the waitlist. Every accepted payment’s QR code is attached.
+								{' '}(or their VIP dues) by {item.title}’s payment due date, or their spot may go to someone on the waitlist. Every accepted payment’s QR code is attached.
 							</p>
 							<div className="
 								mt-8

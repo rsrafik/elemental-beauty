@@ -116,7 +116,7 @@ const dueText = (at) => new Date(at).toLocaleString('en-US', {
 // `nextDue` gives (the API's: the soonest lab or event their dues are due
 // for), and no deadline without one — whichever page it was first sent from.
 // On a lab's or event's page it's that one's 48 hours. Either way it names
-// whose waitlist they'd be moved to.
+// whose spot it is.
 function Status({ payment, noun, duesOnly = false, nextDue = null }) {
 	const goggles = payment.kind === 'goggles'
 	const what = payment.kind === 'dues' ? 'VIP dues' : goggles ? 'goggle rental' : `${noun} fee`
@@ -135,8 +135,10 @@ function Status({ payment, noun, duesOnly = false, nextDue = null }) {
 	let fix = null
 	if (nextDue && ['offer', 'start'].includes(nextDue.by)) {
 		fix = <>{by(dueText(nextDue.at))}, or the spot you were offered in {nextDue.title} may go to someone else</>
+	} else if (nextDue && new Date(nextDue.at) <= new Date()) {
+		fix = <> to keep your spot in {nextDue.title}</>
 	} else if (nextDue) {
-		fix = <>{by(dueText(nextDue.at))}, or you’ll be moved to the waitlist of {nextDue.title}</>
+		fix = <>{by(dueText(nextDue.at))}, or your spot in {nextDue.title} may go to someone on the waitlist</>
 	}
 	const text = {
 		pending: `You sent your ${what} (${money(payment.amount)} by ${payment.methodTitle}, #${payment.reference}) on ${sentOn(payment.submittedAt)}. It’s waiting to be checked.`,
@@ -464,7 +466,7 @@ export default function PaySection({ place = {}, noun = 'lab', duesOnly = false,
 					text-black/70
 				">
 					{new Date(options.dueAt) > new Date()
-						? <>Pay {{ set: 'by', confirm: 'by your confirmation deadline,', late: 'within 48 hours, by' }[options.dueBy] ?? 'a week before, by'} <b className="text-black">{dueText(options.dueAt)}</b>, or you’ll be moved to the waitlist.</>
+						? <>Pay {{ set: 'by', confirm: 'by your confirmation deadline,', late: 'within 48 hours, by' }[options.dueBy] ?? 'a week before, by'} <b className="text-black">{dueText(options.dueAt)}</b>, or your spot may go to someone on the waitlist.</>
 						: <>Payment was due <b className="text-black">{dueText(options.dueAt)}</b>. Pay now to keep your spot.</>}
 				</p>
 			)}
@@ -483,7 +485,9 @@ export default function PaySection({ place = {}, noun = 'lab', duesOnly = false,
 						? <>To take the spot you were offered in {options.nextDue.title}, pay by <b className="text-black">{dueText(options.nextDue.at)}</b>.</>
 						: options.nextDue.by === 'start'
 							? <>To take the spot you were offered in {options.nextDue.title}, pay before it starts, <b className="text-black">{dueText(options.nextDue.at)}</b>.</>
-							: <>Pay by <b className="text-black">{dueText(options.nextDue.at)}</b> to keep your spot in {options.nextDue.title}, or you’ll be moved to its waitlist.</>}
+							: new Date(options.nextDue.at) <= new Date()
+								? <>Payment for {options.nextDue.title} was due <b className="text-black">{dueText(options.nextDue.at)}</b>. Pay now to keep your spot.</>
+								: <>Pay by <b className="text-black">{dueText(options.nextDue.at)}</b> to keep your spot in {options.nextDue.title}, or it may go to someone on the waitlist.</>}
 				</p>
 			)}
 			{!duesOnly && (

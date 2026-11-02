@@ -12,10 +12,10 @@ import { DUES_EXEMPT, asksDues, schoolYearOf } from './dues.js'
 // its own in the check-in page's payments popup (paymentDueOverride), or,
 // for someone asked to confirm their spot by an earlier deadline than that
 // (the check-in page's "confirmation"), that deadline. Anyone signed up who still owes and hasn't
-// sent anything in by then is moved to the waitlist. Someone who comes to owe
-// after it's passed — signed up late, or had their entry taken back — gets 48
-// hours from then instead (LATE_HOURS, `payBy` on their row), with a reminder
-// a day.
+// sent anything in by then is overdue, and moved to the waitlist only if it's
+// full and someone's waiting for the spot. Someone who comes to owe after it's
+// passed — signed up late, or had their entry taken back — gets 48 hours from
+// then instead (LATE_HOURS, `payBy` on their row), with a reminder a day.
 //
 // Paying stands in for confirming: someone who owes can't confirm their spot
 // or accept an offer of one with a button — sending the payment does it. Once
@@ -23,7 +23,8 @@ import { DUES_EXEMPT, asksDues, schoolYearOf } from './dues.js'
 // deadline or offer's 48 hours can take it); once it's approved they're
 // officially confirmed. A payment that's sent but still waiting to be checked
 // keeps their spot until it's looked at; one sent back has 48 hours to be
-// fixed (REVISE_HOURS); one rejected moves them to the waitlist.
+// fixed (REVISE_HOURS) before it counts as overdue too; one rejected moves
+// them to the waitlist.
 
 // the two kinds of thing a fee can be for
 export const ITEMS = {
@@ -98,8 +99,8 @@ export function readDueOverride(value) {
 // What's wrong with the due date set on `row` (its date, startTime and
 // paymentDueOverride as they'll be after a save), or null. It has to come
 // before it starts, and one being changed can't already have passed — the
-// hourly sweep would move everyone owing to the waitlist at once. `was` is
-// the override it had before (undefined on a new one).
+// hourly sweep would count everyone owing as overdue at once. `was` is the
+// override it had before (undefined on a new one).
 export function dueOverrideError(row, was, now = new Date()) {
     const due = row.paymentDueOverride ? new Date(row.paymentDueOverride) : null
     if (!due || !row.date) return null

@@ -92,6 +92,13 @@ async function lab(signedUp = [], date = DAY) {
     return row.labId
 }
 
+// every seat taken, and `waiting` in line for one
+async function fill(labId, waiting) {
+    const capacity = await prisma.memberLab.count({ where: { labId, attendanceStatus: { in: ['rsvped', 'offered', 'attended'] } } })
+    await prisma.lab.update({ where: { labId }, data: { capacity } })
+    await prisma.memberLab.create({ data: { memberId: waiting, labId, attendanceStatus: 'waitlisted', waitlistedAt: new Date() } })
+}
+
 // the real routes, behind a stand-in for the auth middleware
 async function as(userId, role, mount, run) {
     const app = express()
@@ -375,7 +382,7 @@ test('leaving after paying just leaves: nothing is refunded', { skip }, async ()
     assert.equal(await prisma.transaction.count({ where: { transactionId: payment.transactionId } }), 1)
 })
 
-test('"reject" moves them to the waitlist; "send back" holds the spot for 48 hours, then does', { skip }, async () => {
+test('"reject" moves them to the waitlist; "send back" holds the spot for 48 hours, then so does the waitlist needing it', { skip }, async () => {
     const method = await aMethod()
     const officer = await person('officer')
     const rejected = await person('member')
@@ -412,13 +419,18 @@ test('"reject" moves them to the waitlist; "send back" holds the spot for 48 hou
     // inside the 48 hours: still theirs
     await enforcePaymentRules(new Date(Date.now() + 47 * 3_600_000))
     assert.equal(await status(sentBack), 'rsvped')
-    // past it, unfixed: moved, and the payment declined
+    // past it, unfixed, with room: still theirs, and it can still be fixed
+    await enforcePaymentRules(new Date(Date.now() + 49 * 3_600_000))
+    assert.equal(await status(sentBack), 'rsvped')
+    assert.equal((await prisma.memberPayment.findUnique({ where: { paymentId: two.paymentId } })).status, 'rejected')
+    // full, with someone waiting: moved, and the payment declined
+    await fill(labId, await person('member'))
     await enforcePaymentRules(new Date(Date.now() + 49 * 3_600_000))
     assert.equal(await status(sentBack), 'waitlisted')
     assert.equal((await prisma.memberPayment.findUnique({ where: { paymentId: two.paymentId } })).status, 'declined')
 })
 
-test('the due date moves whoever owes and sent nothing; a payment waiting keeps the spot', { skip }, async () => {
+test('past the due date, a full lab with someone waiting moves whoever owes and sent nothing; a payment waiting keeps the spot', { skip }, async () => {
     const method = await aMethod()
     const officer = await person('officer')
     const unpaid = await person('member')
@@ -426,6 +438,7 @@ test('the due date moves whoever owes and sent nothing; a payment waiting keeps 
     const atDoor = await person('member')
     const date = '2034-03-10'
     const labId = await lab([unpaid, waiting, atDoor], date)
+    await fill(labId, await person('member'))
     await as(waiting, 'member', 'payments', async (base) => {
         await send(base, 'POST', { kind: 'fee', labId, methodId: method.methodId, reference: 'W1' })
     })
@@ -444,6 +457,114 @@ test('the due date moves whoever owes and sent nothing; a payment waiting keeps 
     assert.equal(await status(waiting), 'rsvped')
     assert.equal(await status(atDoor), 'rsvped')
     assert.ok((await prisma.lab.findUnique({ where: { labId } })).paymentsDueSweptAt)
+})
+
+test('overdue, they keep their spot until the seats fill up and someone’s waiting', { skip }, async () => {
+    const { enforcePaymentRules } = await import('../src/payments.js')
+    const { paymentDueAt } = await import('../src/payable.js')
+    const date = '2034-04-10'
+    const overdue = await person('member')
+    const labId = await lab([overdue], date)
+    const row = async (memberId) => prisma.memberLab.findUnique({ where: { memberId_labId: { memberId, labId } } })
+    const after = new Date(paymentDueAt({ date: new Date(date) }).getTime() + 60_000)
+
+    // no limit: nothing moves them, even with someone on the waitlist
+    await prisma.memberLab.create({ data: { memberId: await person('member'), labId, attendanceStatus: 'waitlisted', waitlistedAt: new Date() } })
+    await enforcePaymentRules(after)
+    let link = await row(overdue)
+    assert.equal(link.attendanceStatus, 'rsvped')
+    // and they're overdue, not owing late: no 48 hours of their own
+    assert.equal(link.payBy, null)
+    assert.ok(link.paymentMissedAt)
+    await enforcePaymentRules(new Date(after.getTime() + 3_600_000))
+    assert.equal((await row(overdue)).payBy, null)
+
+    // a limit with room: still theirs
+    await prisma.memberLab.deleteMany({ where: { labId, attendanceStatus: 'waitlisted' } })
+    await prisma.lab.update({ where: { labId }, data: { capacity: 2 } })
+    await enforcePaymentRules(after)
+    assert.equal((await row(overdue)).attendanceStatus, 'rsvped')
+
+    // full, but nobody waiting: still theirs
+    const late = await person('member')
+    await prisma.memberLab.create({ data: { memberId: late, labId } })
+    await prisma.lab.update({ where: { labId }, data: { capacity: 2 } })
+    await prisma.memberLab.update({ where: { memberId_labId: { memberId: late, labId } }, data: { doorPayment: 'waive' } })
+    await enforcePaymentRules(after)
+    assert.equal((await row(overdue)).attendanceStatus, 'rsvped')
+
+    // someone's on the waitlist: the spot goes to them
+    const waiter = await person('member')
+    await prisma.memberLab.create({ data: { memberId: waiter, labId, attendanceStatus: 'waitlisted', waitlistedAt: new Date() } })
+    await enforcePaymentRules(after)
+    assert.equal((await row(overdue)).attendanceStatus, 'waitlisted')
+    assert.equal((await row(waiter)).attendanceStatus, 'offered')
+    assert.ok((await row(overdue)).paymentMissedAt)
+})
+
+test('joining the waitlist of a full lab takes the spot of someone overdue, without waiting for the hourly sweep', { skip }, async () => {
+    const overdue = await person('member')
+    const waiter = await person('member')
+    // three days off: its due date (a week before) has passed
+    const soon = new Date(Date.now() + 3 * 86_400_000).toISOString().slice(0, 10)
+    const labId = await lab([overdue], soon)
+    await prisma.lab.update({ where: { labId }, data: { capacity: 1 } })
+    const status = async (memberId) => (await prisma.memberLab.findUnique({ where: { memberId_labId: { memberId, labId } } })).attendanceStatus
+
+    await as(waiter, 'member', 'labs', async (base) => {
+        assert.equal((await send(`${base}/${labId}/rsvp`, 'POST')).status, 202)
+    })
+    // (the sweep runs after the reply, so give it a moment)
+    for (let i = 0; i < 40 && await status(overdue) === 'rsvped'; i++) {
+        await new Promise((resolve) => setTimeout(resolve, 50))
+    }
+    assert.equal(await status(overdue), 'waitlisted')
+    assert.equal(await status(waiter), 'offered')
+})
+
+test('only as many overdue as the waitlist needs are moved, and they don’t count as waiting', { skip }, async () => {
+    const { enforcePaymentRules } = await import('../src/payments.js')
+    const { paymentDueAt } = await import('../src/payable.js')
+    const date = '2034-05-10'
+    const one = await person('member')
+    const two = await person('member')
+    const three = await person('member')
+    const labId = await lab([one, two, three], date)
+    const waiter = await person('member')
+    await fill(labId, waiter)
+    const after = new Date(paymentDueAt({ date: new Date(date) }).getTime() + 60_000)
+    const statuses = async () => (await prisma.memberLab.findMany({ where: { labId, memberId: { in: [one, two, three] } } }))
+        .map((row) => row.attendanceStatus).sort()
+
+    await enforcePaymentRules(after)
+    assert.deepEqual(await statuses(), ['rsvped', 'rsvped', 'waitlisted'])
+    assert.equal((await prisma.memberLab.findUnique({ where: { memberId_labId: { memberId: waiter, labId } } })).attendanceStatus, 'offered')
+    // the one moved isn't waiting for the others' spots, so they stay
+    await enforcePaymentRules(new Date(after.getTime() + 3_600_000))
+    assert.deepEqual(await statuses(), ['rsvped', 'rsvped', 'waitlisted'])
+})
+
+test('an overdue spot goes the same way on a members-only event', { skip }, async () => {
+    const { enforcePaymentRules } = await import('../src/payments.js')
+    const { paymentDueAt } = await import('../src/payable.js')
+    const date = '2034-06-10'
+    const overdue = await person('member')
+    const row = await prisma.event.create({
+        data: { title: `${tag} event ${made.events.length}`, type: 'social', track: 'members', date: new Date(date), startTime: '18:00', nonmemberPrice: 5, capacity: 1 }
+    })
+    made.events.push(row.eventId)
+    const eventId = row.eventId
+    await prisma.memberEvent.create({ data: { memberId: overdue, eventId } })
+    const status = async (memberId) => (await prisma.memberEvent.findUnique({ where: { memberId_eventId: { memberId, eventId } } })).attendanceStatus
+    const after = new Date(paymentDueAt(row).getTime() + 60_000)
+
+    await enforcePaymentRules(after)
+    assert.equal(await status(overdue), 'rsvped')
+    const waiter = await person('member')
+    await prisma.memberEvent.create({ data: { memberId: waiter, eventId, attendanceStatus: 'waitlisted', waitlistedAt: new Date() } })
+    await enforcePaymentRules(after)
+    assert.equal(await status(overdue), 'waitlisted')
+    assert.equal(await status(waiter), 'offered')
 })
 
 test('paying confirms the spot; there’s no confirming without it, and it says so once done', { skip }, async () => {
@@ -538,6 +659,7 @@ test('an officer sets a lab’s due date; members see it and the sweep keeps to 
 
     const { enforcePaymentRules } = await import('../src/payments.js')
     const status = async () => (await prisma.memberLab.findUnique({ where: { memberId_labId: { memberId: member, labId } } })).attendanceStatus
+    await fill(labId, await person('member'))
     // the usual week before (Feb 3) passes and nothing happens; the date set does
     await enforcePaymentRules(new Date('2033-02-04T12:00:00Z'))
     assert.equal(await status(), 'rsvped')
@@ -599,7 +721,11 @@ test('signing up after the due date gives 48 hours to pay, with a reminder a day
     link = await prisma.memberLab.findUnique({ where })
     assert.equal(link.attendanceStatus, 'rsvped')
     assert.ok(link.payRemindedAt.getTime() > Date.now() + 24 * 3_600_000)
-    // past the 48 hours with nothing sent: moved
+    // past the 48 hours with nothing sent, with room: theirs still
+    await enforcePaymentRules(new Date(Date.now() + 49 * 3_600_000))
+    assert.equal((await prisma.memberLab.findUnique({ where })).attendanceStatus, 'rsvped')
+    // full, with someone waiting: moved
+    await fill(labId, await person('member'))
     await enforcePaymentRules(new Date(Date.now() + 49 * 3_600_000))
     link = await prisma.memberLab.findUnique({ where })
     assert.equal(link.attendanceStatus, 'waitlisted')
@@ -679,9 +805,10 @@ test('a confirmation deadline sooner than the week before is the payment due dat
     const unpaid = await person('member')
     const paying = await person('member')
     const labId = await lab([unpaid, paying])
+    await fill(labId, await person('member'))
     // asked to confirm a month ahead of the lab — well before the week-before
     const confirmBy = new Date(new Date(DAY).getTime() - 30 * 86_400_000)
-    await prisma.memberLab.updateMany({ where: { labId }, data: { confirmSentAt: new Date(), confirmBy } })
+    await prisma.memberLab.updateMany({ where: { labId, attendanceStatus: 'rsvped' }, data: { confirmSentAt: new Date(), confirmBy } })
 
     await as(unpaid, 'member', 'labs', async (base) => {
         const lab = await json(`${base}/${labId}`)
