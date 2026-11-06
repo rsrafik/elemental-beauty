@@ -9,6 +9,8 @@ import { BackButton, FitScaled, LabIntro, ChunkyButton, ButtonCaption, DuesNotic
 import { ShowQrButton, QrPopup } from '@/components/labs/MemberLabQuiz'
 import { LinkList } from '@/components/events/EventLinks'
 import PaySection from '@/components/payments/PaySection'
+import usePoll from '@/lib/usePoll'
+import { SkeletonDetail } from '@/components/Skeleton'
 
 // /events/view?id=N for a user or member: one event — its date, time and room,
 // what it is, and the one button that is your relationship with it. The same
@@ -39,7 +41,10 @@ import PaySection from '@/components/payments/PaySection'
 // /events): the same page a VIP gets — photo, date, description, category,
 // links — with the button and everything under it left off.
 
+// the clock (it stops offering the rsvp button once it's begun) and, apart
+// from it, a re-read of the event — not while the tab's in the background
 const CLOCK_MS = 30_000
+const READ_MS = 60_000
 const fmtDeadline = (at) =>
 	new Date(at).toLocaleString('en-US', { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' })
 
@@ -95,12 +100,10 @@ export default function MemberEventView({ preview = false }) {
 	}, [id])
 
 	useEffect(() => {
-		const timer = setInterval(() => {
-			setTick((n) => n + 1)
-			load()
-		}, CLOCK_MS)
+		const timer = setInterval(() => setTick((n) => n + 1), CLOCK_MS)
 		return () => clearInterval(timer)
-	}, [load])
+	}, [])
+	usePoll(load, READ_MS, Boolean(id), { immediate: false })
 
 	// every button is one request and a re-read
 	const act = async (call, flip) => {
@@ -285,6 +288,9 @@ export default function MemberEventView({ preview = false }) {
 				</FitScaled>
 			</div>
 		)
+	} else {
+		// on its way: the page's shape, dimmed and pulsing (Skeleton.js)
+		body = <SkeletonDetail tint="bg-blue-light/50" />
 	}
 
 	return (

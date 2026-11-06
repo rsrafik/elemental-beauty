@@ -1,5 +1,7 @@
 import express from 'express'
 import prisma from '../prismaClient.js'
+import { memo } from '../memo.js'
+import { imageFrom, readImage } from '../images.js'
 import { log } from '../activity.js'
 import {
     PAYMENT_INCLUDE, approvePayment, declinePayment, itemOf, notifyPayer, payable, runsDoor
@@ -75,7 +77,8 @@ function shape(payment, { withMember = false } = {}) {
         methodId: payment.methodId,
         methodTitle: payment.methodTitle,
         reference: payment.reference,
-        screenshot: payment.screenshot,
+        // its address, never the picture (GET /api/img/payment/...)
+        screenshotUrl: payment.screenshotUrl ?? null,
         status: payment.status,
         rejectionReason: payment.rejectionReason,
         submittedAt: payment.submittedAt,
@@ -110,7 +113,7 @@ router.get('/options', async (req, res) => {
         // a lab's goggle rental, beside paying to come
         const goggles = place?.[0] === 'lab' ? await goggleStanding(prisma, req.userId, place[1]) : null
         const [methods, mine] = await Promise.all([
-            prisma.paymentMethod.findMany({ orderBy: { methodId: 'asc' } }),
+            memo('methods', 60_000, () => prisma.paymentMethod.findMany({ orderBy: { methodId: 'asc' } })),
             prisma.memberPayment.findMany({
                 where: mineWhere(req.userId, place, standing.schoolYear),
                 include: PAYMENT_INCLUDE,
@@ -132,8 +135,10 @@ function readPayment(body, { keepScreenshot = false } = {}) {
     const reference = typeof body.reference === 'string' ? body.reference.trim().replace(/^#/, '').slice(0, 80) : ''
     if (!reference) { return { error: 'Type the transaction id your payment app gave you' } }
     const fields = { kind: body.kind, reference }
-    if (!(keepScreenshot && body.screenshot === undefined)) {
-        const screenshot = body.screenshot ?? null
+    // an edit handed back the address it was given (GET /api/img/...): the
+    // screenshot's unchanged
+    if (!(keepScreenshot && readImage(body.screenshot) === undefined)) {
+        const screenshot = readImage(body.screenshot) ?? null
         if (screenshot !== null && (typeof screenshot !== 'string' || !IMAGE.test(screenshot) || screenshot.length > MAX_IMAGE)) {
             return { error: 'The screenshot has to be a picture, under 2MB' }
         }
@@ -198,9 +203,14 @@ async function goggleChoice(memberId, place, except = null) {
 }
 
 router.post('/', async (req, res) => {
-    const body = req.body ?? {}
+    const body = { ...(req.body ?? {}) }
     const { place, error } = placeFrom(body)
     if (error) { return res.status(400).json({ message: error }) }
+    // sent again from one that came back, with the screenshot it had: that
+    // one's address stands for its picture — their own payments only
+    body.screenshot = await imageFrom(prisma, body.screenshot, {
+        kinds: ['payment'], select: { memberId: true }, allowed: (kind, row) => row.memberId === req.userId
+    })
     const read = readPayment(body)
     if (read.error) { return res.status(400).json({ message: read.error }) }
     const { methodId, reference, screenshot } = read.fields

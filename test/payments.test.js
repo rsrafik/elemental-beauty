@@ -38,7 +38,8 @@ before(async () => {
         events: (await import('../src/routes/eventRoutes.js')).default,
         dues: (await import('../src/routes/duesRoutes.js')).default,
         members: (await import('../src/routes/memberRoutes.js')).default,
-        reimbursements: (await import('../src/routes/reimbursementRoutes.js')).default
+        reimbursements: (await import('../src/routes/reimbursementRoutes.js')).default,
+        img: (await import('../src/routes/imageRoutes.js')).default
     }
     await prisma.yearTarget.upsert({
         where: { schoolYear: YEAR },
@@ -328,9 +329,16 @@ test('a pending payment can be fixed by whoever sent it, until it’s looked at'
         assert.equal(body.reference, 'RIGHT')
         assert.equal(body.kind, 'dues')
         assert.equal(body.amount, 25)
-        assert.equal(body.screenshot, QR)
+        // its address, not the picture — and handing the address back keeps it
+        assert.match(body.screenshotUrl, new RegExp(`^/api/img/payment/${payment.paymentId}/[0-9a-f]{12}$`))
+        assert.equal('screenshot' in body, false)
+        const again = await (await send(`${base}/${payment.paymentId}`, 'PUT', { kind: 'dues', methodId: method.methodId, reference: 'RIGHT', screenshot: body.screenshotUrl })).json()
+        assert.equal(again.screenshotUrl, body.screenshotUrl)
+        assert.equal((await prisma.memberPayment.findUnique({ where: { paymentId: payment.paymentId }, select: { screenshot: true } })).screenshot, QR)
         assert.equal((await send(`${base}/${payment.paymentId}`, 'PUT', { kind: 'dues', methodId: method.methodId, reference: 'R', screenshot: null })).status, 200)
-        assert.equal((await prisma.memberPayment.findUnique({ where: { paymentId: payment.paymentId } })).screenshot, null)
+        const cleared = await prisma.memberPayment.findUnique({ where: { paymentId: payment.paymentId }, select: { screenshot: true, screenshotKey: true } })
+        assert.equal(cleared.screenshot, null)
+        assert.equal(cleared.screenshotKey, null)
     })
     // not someone else's
     await as(other, 'member', 'payments', async (base) => {
@@ -356,9 +364,67 @@ test('a way to pay can be edited — a QR code left out stays', { skip }, async 
         const edited = await (await send(`${base}/${method.methodId}`, 'PUT', { title: `${tag} Venmo 2`, description: '@new' })).json()
         assert.equal(edited.title, `${tag} Venmo 2`)
         assert.equal(edited.description, '@new')
-        assert.equal(edited.image, QR)
+        // the QR stays — sent as its address, never the picture itself
+        assert.equal(edited.imageUrl, method.imageUrl)
+        assert.match(edited.imageUrl, /^\/api\/img\/method\/\d+\/[0-9a-f]{12}$/)
+        assert.equal('image' in edited, false)
+        const kept = await (await send(`${base}/${method.methodId}`, 'PUT', { title: `${tag} Venmo 2`, image: edited.imageUrl })).json()
+        assert.equal(kept.imageUrl, method.imageUrl)
         const cleared = await (await send(`${base}/${method.methodId}`, 'PUT', { title: `${tag} Venmo 2`, image: null })).json()
-        assert.equal(cleared.image, null)
+        assert.equal(cleared.imageUrl, null)
+    })
+})
+
+test('a picture is served on its own: cached for good when it is shared, never when it is someone’s paperwork', { skip }, async () => {
+    const method = await aMethod()
+    const member = await person('member')
+    const other = await person('member')
+    const officer = await person('officer')
+    const labId = await lab([member])
+    const bytes = Buffer.from(QR.split(',')[1], 'base64')
+    let payment
+    await as(member, 'member', 'payments', async (base) => {
+        payment = await (await send(base, 'POST', { kind: 'fee', labId, methodId: method.methodId, reference: 'IMG', screenshot: QR })).json()
+    })
+    const path = (address) => address.replace(/^\/api\/img/, '')
+    await as(member, 'member', 'img', async (base) => {
+        // the QR code: anyone signed in, kept a year
+        const qr = await fetch(`${base}${path(method.imageUrl)}`)
+        assert.equal(qr.status, 200)
+        assert.equal(qr.headers.get('content-type'), 'image/png')
+        assert.match(qr.headers.get('cache-control'), /immutable/)
+        assert.deepEqual(Buffer.from(await qr.arrayBuffer()), bytes)
+        // their own screenshot, never kept
+        const shot = await fetch(`${base}${path(payment.screenshotUrl)}`)
+        assert.equal(shot.status, 200)
+        assert.match(shot.headers.get('cache-control'), /no-store/)
+        // a stale fingerprint is nothing
+        assert.equal((await fetch(`${base}${path(method.imageUrl).replace(/[0-9a-f]{12}$/, '000000000000')}`)).status, 404)
+    })
+    // someone else's screenshot isn't theirs to see; the door's it is
+    await as(other, 'member', 'img', async (base) => {
+        assert.equal((await fetch(`${base}${path(payment.screenshotUrl)}`)).status, 404)
+    })
+    await as(officer, 'officer', 'img', async (base) => {
+        assert.equal((await fetch(`${base}${path(payment.screenshotUrl)}`)).status, 200)
+    })
+    // sent again from the old one, the address stands for its picture
+    await as(member, 'member', 'payments', async (base) => {
+        await prisma.memberPayment.update({ where: { paymentId: payment.paymentId }, data: { status: 'rejected', reviewedAt: new Date() } })
+        const resent = await (await send(base, 'POST', { kind: 'fee', labId, methodId: method.methodId, reference: 'IMG2', screenshot: payment.screenshotUrl })).json()
+        const row = await prisma.memberPayment.findUnique({ where: { paymentId: resent.paymentId }, select: { screenshot: true } })
+        assert.equal(row.screenshot, QR)
+    })
+    // and a list of labs carries the cover's address, never the cover
+    await prisma.lab.update({ where: { labId }, data: { image: QR, published: true } })
+    await as(member, 'member', 'labs', async (base) => {
+        const rows = await json(base)
+        const mine = rows.find((row) => row.labId === labId)
+        assert.match(mine.imageUrl, new RegExp(`^/api/img/lab/${labId}/[0-9a-f]{12}$`))
+        assert.equal('image' in mine, false)
+        const summary = (await json(`${base}?fields=summary`)).find((row) => row.labId === labId)
+        assert.equal('description' in summary, false)
+        assert.equal('imageUrl' in summary, false)
     })
 })
 
@@ -1036,4 +1102,23 @@ test('taking back a waived entry doesn’t email them; taking back a paid one do
     } finally {
         console.log = print
     }
+})
+
+test('a check-in page’s version moves when its roster or payments change, and only then', { skip }, async () => {
+    // a lab's own part of its version — the part before it moves for every
+    // page at once (a write that could be anyone's: other tests make those)
+    const { versionOf: whole } = await import('../src/changes.js')
+    const versionOf = (kindName, id) => whole(kindName, id).split('.').pop()
+    const member = await person('member')
+    const labId = await lab()
+    const otherLab = await lab()
+    const before = versionOf('lab', labId)
+    const untouched = versionOf('lab', otherLab)
+    await prisma.memberLab.create({ data: { memberId: member, labId } })
+    assert.notEqual(versionOf('lab', labId), before)
+    // someone else's lab didn't move
+    assert.equal(versionOf('lab', otherLab), untouched)
+    const after = versionOf('lab', labId)
+    await prisma.memberLab.update({ where: { memberId_labId: { memberId: member, labId } }, data: { attendanceStatus: 'attended' } })
+    assert.notEqual(versionOf('lab', labId), after)
 })

@@ -47,7 +47,7 @@ router.get('/', async (req, res) => {
                         where: { schoolYear, kind: 'dues', status: 'pending' },
                         select: {
                             paymentId: true, amount: true, methodTitle: true, reference: true,
-                            screenshot: true, submittedAt: true,
+                            screenshotUrl: true, submittedAt: true,
                             lab: { select: { title: true } }, event: { select: { title: true } }
                         },
                         orderBy: { submittedAt: 'desc' },
@@ -68,7 +68,7 @@ router.get('/', async (req, res) => {
                     amount: Number(payments[0].amount),
                     methodTitle: payments[0].methodTitle,
                     reference: payments[0].reference,
-                    screenshot: payments[0].screenshot,
+                    screenshotUrl: payments[0].screenshotUrl,
                     submittedAt: payments[0].submittedAt,
                     from: (payments[0].lab ?? payments[0].event)?.title ?? null
                 }

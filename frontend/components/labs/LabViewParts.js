@@ -8,6 +8,7 @@ import { cameFromApp } from '@/lib/history'
 import { useDismiss } from '@/lib/dismiss'
 import { longDate, prettyTimeRange } from '@/lib/dates'
 import { payments as paymentsApi } from '@/lib/api'
+import StoredImage from '@/components/StoredImage'
 
 // The pieces every stage of the member lab view is built from: the scaling
 // frame, the header (meta line, title, description, photo), the big shadowed
@@ -227,7 +228,7 @@ export function LabIntro({ lab, accent = 'text-salmon', aside = null, children }
 					bg-salmon-lightest
 				">
 					{lab.image && (
-						<img
+						<StoredImage
 							src={lab.image}
 							alt=""
 							className="

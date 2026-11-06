@@ -5,6 +5,7 @@ import { Card, CardNote, CardTitle, Dialog, DialogActions, FIELD, Label, PlusIco
 import { paymentMethods as methodsApi } from '@/lib/api'
 import { useDismiss } from '@/lib/dismiss'
 import { shrinkImage } from '@/lib/images'
+import StoredImage from '@/components/StoredImage'
 
 // How members pay the club, for the treasurer (and admin) to keep: each one is
 // a choice in the payment dropdown on a lab's or event's page and /vip, its QR
@@ -113,7 +114,7 @@ function MethodDialog({ method, onClose, onSaved }) {
 							"
 						>
 							{image
-								? <img src={image} alt="" className="w-full h-full object-contain" />
+								? <StoredImage src={image} alt="" className="w-full h-full object-contain" />
 								: <PlusIcon className="w-6 h-6 text-black/35" />}
 						</button>
 						<div className="
@@ -337,7 +338,7 @@ export default function AcceptedPaymentsCard() {
 									bg-white
 								">
 									{method.image
-										? <img src={method.image} alt={`${method.title} QR code`} className="w-full h-full object-contain" />
+										? <StoredImage src={method.image} alt={`${method.title} QR code`} className="w-full h-full object-contain" />
 										: <span className="font-vietnam text-xs text-black/35">no QR code</span>}
 								</div>
 								<p className="

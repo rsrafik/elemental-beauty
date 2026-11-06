@@ -7,6 +7,7 @@ import { LinkList } from '@/components/events/EventLinks'
 import { capacityField, teamLabel } from '@/lib/calendar'
 import { canChange } from '@/lib/roles'
 import { useRole } from '@/lib/session'
+import StoredImage from '@/components/StoredImage'
 
 // What the officer calendar opens instead of the editor when the event isn't
 // yours to change: a j-board event an officer, treasurer or admin added, seen
@@ -142,7 +143,7 @@ export default function EventDetailsDialog({ event, trackLabel, onClose }) {
 				</div>
 
 				{event.image && (
-					<img
+					<StoredImage
 						src={event.image}
 						alt=""
 						className="

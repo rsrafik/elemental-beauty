@@ -1,5 +1,6 @@
 import express from 'express'
 import prisma from '../prismaClient.js'
+import { readImage } from '../images.js'
 import requireRole from '../middleware/requireRole.js'
 import { notifyRequester, notifyTreasurer, quietly } from '../reimbursementEmails.js'
 import { categoryError } from '../financeCategories.js'
@@ -66,7 +67,8 @@ router.post('/', async (req, res) => {
                 explanation: explanation ?? '',
                 amountRequested: amount,
                 category,
-                receipt,
+                // a fresh receipt; an address (GET /api/img/...) isn't one
+                receipt: readImage(receipt),
                 ...payout.fields,
                 ...(purchased ? { date: purchased } : {})
             }
@@ -107,7 +109,8 @@ router.put('/:id', async (req, res) => {
         data.title = req.body.title
     }
     if (req.body.explanation !== undefined) { data.explanation = req.body.explanation }
-    if (req.body.receipt !== undefined) { data.receipt = req.body.receipt }
+    // the address the form was handed back is the receipt it already has
+    if (readImage(req.body.receipt) !== undefined) { data.receipt = req.body.receipt }
     if (req.body.category !== undefined) {
         const wrongCategory = await categoryError(req.body.category, 'expense')
         if (wrongCategory) { return res.status(400).json({ message: wrongCategory }) }

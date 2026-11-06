@@ -166,6 +166,10 @@ model User {
   instagram      String?
   discord        String?
   profilePicture String?  @map("profile_picture")
+  // A short fingerprint of profilePicture (src/images.js), set on every write.
+  // The photo itself is served on its own at /api/img/user/:id/:key, so
+  // nothing that lists people has to carry it.
+  pictureKey     String?  @map("picture_key")
   emailVerified  Boolean  @default(false) @map("email_verified")
   waiverSigned   Boolean  @default(false) @map("waiver_signed")
   // The signature itself: the name typed at the bottom of the waiver and when.
@@ -274,6 +278,8 @@ model Lab {
   nonmemberPrice Decimal @default(0) @map("nonmember_price") @db.Decimal(10, 2)
   description  String?
   image        String?
+  // fingerprint of image — the cover is served at /api/img/lab/:id/:key
+  imageKey     String?  @map("image_key")
   ingredients  String?
   equipment    String?
   safetyNote   String?  @map("safety_note")
@@ -413,6 +419,8 @@ model Event {
   // online or somewhere that isn't a room.
   location    String?
   image       String?
+  // fingerprint of image — served at /api/img/event/:id/:key
+  imageKey    String?    @map("image_key")
   capacity    Int? // null = unlimited seats
   // The same door charge a lab has, for someone who hasn't paid dues. Only
   // a members-only event asks (asksDues in src/dues.js), so anything else
@@ -638,6 +646,8 @@ model Reimbursement {
   denialExplanation String?             @map("denial_explanation")
   previousDenial    String?             @map("previous_denial")
   receipt           String?
+  // fingerprint of receipt — fetched on its own at /api/img/receipt/:id/:key
+  receiptKey        String?             @map("receipt_key")
   date              DateTime            @default(dbgenerated("CURRENT_DATE")) @db.Date
   // Where to send the money back: the platform ('zelle', 'venmo', 'cash' —
   // see PAYOUT_METHODS in reimbursementRoutes.js) and the phone number, email
@@ -714,6 +724,8 @@ model PaymentMethod {
   image       String?
   description String?
   createdAt   DateTime @default(now()) @map("created_at") @db.Timestamptz()
+  // fingerprint of image (the QR) — served at /api/img/method/:id/:key
+  imageKey    String?  @map("image_key")
 
   payments MemberPayment[]
 
@@ -785,6 +797,8 @@ model MemberPayment {
   methodTitle     String        @map("method_title")
   reference       String
   screenshot      String?
+  // fingerprint of screenshot — fetched on its own at /api/img/payment/:id/:key
+  screenshotKey   String?       @map("screenshot_key")
   status          PaymentStatus @default(pending)
   rejectionReason String?       @map("rejection_reason")
   submittedAt     DateTime      @default(now()) @map("submitted_at") @db.Timestamptz()

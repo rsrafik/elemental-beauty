@@ -1,3 +1,4 @@
+import { memo } from './memo.js'
 import { log, fullName } from './activity.js'
 import { clubToday, dateColumn } from './clubTime.js'
 
@@ -131,7 +132,9 @@ export function readPrice(value) {
 export async function duesLookup(db, memberId) {
     const [member, targets, paid] = await Promise.all([
         db.member.findUnique({ where: { userId: memberId }, select: { role: true } }),
-        db.yearTarget.findMany({ select: { schoolYear: true, duesAmount: true } }),
+        // every year's dues amount — a handful of rows that change once a
+        // year, kept (src/memo.js) since every list and page asks
+        memo('years', 60_000, () => db.yearTarget.findMany({ select: { schoolYear: true, duesAmount: true } })),
         db.duesPayment.findMany({ where: { memberId }, select: { schoolYear: true } })
     ])
     if (!member || DUES_EXEMPT.includes(member.role)) return () => null

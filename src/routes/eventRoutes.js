@@ -1,12 +1,13 @@
 import express from 'express'
 import jwt from 'jsonwebtoken'
 import prisma from '../prismaClient.js'
+import { imageFrom, readImage } from '../images.js'
 import requireRole from '../middleware/requireRole.js'
 import { onTreasuryTeam } from '../middleware/treasury.js'
 import { eventPoints } from '../points.js'
 import { mountRoster, requireNotAttendee } from './roster.js'
 import { OFFER_HOURS, acceptOffer, confirmSpot, expireOffers, lockParent, offerNext, startsAt } from '../offers.js'
-import { dueOverrideError, payable, paymentDueAt, readDueOverride, resweep } from '../payable.js'
+import { PARENT_SELECT, dueOverrideError, payable, paymentDueAt, readDueOverride, resweep } from '../payable.js'
 import { enforcePaymentRules, owingLate } from '../payments.js'
 import { log } from '../activity.js'
 import { readEndTime } from '../clubTime.js'
@@ -57,6 +58,8 @@ export const hiddenTracks = (role) => HIDDEN_TRACKS[role] ?? []
 // { role, teams } (viewerOf); a j-board member's teams are on their member row.
 async function viewerOf(req) {
     if (req.role !== 'jboard') { return { role: req.role, teams: [] } }
+    // authMiddleware read them with the role, so there's nothing to ask
+    if (Array.isArray(req.jboardTeams)) { return { role: req.role, teams: req.jboardTeams } }
     const member = await prisma.member.findUnique({ where: { userId: req.userId }, select: { jboardTeams: true } })
     return { role: req.role, teams: member?.jboardTeams ?? [] }
 }
@@ -199,9 +202,11 @@ router.get('/', async (req, res) => {
     }
 
     try {
-        where.AND = visibleWhere(await viewerOf(req))
-        const owe = await duesLookup(prisma, req.userId)
-        const events = await prisma.event.findMany({
+        const [viewer, owe] = await Promise.all([viewerOf(req), duesLookup(prisma, req.userId)])
+        where.AND = visibleWhere(viewer)
+        // the events and their waitlist counts together, the counts asked
+        // by the same filter rather than by the ids the first one finds
+        const [events, queues] = await Promise.all([prisma.event.findMany({
             where,
             include: {
                 category: { select: { name: true } },
@@ -214,12 +219,11 @@ router.get('/', async (req, res) => {
                 _count: { select: { members: { where: TAKEN } } }
             },
             orderBy: [{ date: when === 'past' ? 'desc' : 'asc' }, { startTime: 'asc' }]
-        })
-        const queues = await prisma.memberEvent.groupBy({
+        }), prisma.memberEvent.groupBy({
             by: ['eventId'],
-            where: { ...WAITING, eventId: { in: events.map((event) => event.eventId) } },
+            where: { ...WAITING, event: where },
             _count: true
-        })
+        })])
         const waiting = new Map(queues.map((queue) => [queue.eventId, queue._count]))
 
         // Same extras the lab list carries: how many seats are gone, how many
@@ -244,14 +248,17 @@ router.get('/:id', async (req, res) => {
     if (isNaN(eventId)) { return res.status(400).json({ message: 'Invalid event id' }) }
 
     try {
-        const event = await prisma.event.findUnique({
-            where: { eventId },
-            include: { category: { select: { name: true } }, createdBy: CREATOR }
-        })
+        const [event, viewer] = await Promise.all([
+            prisma.event.findUnique({
+                where: { eventId },
+                include: { category: { select: { name: true } }, createdBy: CREATOR }
+            }),
+            viewerOf(req)
+        ])
         if (!event) { return res.status(404).json({ message: 'Event not found' }) }
         // a board-only event doesn't exist as far as a member is concerned —
         // 404, not 403, so the reply doesn't confirm there's something there
-        if (hiddenFrom(event, await viewerOf(req))) {
+        if (hiddenFrom(event, viewer)) {
             return res.status(404).json({ message: 'Event not found' })
         }
 
@@ -273,7 +280,7 @@ router.get('/:id', async (req, res) => {
         }
         // what paying would do for them, holding a spot or an offer of one
         const standing = ['rsvped', 'offered'].includes(link?.attendanceStatus)
-            ? await payable(prisma, req.userId, 'event', eventId)
+            ? await payable(prisma, req.userId, 'event', eventId, event)
             : null
 
         res.json({
@@ -385,7 +392,9 @@ router.post('/', requireRole('officer'), async (req, res) => {
                 startTime: startTime || null,
                 endTime,
                 location: location?.trim() || null,
-                image,
+                // a copied event hands back the address of the cover it came
+                // with (GET /api/img/...): the same picture, copied over
+                image: (await imageFrom(prisma, image, { kinds: ['event', 'lab'] })) ?? null,
                 // the board's tracks have no seat cap; j-board has a team
                 capacity: uncapped ? null : capacity,
                 team: forJboard ? team ?? null : null,
@@ -418,7 +427,8 @@ router.put('/:id', requireRole('officer'), async (req, res) => {
     const data = {}
     if (req.body.title !== undefined) { data.title = req.body.title }
     if (req.body.description !== undefined) { data.description = req.body.description }
-    if (req.body.image !== undefined) { data.image = req.body.image }
+    // the address the edit form was handed means the picture's untouched
+    if (readImage(req.body.image) !== undefined) { data.image = req.body.image }
     if (req.body.location !== undefined) { data.location = req.body.location?.trim() || null }
     if (req.body.type !== undefined) {
         if (!EVENT_TYPES.includes(req.body.type)) {
@@ -577,7 +587,7 @@ router.post('/:eventId/rsvp', async (req, res) => {
     if (isNaN(eventId)) { return res.status(400).json({ message: 'Invalid event id' }) }
 
     try {
-        const event = await prisma.event.findUnique({ where: { eventId } })
+        const event = await prisma.event.findUnique({ where: { eventId }, select: PARENT_SELECT.event })
         // a board-only event doesn't exist for a member — the same 404
         // GET /:id gives, so signing up by id can't get round it
         if (!event || hiddenFrom(event, await viewerOf(req))) {
@@ -637,8 +647,9 @@ router.post('/:eventId/rsvp', async (req, res) => {
         if (result.code === 'WAITLISTED') {
             // someone waiting is what makes missed confirmation and payment
             // deadlines count — see waitingFor in src/offers.js
-            expireOffers().catch((err) => console.error(`Offer sweep failed: ${err.message}`))
-            enforcePaymentRules().catch((err) => console.error(`Payment sweep failed: ${err.message}`))
+            // this one's, not everything's (the hourly run has the rest)
+            expireOffers({ only: ['event', eventId] }).catch((err) => console.error(`Offer sweep failed: ${err.message}`))
+            enforcePaymentRules(new Date(), { only: ['event', eventId] }).catch((err) => console.error(`Payment sweep failed: ${err.message}`))
             return res.status(202).json({
                 code: 'WAITLISTED',
                 message: 'Event is full. You are on the waitlist and will be offered a spot if one opens',
@@ -741,7 +752,7 @@ router.post('/:eventId/checkin', requireRole('officer'), requireNotAttendee('eve
     }
 
     try {
-        const event = await prisma.event.findUnique({ where: { eventId } })
+        const event = await prisma.event.findUnique({ where: { eventId }, select: PARENT_SELECT.event })
         if (!event) { return res.status(404).json({ message: 'Event not found' }) }
 
         const existing = await prisma.memberEvent.findUnique({

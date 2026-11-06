@@ -4,7 +4,7 @@ import { sendEmail } from './email.js'
 import { actionEmail } from './emailTemplate.js'
 import { APP_URL } from './verification.js'
 import { clubFormat, startsAt } from './clubTime.js'
-import { OFFER_HOURS, dueCallout, dueText, dueWhen, payable, paymentDueAt } from './payable.js'
+import { OFFER_HOURS, PARENT_SELECT, dueCallout, dueText, dueWhen, payable, paymentDueAt } from './payable.js'
 
 // Waitlist offers, for labs and events alike.
 //
@@ -162,7 +162,7 @@ export async function notifyMovedToWaitlist({ kindName, parentId, memberId, reas
         const kind = KINDS[kindName]
         const row = await prisma[kind.link].findUnique({
             where: where(kind, parentId, memberId),
-            include: { [kind.parent]: true, member: { select: { user: { select: { email: true, firstName: true } } } } }
+            include: { [kind.parent]: { select: PARENT_SELECT[kindName] }, member: { select: { user: { select: { email: true, firstName: true } } } } }
         })
         if (!row) { return }
         const parent = row[kind.parent]
@@ -209,7 +209,7 @@ export async function sendOffer(kindName, parentId, memberId) {
     const row = await prisma[kind.link].findUnique({
         where: where(kind, parentId, memberId),
         include: {
-            [kind.parent]: true,
+            [kind.parent]: { select: PARENT_SELECT[kindName] },
             member: { select: { user: { select: { email: true, firstName: true } } } }
         }
     })
@@ -225,7 +225,7 @@ export async function sendOffer(kindName, parentId, memberId) {
         { expiresIn: '14d' }
     )
     // someone who owes for it accepts by paying, on its page
-    const standing = await payable(prisma, memberId, kindName, parentId)
+    const standing = await payable(prisma, memberId, kindName, parentId, parent)
     const payFirst = Boolean(standing?.owes && !standing.sent)
     const sent = await sendEmail({
         to: user.email,
@@ -318,18 +318,22 @@ const HELD = { in: ['rsvped', 'attended', 'offered'] }
 // where the waitlist needs the spots (see the top of this file). Run hourly,
 // whenever a check-in page loads its roster, and when someone joins a
 // waitlist — so the page never shows something that should have moved on.
-export async function expireOffers() {
+//
+// `only` ([kindName, id]) narrows it to that one lab or event: a check-in page
+// or a sign-up only needs its own put right, and the hourly run has the rest.
+export async function expireOffers({ only = null } = {}) {
     const now = Date.now()
     const cutoff = new Date(now - OFFER_HOURS * HOUR)
     let lapsed = 0
 
-    for (const kindName of Object.keys(KINDS)) {
+    for (const kindName of only ? [only[0]] : Object.keys(KINDS)) {
         const kind = KINDS[kindName]
+        const mine = only ? { [kind.key]: only[1] } : {}
 
         // an offer nobody accepted in 48 hours — left alone in the last 48
         // hours before the lab or event, where the door handles it
         const stale = await prisma[kind.link].findMany({
-            where: { attendanceStatus: 'offered', offerSentAt: { lte: cutoff } },
+            where: { ...mine, attendanceStatus: 'offered', offerSentAt: { lte: cutoff } },
             include: { [kind.parent]: { select: { date: true, startTime: true, capacity: true } } }
         })
         for (const row of stale) {
@@ -351,7 +355,7 @@ export async function expireOffers() {
             lapsed++
         }
 
-        lapsed += await enforceConfirmations(kindName, now)
+        lapsed += await enforceConfirmations(kindName, now, mine)
     }
     if (lapsed > 0) { console.log(`Offer sweep: ${lapsed} unanswered offer(s) or confirmation(s) passed on`) }
     return lapsed
@@ -372,10 +376,10 @@ export async function expireOffers() {
 // due date, and paying meets it (enforcePaymentRules in payments.js).
 //
 // No cap means no queue for seats, so there's nothing to enforce.
-async function enforceConfirmations(kindName, now) {
+async function enforceConfirmations(kindName, now, mine = {}) {
     const kind = KINDS[kindName]
     const missed = await prisma[kind.link].findMany({
-        where: { attendanceStatus: 'rsvped', confirmedAt: null, confirmBy: { lte: new Date(now) } },
+        where: { ...mine, attendanceStatus: 'rsvped', confirmedAt: null, confirmBy: { lte: new Date(now) } },
         select: { memberId: true, [kind.key]: true }
     })
     // grouped by lab or event
@@ -508,7 +512,7 @@ export async function sendConfirmations(kindName, parentId, deadline) {
         throw Object.assign(new Error('Pick a deadline that hasn’t passed yet'), { status: 400 })
     }
     const kind = KINDS[kindName]
-    const parent = await prisma[kind.parent].findUnique({ where: { [kind.key]: parentId } })
+    const parent = await prisma[kind.parent].findUnique({ where: { [kind.key]: parentId }, select: PARENT_SELECT[kindName] })
     if (!parent) { throw Object.assign(new Error(`That ${kind.noun} doesn’t exist`), { status: 404 }) }
 
     const include = { member: { select: { user: { select: { email: true, firstName: true } } } } }
@@ -544,7 +548,7 @@ export async function sendConfirmations(kindName, parentId, deadline) {
         const user = row.member.user
         const previous = row.confirmSentAt && row.confirmBy ? row.confirmBy : null
         if (previous) { updated = true }
-        const standing = await payable(prisma, row.memberId, kindName, parentId)
+        const standing = await payable(prisma, row.memberId, kindName, parentId, parent)
         const owes = Boolean(standing?.owes)
         const token = jwt.sign(
             { purpose: 'confirm', kind: kindName, parentId, memberId: row.memberId },
@@ -664,7 +668,7 @@ async function sendPrelabTo(kindName, parentId, memberId) {
     const row = await prisma[kind.link].findUnique({
         where: where(kind, parentId, memberId),
         include: {
-            [kind.parent]: true,
+            [kind.parent]: { select: PARENT_SELECT[kindName] },
             member: { select: { user: { select: { email: true, firstName: true } } } }
         }
     })

@@ -5,6 +5,7 @@ import { payments as paymentsApi } from '@/lib/api'
 import { useSession } from '@/lib/session'
 import { RECEIPT_MAX, shrinkImage } from '@/lib/images'
 import { FitScroll } from '@/components/labs/LabViewParts'
+import StoredImage from '@/components/StoredImage'
 
 // Paying the club before you come, for a member who hasn't paid the year's
 // dues — under the "you're registered" button on a lab's or a members-only
@@ -636,7 +637,7 @@ export default function PaySection({ place = {}, noun = 'lab', duesOnly = false,
 											border-black/10
 										">
 											{method.image
-												? <img src={method.image} alt={`${method.title} QR code`} className="w-full h-full object-contain" />
+												? <StoredImage src={method.image} alt={`${method.title} QR code`} className="w-full h-full object-contain" />
 												: <span className="px-2 text-center font-vietnam font-semibold text-[13px] text-black/60">{method.title}</span>}
 										</div>
 										<p className="
@@ -725,7 +726,7 @@ export default function PaySection({ place = {}, noun = 'lab', duesOnly = false,
 										text-black/55
 									">
 										{screenshot && (
-											<img src={screenshot} alt="" className="w-8 h-8 rounded-[6px] object-cover border border-black/10" />
+											<StoredImage src={screenshot} alt="" className="w-8 h-8 rounded-[6px] object-cover border border-black/10" />
 										)}
 										<button
 											type="button"
@@ -1059,7 +1060,7 @@ function GoggleCard({ goggles, rentals, methods, place, onSent }) {
 							text-black/55
 						">
 							{screenshot && (
-								<img src={screenshot} alt="" className="w-8 h-8 rounded-[6px] object-cover border border-black/10" />
+								<StoredImage src={screenshot} alt="" className="w-8 h-8 rounded-[6px] object-cover border border-black/10" />
 							)}
 							<button
 								type="button"

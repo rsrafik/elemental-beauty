@@ -10,6 +10,8 @@
 // server render that could read a cookie before the page paints, so the page
 // would have to ask the client for the token anyway.
 
+import { forgetStoredImages } from './images'
+
 const TOKEN_KEY = 'eb.token'
 
 // localStorage throws in a few real situations (a private window with site
@@ -31,6 +33,8 @@ export function setToken(token) {
 	} catch {
 		// nothing to do — the session lasts as long as the tab instead
 	}
+	// signed out: the pictures kept for them go too (lib/images.js)
+	if (!token) forgetStoredImages()
 }
 
 // What a failed call throws. `status` is what callers switch on: 401 means the
@@ -96,7 +100,35 @@ export async function api(path, { method = 'GET', body, auth = true } = {}) {
 		)
 	}
 
-	return payload
+	return withPictures(payload)
+}
+
+// Pictures come from the API as addresses (`imageUrl`, `pictureUrl`, …,
+// each GET /api/img/...), not the base64 they used to be — the lists stay
+// small and a browser that's seen a picture keeps it (lib/images.js). Each
+// address is also put under the name the pages have always read it by
+// (`image`, `profilePicture`, `screenshot`, `receipt`), so a page shows it
+// with <StoredImage src={lab.image}> and a form that sends it back unchanged
+// tells the server the picture's untouched.
+const PICTURE_NAMES = [
+	['imageUrl', 'image'],
+	['pictureUrl', 'profilePicture'],
+	['screenshotUrl', 'screenshot'],
+	['receiptUrl', 'receipt'],
+]
+
+function withPictures(value) {
+	if (Array.isArray(value)) {
+		for (const item of value) withPictures(item)
+	} else if (value && typeof value === 'object') {
+		for (const [from, to] of PICTURE_NAMES) {
+			if (from in value && !(to in value)) value[to] = value[from]
+		}
+		for (const key in value) {
+			if (value[key] && typeof value[key] === 'object') withPictures(value[key])
+		}
+	}
+	return value
 }
 
 // A file the API hands back (a CSV export), saved through the browser. It can't
@@ -171,6 +203,9 @@ export const auth = {
 
 export const members = {
 	list: () => api('/members'),
+	// officer+: just everyone's handle and name — the check-in page's
+	// "add by username" suggestions
+	names: () => api('/members/names'),
 	// officer+: signed up, not a member yet (role 'user')
 	accounts: () => api('/members/accounts'),
 	me: () => api('/members/me'),
@@ -243,6 +278,9 @@ export const events = {
 
 	// Officers, on the check-in page — see src/routes/roster.js.
 	roster: (id) => api(`/events/${id}/roster`),
+	// { v } — changes whenever the roster or its payments do; answered without
+	// the database, so the page can ask it every few seconds
+	rosterVersion: (id) => api(`/events/${id}/roster/version`),
 	// action: checkin | uncheck | admit | offer | remove (with memberId) or add (with username)
 	rosterAction: (id, body) => api(`/events/${id}/roster`, { method: 'POST', body }),
 	// `dues` answers a DUES_UNPAID reply on a members-only event, as a lab's does
@@ -302,7 +340,9 @@ async function uploadPdf(url, file) {
 }
 
 export const labs = {
-	list: () => api('/labs'),
+	// `summary`: just what a calendar or dashboard places a lab with — no
+	// description or cover
+	list: ({ summary = false } = {}) => api(`/labs${summary ? '?fields=summary' : ''}`),
 	get: (id) => api(`/labs/${id}`),
 	create: (lab) => api('/labs', { method: 'POST', body: lab }),
 	update: (id, lab) => api(`/labs/${id}`, { method: 'PUT', body: lab }),
@@ -334,6 +374,7 @@ export const labs = {
 
 	// Officers, on the check-in page — see src/routes/roster.js.
 	roster: (id) => api(`/labs/${id}/roster`),
+	rosterVersion: (id) => api(`/labs/${id}/roster/version`),
 	// action: checkin | uncheck | admit | offer | remove (with memberId) or add (with username)
 	rosterAction: (id, body) => api(`/labs/${id}/roster`, { method: 'POST', body }),
 	// `dues` answers a DUES_UNPAID reply: 'paid' (dues taken at the door),

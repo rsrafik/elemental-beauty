@@ -24,7 +24,7 @@ import { auth } from '@/lib/api'
 // session is re-read every few seconds (and when the tab comes back into
 // focus) while the email is still unconfirmed.
 
-const POLL_MS = 5_000
+const POLL_MS = 10_000
 const RESEND_WAIT = 60
 
 function Tick({ className }) {
@@ -140,7 +140,9 @@ export default function OnboardingDashboard() {
 					if (me.emailVerified || me.role !== 'user') refresh()
 				})
 				.catch(() => {})
-		const timer = setInterval(check, POLL_MS)
+		// not while the tab's in the background — coming back to it (focus)
+		// asks at once, which is when the link's most likely been clicked
+		const timer = setInterval(() => { if (document.visibilityState !== 'hidden') check() }, POLL_MS)
 		window.addEventListener('focus', check)
 		return () => {
 			clearInterval(timer)

@@ -441,7 +441,7 @@ export default function MemberCalendar() {
 
 	useEffect(() => {
 		let live = true
-		Promise.all([labsApi.list(), eventsApi.list(), eventCategories.list()])
+		Promise.all([labsApi.list({ summary: true }), eventsApi.list(), eventCategories.list()])
 			.then(([labs, events, categories]) => {
 				if (!live) return
 				const built = buildMonths(labs, events)

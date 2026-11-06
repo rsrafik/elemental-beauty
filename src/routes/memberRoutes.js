@@ -2,6 +2,7 @@ import express from 'express'
 import jwt from 'jsonwebtoken'
 import QRCode from 'qrcode'
 import prisma from '../prismaClient.js'
+import { readImage } from '../images.js'
 import requireRole, { denyRole } from '../middleware/requireRole.js'
 import { POINTS, MANUAL_ACTIONS, ONE_TIME_ACTIONS, eventPoints } from '../points.js'
 import { fromEmail, takenMessage } from '../accountEmail.js'
@@ -39,7 +40,9 @@ function canManage(actorRole, targetRole) {
 // the leaderboard on /account.
 router.get('/', async (req, res) => {
     try {
-        const members = await prisma.member.findMany({
+        const staff = STAFF.includes(req.role)
+        // the roster and the dues standings at once — neither waits on the other
+        const [members, standing] = await Promise.all([prisma.member.findMany({
             select: {
                 userId: true,
                 role: true,
@@ -53,7 +56,7 @@ router.get('/', async (req, res) => {
                         firstName: true,
                         lastName: true,
                         instagram: true,
-                        profilePicture: true,
+                        pictureUrl: true,
                         createdAt: true,
                         email: true,
                         emailClub: true
@@ -61,15 +64,17 @@ router.get('/', async (req, res) => {
                 }
             },
             orderBy: { dateJoined: 'asc' }
-        })
+        }),
         // Staff get each address and whether the dashboard's "Email All" may
         // include it (their choice, or their role's default); nobody else
         // sees either. The same goes for where someone stands on this year's
         // dues — /students filters on paid and unpaid (duesStandings in
         // src/dues.js).
-        const staff = STAFF.includes(req.role)
-        const standing = staff ? await duesStandings(prisma) : null
-        res.json(members.map(({ user, ...row }) => {
+        staff ? duesStandings(prisma) : null])
+        // a member whose account went between reading the two (deleted
+        // while this was being asked) has no user to show — left off rather
+        // than failing the whole list
+        res.json(members.filter((row) => row.user).map(({ user, ...row }) => {
             const { email, emailClub, ...rest } = user
             return {
                 ...row,
@@ -79,6 +84,21 @@ router.get('/', async (req, res) => {
                     : rest
             }
         }))
+    } catch (err) {
+        console.error(err.message)
+        res.sendStatus(500)
+    }
+})
+
+// Officer+: everyone's handle and name, nothing else — the check-in page's
+// "add by username" suggestions, which don't need the whole roster.
+router.get('/names', requireRole('officer'), async (req, res) => {
+    try {
+        const rows = await prisma.member.findMany({
+            select: { user: { select: { username: true, firstName: true, lastName: true } } },
+            orderBy: { dateJoined: 'asc' }
+        })
+        res.json(rows.map((row) => row.user))
     } catch (err) {
         console.error(err.message)
         res.sendStatus(500)
@@ -102,7 +122,7 @@ router.get('/accounts', requireRole('officer'), async (req, res) => {
                 firstName: true,
                 lastName: true,
                 instagram: true,
-                profilePicture: true,
+                pictureUrl: true,
                 createdAt: true,
                 email: true,
                 emailVerified: true,
@@ -141,7 +161,7 @@ router.get('/me', async (req, res) => {
                         lastName: true,
                         instagram: true,
                         discord: true,
-                        profilePicture: true,
+                        pictureUrl: true,
                         emailVerified: true,
                         waiverSigned: true,
                         createdAt: true
@@ -330,7 +350,9 @@ router.put('/me', async (req, res) => {
     }
     // the club-wide email opt-out (see schema.prisma)
     if (emailClub !== undefined) { data.emailClub = emailClub === true }
-    if (profilePicture !== undefined) { data.profilePicture = profilePicture }
+    // the address /account was handed (GET /api/img/...) is the photo it
+    // already has
+    if (readImage(profilePicture) !== undefined) { data.profilePicture = profilePicture }
 
     try {
         const existing = await prisma.user.findUnique({ where: { userId: req.userId } })
@@ -349,7 +371,7 @@ router.put('/me', async (req, res) => {
                 lastName: true,
                 instagram: true,
                 discord: true,
-                profilePicture: true,
+                pictureUrl: true,
                 emailVerified: true,
                 waiverSigned: true,
                 emailClub: true,
@@ -383,7 +405,7 @@ router.get('/:id/card', requireRole('jboard'), async (req, res) => {
             where: { userId },
             select: {
                 userId: true, username: true, email: true, firstName: true, lastName: true,
-                instagram: true, discord: true, profilePicture: true,
+                instagram: true, discord: true, pictureUrl: true,
                 member: { select: { role: true, points: true } }
             }
         })
@@ -601,7 +623,7 @@ router.post('/', requireRole('admin'), async (req, res) => {
             firstName: created.user.firstName,
             lastName: created.user.lastName,
             instagram: created.user.instagram,
-            profilePicture: created.user.profilePicture,
+            pictureUrl: created.user.pictureUrl ?? null,
             role: created.member.role,
             points: created.member.points,
             dateJoined: created.member.dateJoined

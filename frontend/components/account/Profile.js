@@ -11,6 +11,7 @@ import { members as membersApi, auth, payments as paymentsApi } from '@/lib/api'
 import { longDate, prettyTimeRange } from '@/lib/dates'
 import { useDismiss } from '@/lib/dismiss'
 import { AVATAR_MAX, shrinkImage } from '@/lib/images'
+import StoredImage from '@/components/StoredImage'
 
 // /account — the one page that's about the person looking at it rather than
 // about the club. Same sidebar as everywhere else; it's just another stop on
@@ -328,7 +329,7 @@ function PhotoPicker({ photo, name, onPick, onClear, className = '' }) {
 				"
 			>
 				{photo ? (
-					<img
+					<StoredImage
 						src={photo}
 						alt=""
 						className="

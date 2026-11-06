@@ -6,6 +6,8 @@ import DashboardShell from '@/components/dashboards/DashboardShell'
 import { labs as labsApi } from '@/lib/api'
 import { isoDate, longDate, prettyTimeRange, today } from '@/lib/dates'
 import { LeavePopup, PriceBadge, priceText } from '@/components/labs/LabViewParts'
+import StoredImage from '@/components/StoredImage'
+import { SkeletonGrid } from '@/components/Skeleton'
 
 // /labs for a user or member: browse upcoming labs, RSVP, look back at the
 // ones they've attended.
@@ -434,7 +436,7 @@ function LabCard({ title, lines, image, icon, action, availability, price, onOpe
 				bg-salmon-lightest
 			">
 				{image && (
-					<img
+					<StoredImage
 						src={image}
 						alt=""
 						className="
@@ -577,7 +579,21 @@ function LabCard({ title, lines, image, icon, action, availability, price, onOpe
 // The padding is headroom, not styling: cards lift on hover and this is a
 // scroll container, so without it the top of the raised card and its shadow
 // get clipped.
-function LabGrid({ items, icons, renderAction }) {
+const GRID = `
+	grid
+	grid-cols-1
+	max-sm:mx-auto
+	max-sm:w-[85%]
+	sm:grid-cols-2
+	xl:grid-cols-3
+	2xl:grid-cols-4
+	gap-4
+	sm:gap-5
+`
+// the same columns as a map, for the placeholders' diagonal (Skeleton.js)
+const GRID_COLS = { base: 1, sm: 2, xl: 3, '2xl': 4 }
+
+function LabGrid({ items, icons, renderAction, loading = false, tint = 'bg-salmon-lightest' }) {
 	const router = useRouter()
 	return (
 		<div className="
@@ -588,17 +604,10 @@ function LabGrid({ items, icons, renderAction }) {
 		">
 			{/* one card across on a phone, at 85% of the panel's width —
 			    full width made each card too big for the panel it sits in */}
-			<div className="
-				grid
-				grid-cols-1
-				max-sm:mx-auto
-				max-sm:w-[85%]
-				sm:grid-cols-2
-				xl:grid-cols-3
-				2xl:grid-cols-4
-				gap-4
-				sm:gap-5
-			">
+			{loading ? (
+				<SkeletonGrid className={GRID} cols={GRID_COLS} count={8} card={{ tint, action: Boolean(renderAction) }} />
+			) : (
+			<div className={GRID}>
 				{items.map((lab) => (
 					<LabCard
 						key={lab.id}
@@ -620,6 +629,7 @@ function LabGrid({ items, icons, renderAction }) {
 					/>
 				))}
 			</div>
+			)}
 		</div>
 	)
 }
@@ -705,6 +715,9 @@ export default function MemberLabs() {
 	// Every lab, once. Both panels are derived from this — see `panels` — so a
 	// change to one row is a change to both sides at the same instant.
 	const [rows, setRows] = useState([])
+	// false until the list is in — the panels show placeholders until then,
+	// so "loading" never looks like "no labs"
+	const [loaded, setLoaded] = useState(false)
 	// ids with a request in flight, so a button can't be pressed twice into two
 	// opposite calls that then race each other
 	const [busy, setBusy] = useState(() => new Set())
@@ -721,6 +734,7 @@ export default function MemberLabs() {
 			.list()
 			.then((list) => live && setRows(list.map(toCard)))
 			.catch((err) => live && setError(err.message))
+			.finally(() => live && setLoaded(true))
 		return () => { live = false }
 	}, [])
 
@@ -936,6 +950,7 @@ export default function MemberLabs() {
 							</p>
 						)}
 						<LabGrid
+							loading={!loaded}
 							items={upcomingRows}
 							renderAction={(lab) => (
 								// not taking sign-ups: only someone already on it
@@ -999,7 +1014,7 @@ export default function MemberLabs() {
 						lg:pb-8
 					">
 						<PanelHeading>CURRENT</PanelHeading>
-						<LabGrid items={current} icons={currentIcons} />
+						<LabGrid loading={!loaded} items={current} icons={currentIcons} />
 					</div>
 				</section>
 			</div>

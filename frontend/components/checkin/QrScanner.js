@@ -1,7 +1,6 @@
 'use client'
 
 import { useEffect, useRef, useState } from 'react'
-import jsQR from 'jsqr'
 
 // The black square on the check-in page: the camera, with the four yellow
 // corner marks to line a member's QR code up in. Every few frames it looks
@@ -109,10 +108,14 @@ export default function QrScanner({ onScan }) {
 		}
 	}, [])
 
-	// the read loop, while the camera is on
+	// the read loop, while the camera is on. The decoder's only fetched once
+	// the camera is — the check-in page itself doesn't wait on it
 	useEffect(() => {
 		if (state !== 'live') return
+		let jsQR = null
+		import('jsqr').then((module) => { jsQR = module.default }).catch(() => {})
 		const timer = setInterval(async () => {
+			if (!jsQR) return
 			const video = videoRef.current
 			const canvas = canvasRef.current
 			if (!video || !canvas || handlingRef.current || video.readyState < 2) return

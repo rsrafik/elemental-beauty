@@ -7,6 +7,8 @@ import { events as eventsApi } from '@/lib/api'
 import { isoDate, longDate, prettyTimeRange, today } from '@/lib/dates'
 import { LeavePopup, PriceBadge, priceText } from '@/components/labs/LabViewParts'
 import { calendarOnly } from '@/lib/calendar'
+import StoredImage from '@/components/StoredImage'
+import { SkeletonGrid } from '@/components/Skeleton'
 
 // /events for a user or member: browse what's running now and rsvp to what's
 // coming up.
@@ -308,7 +310,7 @@ function EventCard({ title, lines, image, action, availability, price, href }) {
 				bg-blue-light/50
 			">
 				{image && (
-					<img
+					<StoredImage
 						src={image}
 						alt=""
 						className="
@@ -435,7 +437,21 @@ function EventCard({ title, lines, image, action, availability, price, href }) {
 // The padding is headroom, not styling: cards lift on hover and this is a
 // scroll container, so without it the top of the raised card and its shadow
 // get clipped.
-function EventGrid({ items, renderAction }) {
+const GRID = `
+	grid
+	grid-cols-1
+	max-sm:mx-auto
+	max-sm:w-[85%]
+	sm:grid-cols-2
+	xl:grid-cols-3
+	2xl:grid-cols-4
+	gap-4
+	sm:gap-5
+`
+// the same columns as a map, for the placeholders' diagonal (Skeleton.js)
+const GRID_COLS = { base: 1, sm: 2, xl: 3, '2xl': 4 }
+
+function EventGrid({ items, renderAction, loading = false }) {
 	return (
 		<div className="
 			flex-1
@@ -445,17 +461,10 @@ function EventGrid({ items, renderAction }) {
 		">
 			{/* one card across on a phone, at 85% of the panel's width —
 			    full width made each card too big for the panel it sits in */}
-			<div className="
-				grid
-				grid-cols-1
-				max-sm:mx-auto
-				max-sm:w-[85%]
-				sm:grid-cols-2
-				xl:grid-cols-3
-				2xl:grid-cols-4
-				gap-4
-				sm:gap-5
-			">
+			{loading ? (
+				<SkeletonGrid className={GRID} cols={GRID_COLS} count={8} card={{ tint: 'bg-blue-light/50', action: Boolean(renderAction) }} />
+			) : (
+			<div className={GRID}>
 				{items.map((event) => (
 					<EventCard
 						key={event.id}
@@ -478,6 +487,7 @@ function EventGrid({ items, renderAction }) {
 					/>
 				))}
 			</div>
+			)}
 		</div>
 	)
 }
@@ -563,6 +573,8 @@ export default function MemberEvents() {
 	// Every event, once. Both panels are derived from this — see `panels` — so a
 	// change to one row is a change to both sides at the same instant.
 	const [rows, setRows] = useState([])
+	// false until the list is in — placeholders until then (Skeleton.js)
+	const [loaded, setLoaded] = useState(false)
 	// ids with a request in flight, so a button can't be pressed twice into two
 	// opposite calls that then race each other
 	const [busy, setBusy] = useState(() => new Set())
@@ -584,6 +596,7 @@ export default function MemberEvents() {
 					.map(toCard)
 			))
 			.catch((err) => live && setError(err.message))
+			.finally(() => live && setLoaded(true))
 		return () => { live = false }
 	}, [])
 
@@ -797,6 +810,7 @@ export default function MemberEvents() {
 							</p>
 						)}
 						<EventGrid
+							loading={!loaded}
 							items={upcomingRows}
 							renderAction={(event) => (
 								<RsvpButton
@@ -856,7 +870,7 @@ export default function MemberEvents() {
 						lg:pb-8
 					">
 						<PanelHeading>CURRENT</PanelHeading>
-						<EventGrid items={current} />
+						<EventGrid loading={!loaded} items={current} />
 					</div>
 				</section>
 			</div>

@@ -4,6 +4,7 @@ import { useState } from 'react'
 import { createPortal } from 'react-dom'
 import { payments as paymentsApi } from '@/lib/api'
 import { useDismiss } from '@/lib/dismiss'
+import StoredImage from '@/components/StoredImage'
 
 // A payment a member sent in, as the treasurer or admin reviews it — the
 // check-in page's payments popup and the dues card's "pending" filter both
@@ -86,7 +87,7 @@ export function ScreenshotCircle({ src, who, blank = false }) {
 					hover:scale-105
 				"
 			>
-				<img src={src} alt="" className="w-full h-full object-cover" />
+				<StoredImage src={src} alt="" className="w-full h-full object-cover" />
 			</button>
 			{open && <ImagePopup src={src} title={`${who}'s screenshot`} onClose={() => setOpen(false)} />}
 		</>
@@ -128,7 +129,7 @@ function ImagePopup({ src, title, onClose }) {
 					shadow-[0_10px_40px_rgba(0,0,0,0.35)]
 				"
 			>
-				<img
+				<StoredImage
 					src={src}
 					alt={title}
 					className="

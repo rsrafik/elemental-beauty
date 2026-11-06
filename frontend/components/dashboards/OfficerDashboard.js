@@ -13,6 +13,7 @@ import { VideoIcon } from '@/components/events/MeetingLink'
 import { calendarOnly, hasMeetingLink } from '@/lib/calendar'
 import { isoDate, prettyTimeRange, shortDate, today } from '@/lib/dates'
 import { canAddEvents, canChange, canManageLabs, onLeaderboard } from '@/lib/roles'
+import { Pending } from '@/components/Skeleton'
 
 // Shown to officer / treasurer / admin.
 // Sidebar + a 2x2 grid (quick actions / upcoming / announcement / leaderboard)
@@ -262,6 +263,8 @@ export default function OfficerDashboard() {
 	// grid under it the next six. Read off /members rather than kept anywhere,
 	// so it can't disagree with the roster on /students.
 	const [board, setBoard] = useState([])
+	// false until the members are in — the podium and rows pulse until then
+	const [boardLoaded, setBoardLoaded] = useState(false)
 
 	// Everyone who wants club-wide email, for the "Email All" form's count and
 	// its "copy addresses": members unless they've turned it off, staff only if
@@ -293,7 +296,7 @@ export default function OfficerDashboard() {
 	// A save or delete re-reads the panel, since the event may have moved or
 	// gone.
 	const reloadUpcoming = () =>
-		Promise.all([labsApi.list(), eventsApi.list()])
+		Promise.all([labsApi.list({ summary: true }), eventsApi.list()])
 			.then(([labs, events]) => setUpcoming(soonest(labs, events)))
 			.catch(() => {})
 	const { open: openEvent, dialogs: eventDialogs } = useCalendarEventDialogs({
@@ -338,8 +341,9 @@ export default function OfficerDashboard() {
 				)
 			})
 			.catch(() => {})
+			.finally(() => live && setBoardLoaded(true))
 
-		Promise.all([labsApi.list(), eventsApi.list(), eventCategories.list()])
+		Promise.all([labsApi.list({ summary: true }), eventsApi.list(), eventCategories.list()])
 			.then(([labs, events, tags]) => {
 				if (!live) return
 				setUpcoming(soonest(labs, events))
@@ -892,9 +896,9 @@ export default function OfficerDashboard() {
 					">
 						{/* second, first, third — the tallest bar in the middle is
 						    what makes it a podium rather than a bar chart */}
-						<PodiumSpot name={podium[1]?.name ?? '—'} medal="🥈" height={50} />
-						<PodiumSpot name={podium[0]?.name ?? '—'} medal="🥇" height={70} />
-						<PodiumSpot name={podium[2]?.name ?? '—'} medal="🥉" height={40} />
+						<PodiumSpot name={podium[1]?.name ?? (boardLoaded ? '—' : <Pending wave={0} />)} medal="🥈" height={50} />
+						<PodiumSpot name={podium[0]?.name ?? (boardLoaded ? '—' : <Pending wave={1} />)} medal="🥇" height={70} />
+						<PodiumSpot name={podium[2]?.name ?? (boardLoaded ? '—' : <Pending wave={2} />)} medal="🥉" height={40} />
 					</div>
 
 					{/* no top margin: this is the ground the podium stands on, so its
@@ -927,6 +931,14 @@ export default function OfficerDashboard() {
 									key={person.id}
 									place={index + 4}
 									name={person.name}
+								/>
+							))}
+							{/* not in yet: the rows' places, dimmed and pulsing */}
+							{!boardLoaded && Array.from({ length: 6 }, (_, index) => (
+								<LeaderRow
+									key={`loading-${index}`}
+									place={index + 4}
+									name={<Pending wave={Math.floor(index / 2) + (index % 2) + 1} className="h-[0.8em] w-[6em]" />}
 								/>
 							))}
 						</div>

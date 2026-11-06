@@ -1,5 +1,6 @@
 import express from 'express'
 import prisma from '../prismaClient.js'
+import { memo } from '../memo.js'
 import requireRole from '../middleware/requireRole.js'
 
 const router = express.Router()
@@ -16,7 +17,8 @@ const RESERVED = ['lab']
 
 router.get('/', async (req, res) => {
     try {
-        const categories = await prisma.eventCategory.findMany({ orderBy: { categoryId: 'asc' } })
+        // kept (src/memo.js): every calendar asks, officers rarely add one
+        const categories = await memo('categories', 60_000, () => prisma.eventCategory.findMany({ orderBy: { categoryId: 'asc' } }))
         res.json(categories)
     } catch (err) {
         console.error(err.message)
