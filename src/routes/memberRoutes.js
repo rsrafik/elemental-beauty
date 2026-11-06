@@ -71,7 +71,10 @@ router.get('/', async (req, res) => {
         // dues — /students filters on paid and unpaid (duesStandings in
         // src/dues.js).
         staff ? duesStandings(prisma) : null])
-        res.json(members.map(({ user, ...row }) => {
+        // a member whose account went between reading the two (deleted
+        // while this was being asked) has no user to show — left off rather
+        // than failing the whole list
+        res.json(members.filter((row) => row.user).map(({ user, ...row }) => {
             const { email, emailClub, ...rest } = user
             return {
                 ...row,

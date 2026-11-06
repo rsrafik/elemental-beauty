@@ -1105,7 +1105,10 @@ test('taking back a waived entry doesn’t email them; taking back a paid one do
 })
 
 test('a check-in page’s version moves when its roster or payments change, and only then', { skip }, async () => {
-    const { versionOf } = await import('../src/changes.js')
+    // a lab's own part of its version — the part before it moves for every
+    // page at once (a write that could be anyone's: other tests make those)
+    const { versionOf: whole } = await import('../src/changes.js')
+    const versionOf = (kindName, id) => whole(kindName, id).split('.').pop()
     const member = await person('member')
     const labId = await lab()
     const otherLab = await lab()
