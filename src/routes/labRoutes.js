@@ -1,13 +1,15 @@
 import express from 'express'
 import jwt from 'jsonwebtoken'
 import prisma from '../prismaClient.js'
+import { Prisma } from '../generated/prisma/client.ts'
 import requireRole from '../middleware/requireRole.js'
 import { POINTS } from '../points.js'
 import { mountRoster, requireNotAttendee } from './roster.js'
 import { OFFER_HOURS, acceptOffer, confirmSpot, expireOffers, lockParent, offerNext, startsAt } from '../offers.js'
-import { dueOverrideError, payable, paymentDueAt, readDueOverride, resweep } from '../payable.js'
+import { PARENT_SELECT, dueOverrideError, payable, paymentDueAt, readDueOverride, resweep } from '../payable.js'
 import { enforcePaymentRules, owingLate } from '../payments.js'
 import { log } from '../activity.js'
+import { readImage } from '../images.js'
 import { readEndTime } from '../clubTime.js'
 import { DUES_ANSWERS, duesAnswerProblem, duesLookup, doorOwed, duesUnpaid, readPaidBy, readPrice, settleDues } from '../dues.js'
 
@@ -54,7 +56,8 @@ function requireLabStaff(req, res, next) {
 // Preview fields — what a member sees BEFORE passing the quiz
 const PREVIEW_SELECT = {
     labId: true, title: true, date: true, startTime: true, endTime: true, location: true, checkinOpen: true,
-    description: true, image: true, capacity: true, published: true,
+    // the cover's address, not the cover (GET /api/img/lab/...)
+    description: true, imageUrl: true, capacity: true, published: true,
     // whether it's taking sign-ups — the card and page leave the rsvp
     // button off when it isn't
     acceptingRsvps: true,
@@ -62,6 +65,13 @@ const PREVIEW_SELECT = {
     nonmemberPrice: true,
     // and when it's due, if set by hand — read into `paymentDueAt`
     paymentDueOverride: true
+}
+
+// ?fields=summary — what the calendars and dashboards place a lab with: its
+// day, time, place and seats, no description or cover
+const SUMMARY_SELECT = {
+    labId: true, title: true, date: true, startTime: true, endTime: true, location: true, checkinOpen: true,
+    capacity: true, published: true, acceptingRsvps: true, nonmemberPrice: true, paymentDueOverride: true
 }
 
 // 'HH:MM' — what <input type="time"> hands back, same rule as events.
@@ -107,6 +117,7 @@ const HOLDS_SPOT = ['rsvped', 'attended', 'offered']
 // as a request per card.
 router.get('/', async (req, res) => {
     const { when } = req.query
+    const summary = req.query.fields === 'summary'
 
     const where = {}
     if (when === 'upcoming') { where.date = { gte: new Date() } }
@@ -119,33 +130,45 @@ router.get('/', async (req, res) => {
         const staff = LAB_STAFF.includes(req.role)
         if (req.role === 'jboard') { where.OR = [{ published: true }, { jboardCanEdit: true }] }
         else if (!staff) { where.published = true }
-        const owe = await duesLookup(prisma, req.userId)
-        const labs = await prisma.lab.findMany({
-            where,
-            select: {
-                ...PREVIEW_SELECT,
-                // at most one row — the pair is the primary key
-                members: {
-                    where: { memberId: req.userId },
-                    select: { attendanceStatus: true, quizPassed: true }
+        const officer = RANK_OFFICER.includes(req.role)
+        // all at once: none of them waits on another. The waitlist counts
+        // and the drafts are asked of the same labs by the same filter
+        // rather than by the ids the first one finds.
+        const [owe, labs, queues, drafted] = await Promise.all([
+            duesLookup(prisma, req.userId),
+            prisma.lab.findMany({
+                where,
+                select: {
+                    ...(summary ? SUMMARY_SELECT : PREVIEW_SELECT),
+                    // at most one row — the pair is the primary key
+                    members: {
+                        where: { memberId: req.userId },
+                        select: { attendanceStatus: true, quizPassed: true }
+                    },
+                    _count: { select: { members: { where: TAKEN } } },
+                    ...(officer ? { jboardCanEdit: true } : {})
                 },
-                _count: { select: { members: { where: TAKEN } } },
-                ...(RANK_OFFICER.includes(req.role) ? { draft: true, jboardCanEdit: true } : {})
-            },
-            orderBy: { date: when === 'past' ? 'desc' : 'asc' }
-        })
-        const queues = await prisma.memberLab.groupBy({
-            by: ['labId'],
-            where: { ...WAITING, labId: { in: labs.map((lab) => lab.labId) } },
-            _count: true
-        })
+                orderBy: { date: when === 'past' ? 'desc' : 'asc' }
+            }),
+            prisma.memberLab.groupBy({
+                by: ['labId'],
+                where: { ...WAITING, lab: where },
+                _count: true
+            }),
+            // which have unpublished edits parked — asked as a filter, so
+            // the drafts themselves (a whole lab's text each) stay put
+            officer
+                ? prisma.lab.findMany({ where: { ...where, NOT: { draft: { equals: Prisma.DbNull } } }, select: { labId: true } })
+                : []
+        ])
         const waiting = new Map(queues.map((queue) => [queue.labId, queue._count]))
+        const parked = new Set(drafted.map((lab) => lab.labId))
 
-        res.json(labs.map(({ members, _count, draft, ...lab }) => ({
+        res.json(labs.map(({ members, _count, ...lab }) => ({
             ...lab,
             // officers: whether there are unpublished edits waiting on it
             // (j-board only hears about it on a lab they can edit)
-            hasDraft: draft != null && (staff || lab.jboardCanEdit === true),
+            hasDraft: parked.has(lab.labId) && (staff || lab.jboardCanEdit === true),
             // the true total, this person included — the card doesn't have to
             // add itself back in
             taken: _count.members,
@@ -178,30 +201,32 @@ router.get('/:id', async (req, res) => {
     if (isNaN(labId)) { return res.status(400).json({ message: 'Invalid lab id' }) }
 
     try {
-        const link = await prisma.memberLab.findUnique({
-            where: { memberId_labId: { memberId: req.userId, labId } }
-        })
         const officer = RANK_OFFICER.includes(req.role)
+        // everything that doesn't depend on their row, alongside it
+        const [link, taken, waitlistCount, owe] = await Promise.all([
+            prisma.memberLab.findUnique({
+                where: { memberId_labId: { memberId: req.userId, labId } }
+            }),
+            prisma.memberLab.count({ where: { labId, ...TAKEN } }),
+            prisma.memberLab.count({ where: { labId, ...WAITING } }),
+            duesLookup(prisma, req.userId)
+        ])
         const unlocked = officer || link?.quizPassed === true
         const quizOpen = !unlocked && link?.attendanceStatus === 'attended'
 
         const lab = unlocked
             ? await prisma.lab.findUnique({
                 where: { labId },
-                include: { lessons: true, quizQuestions: QUIZ_SELECT }
+                include: { lessons: true, quizQuestions: QUIZ_SELECT },
+                // an officer's editor loads the parked edits too
+                ...(officer ? { omit: { draft: false } } : {})
             })
             : await prisma.lab.findUnique({
                 where: { labId },
-                select: { ...PREVIEW_SELECT, ...(quizOpen ? { quizQuestions: QUIZ_SELECT } : {}) }
+                select: { ...PREVIEW_SELECT, prelabPdfName: true, ...(quizOpen ? { quizQuestions: QUIZ_SELECT } : {}) }
             })
         if (!lab || (!lab.published && !officer)) { return res.status(404).json({ message: 'Lab not found' }) }
-
-        const [taken, waitlistCount, owe, prelab] = await Promise.all([
-            prisma.memberLab.count({ where: { labId, ...TAKEN } }),
-            prisma.memberLab.count({ where: { labId, ...WAITING } }),
-            duesLookup(prisma, req.userId),
-            prisma.lab.findUnique({ where: { labId }, select: { prelabPdfName: true } })
-        ])
+        const prelab = { prelabPdfName: lab.prelabPdfName }
 
         // everyone who joined the queue before this person, plus them
         let waitlistPosition = null
@@ -218,14 +243,14 @@ router.get('/:id', async (req, res) => {
 
         // what paying would do for them, holding a spot or an offer of one
         const standing = ['rsvped', 'offered'].includes(link?.attendanceStatus)
-            ? await payable(prisma, req.userId, 'lab', labId)
+            ? await payable(prisma, req.userId, 'lab', labId, lab)
             : null
 
         // the file itself is its own request (GET /:id/lesson) — this only says
         // whether there is one
         // the drafts are the officers' business — a member who passed gets the
         // full row but not what's still being worked on
-        const { lessonPdfName, draft, quizDraft, ...rest } = lab
+        const { lessonPdfName, prelabPdfName, draft, quizDraft, ...rest } = lab
         res.json({
             unlocked,
             ...rest,
@@ -371,7 +396,10 @@ const TEXT_FIELDS = ['title', 'location', 'description', 'image', 'ingredients',
 function labData(body) {
     const data = {}
     for (const field of TEXT_FIELDS) {
-        if (body[field] !== undefined) { data[field] = body[field] === '' && field !== 'title' ? null : body[field] }
+        // the cover: the address the editor was handed (GET /api/img/...)
+        // means it's unchanged, and stays out of the save
+        const value = field === 'image' ? readImage(body[field]) : body[field]
+        if (value !== undefined) { data[field] = value === '' && field !== 'title' ? null : value }
     }
     if (body.startTime !== undefined) {
         if (body.startTime && !TIME.test(body.startTime)) { return { error: 'startTime must be HH:MM' } }
@@ -603,7 +631,10 @@ router.put('/:id', requireRole('officer'), requireLabEditor('id'), async (req, r
                 // stored as the body was sent, so the editor can load it back
                 ? { draft: Object.fromEntries(
                     [...TEXT_FIELDS, 'startTime', 'endTime', 'date', 'capacity', 'nonmemberPrice', 'paymentDueOverride']
-                        .filter((field) => req.body[field] !== undefined)
+                        // an untouched cover isn't parked: it's the live
+                        // one already, and a second copy of it would ride
+                        // along with every read of the draft
+                        .filter((field) => (field === 'image' ? readImage(req.body.image) : req.body[field]) !== undefined)
                         .map((field) => [field, req.body[field]])
                 ) }
                 : { ...data, published: false }
@@ -772,7 +803,7 @@ router.put('/:labId/quiz', requireRole('officer'), requireLabEditor('labId'), as
         if (!lab) { return res.status(404).json({ message: 'Lab not found' }) }
 
         if (publish !== true) {
-            await prisma.lab.update({ where: { labId }, data: { quizDraft: clean } })
+            await prisma.lab.update({ where: { labId }, data: { quizDraft: clean }, select: { labId: true } })
             return res.json({ message: 'Draft saved' })
         }
 
@@ -796,7 +827,7 @@ router.put('/:labId/quiz', requireRole('officer'), requireLabEditor('labId'), as
                     data: q.options.map((o) => ({ questionId: created.questionId, ...o }))
                 })
             }
-            await tx.lab.update({ where: { labId }, data: { quizDraft: null } })
+            await tx.lab.update({ where: { labId }, data: { quizDraft: null }, select: { labId: true } })
         })
         res.json({ message: 'Quiz published', count: live.length })
     } catch (err) {
@@ -840,7 +871,7 @@ router.post('/:labId/rsvp', async (req, res) => {
     if (isNaN(labId)) { return res.status(400).json({ message: 'Invalid lab id' }) }
 
     try {
-        const lab = await prisma.lab.findUnique({ where: { labId } })
+        const lab = await prisma.lab.findUnique({ where: { labId }, select: PARENT_SELECT.lab })
         if (!lab || !lab.published) { return res.status(404).json({ message: 'Lab not found' }) }
 
         const existing = await prisma.memberLab.findUnique({
@@ -904,8 +935,9 @@ router.post('/:labId/rsvp', async (req, res) => {
         if (result.code === 'WAITLISTED') {
             // someone waiting is what makes missed confirmation and payment
             // deadlines count — see waitingFor in src/offers.js
-            expireOffers().catch((err) => console.error(`Offer sweep failed: ${err.message}`))
-            enforcePaymentRules().catch((err) => console.error(`Payment sweep failed: ${err.message}`))
+            // this one's, not everything's (the hourly run has the rest)
+            expireOffers({ only: ['lab', labId] }).catch((err) => console.error(`Offer sweep failed: ${err.message}`))
+            enforcePaymentRules(new Date(), { only: ['lab', labId] }).catch((err) => console.error(`Payment sweep failed: ${err.message}`))
             return res.status(202).json({
                 code: 'WAITLISTED',
                 message: 'Lab is full. You are on the waitlist and will be offered a spot if one opens',

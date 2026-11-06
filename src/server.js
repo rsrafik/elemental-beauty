@@ -1,4 +1,5 @@
 import express from 'express'
+import compression from 'compression'
 import rateLimit from 'express-rate-limit'
 import path, { dirname } from 'path'
 import { fileURLToPath } from 'url'
@@ -15,6 +16,7 @@ import transactionRoutes from './routes/transactionRoutes.js'
 import financeCategoryRoutes from './routes/financeCategoryRoutes.js'
 import paymentMethodRoutes from './routes/paymentMethodRoutes.js'
 import paymentRoutes from './routes/paymentRoutes.js'
+import imageRoutes from './routes/imageRoutes.js'
 import calendarRoutes, { feedRouter as calendarFeedRoutes } from './routes/calendarRoutes.js'
 import authMiddleware from './middleware/authMiddleware.js'
 import requireRole, { booksAccess } from './middleware/requireRole.js'
@@ -88,10 +90,15 @@ const __dirname = dirname(__filename)
 
 // Middleware
 //
-// Cover images still travel as data URLs inside the lab/event JSON (see the
-// edit pages), and a phone photo is a few megabytes of base64 — well past
-// express's 100kb default.
+// A cover, avatar or receipt is still uploaded as a data URL inside the JSON
+// (see the edit pages), and a photo is a megabyte or two of base64 — well past
+// express's 100kb default. They're served back on their own (/api/img).
 app.use(express.json({ limit: '15mb' }))
+
+// JSON and the page's HTML, JS and CSS gzipped on the way out — a big list is
+// a fraction of its size over the wire. Pictures (GET /api/img/...) are
+// already compressed and skip it (the filter only takes text types).
+app.use(compression())
 
 // Serve the built Next.js frontend (copied into public/ by `npm run build:frontend`).
 // extensions: ['html'] lets /labs resolve to public/labs.html — Next's static
@@ -108,7 +115,23 @@ const PUBLIC = path.join(__dirname, '../public')
 // anyone signed in on to /dashboard), and the landing and about-us pages are
 // off. See frontend/app/page.js.
 app.get(['/', '/about-us'], (req, res) => { res.redirect(302, '/login') })
-app.use(express.static(PUBLIC, { extensions: ['html'], redirect: false }))
+app.use(express.static(PUBLIC, {
+    extensions: ['html'],
+    redirect: false,
+    // Next names its bundles by their content (/_next/static/...), so they
+    // never change under the same name: kept a year, never re-checked. The
+    // pages themselves are re-checked every load (a 304 when nothing changed)
+    // so a deploy shows up at once; the rest (images, fonts) for a day.
+    setHeaders(res, file) {
+        if (file.includes(`${path.sep}_next${path.sep}static${path.sep}`)) {
+            res.setHeader('Cache-Control', 'public, max-age=31536000, immutable')
+        } else if (file.endsWith('.html')) {
+            res.setHeader('Cache-Control', 'no-cache')
+        } else {
+            res.setHeader('Cache-Control', 'public, max-age=86400')
+        }
+    }
+}))
 app.get(/^\/(?!api\/).+/, (req, res, next) => {
     const page = path.join(PUBLIC, `${req.path.replace(/\/+$/, '')}.html`)
     // never outside public/, whatever the path says
@@ -127,6 +150,9 @@ app.use('/api/auth', authLimiter, authRoutes)
 // a waitlist offer's "accept" link — no login, the link is the proof — held to
 // the same limit as the other token-in-hand routes
 app.use('/api/offers', authLimiter, offerRoutes)
+// pictures, one at a time and cached (see the router) — each kind is held to
+// who can see the row it's on
+app.use('/api/img', authMiddleware, imageRoutes)
 app.use('/api/members', authMiddleware, requireRole('member'), memberRoutes)
 app.use('/api/labs', authMiddleware, requireRole('member'), labRoutes)
 app.use('/api/events', authMiddleware, requireRole('member'), eventRoutes)

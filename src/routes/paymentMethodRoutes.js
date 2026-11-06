@@ -1,5 +1,7 @@
 import express from 'express'
 import prisma from '../prismaClient.js'
+import { memo } from '../memo.js'
+import { readImage } from '../images.js'
 import { keepsBooks } from '../payments.js'
 import { goggleRentalPrice } from '../payable.js'
 
@@ -28,8 +30,9 @@ function readMethod(body, { keep = false } = {}) {
     const title = typeof body.title === 'string' ? body.title.trim().slice(0, 60) : ''
     if (!title) { return { error: 'Give the payment platform a name' } }
     const description = typeof body.description === 'string' ? body.description.trim().slice(0, 200) || null : null
-    if (keep && body.image === undefined) { return { fields: { title, description } } }
-    const image = body.image ?? null
+    // the address the card was handed (GET /api/img/...) is the QR it has
+    if (keep && readImage(body.image) === undefined) { return { fields: { title, description } } }
+    const image = readImage(body.image) ?? null
     if (image !== null && (typeof image !== 'string' || !IMAGE.test(image) || image.length > MAX_IMAGE)) {
         return { error: 'The QR code has to be a picture (PNG or JPEG), under 2MB' }
     }
@@ -38,7 +41,9 @@ function readMethod(body, { keep = false } = {}) {
 
 router.get('/', async (req, res) => {
     try {
-        res.json(await prisma.paymentMethod.findMany({ orderBy: { methodId: 'asc' } }))
+        // the QR codes' addresses, not the codes — and kept (src/memo.js):
+        // every pay box asks, the treasurer changes them rarely
+        res.json(await memo('methods', 60_000, () => prisma.paymentMethod.findMany({ orderBy: { methodId: 'asc' } })))
     } catch (err) {
         console.error(err.message)
         res.sendStatus(500)

@@ -1,5 +1,6 @@
 import jwt from 'jsonwebtoken'
 import prisma from '../prismaClient.js'
+import { memo } from '../memo.js'
 import { ADVISOR_REFUSAL, advisorMayDo } from './advisor.js'
 
 async function authMiddleware(req, res, next) {
@@ -35,12 +36,14 @@ async function authMiddleware(req, res, next) {
         // 401 is the honest answer, and it's the one the client acts on: it
         // clears the token and sends them to /login.
         //
-        // Role is looked up fresh on every request — promotions apply instantly,
-        // and a user with no members row gets role = null (blocked by requireRole)
-        const user = await prisma.user.findUnique({
+        // Role is looked up fresh — kept for a few seconds at most (src/
+        // memo.js), and dropped the moment any account or membership changes,
+        // so a promotion still applies on the next request. A user with no
+        // members row gets role = null (blocked by requireRole).
+        const user = await memo(`auth:${decoded.id}`, 30_000, () => prisma.user.findUnique({
             where: { userId: decoded.id },
             select: { userId: true, member: { select: { role: true, jboardTeams: true } } }
-        })
+        }))
         if (!user) { return res.status(401).json({ message: 'Invalid token' }) }
 
         req.userId = user.userId

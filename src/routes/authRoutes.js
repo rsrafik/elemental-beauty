@@ -103,7 +103,9 @@ router.post('/register', async (req, res) => {
 // `role: null` is the honest answer for them rather than a 403.
 router.get('/me', authMiddleware, async (req, res) => {
     try {
-        const user = await prisma.user.findUnique({
+        // the account and this year's dues together — every page load asks
+        const schoolYear = schoolYearOf(clubToday())
+        const [user, paid] = await Promise.all([prisma.user.findUnique({
             where: { userId: req.userId },
             select: {
                 userId: true,
@@ -113,7 +115,7 @@ router.get('/me', authMiddleware, async (req, res) => {
                 lastName: true,
                 instagram: true,
                 discord: true,
-                profilePicture: true,
+                pictureUrl: true,
                 emailVerified: true,
                 waiverSigned: true,
                 waiverName: true,
@@ -121,14 +123,14 @@ router.get('/me', authMiddleware, async (req, res) => {
                 createdAt: true,
                 member: { select: { role: true, points: true, dateJoined: true, jboardTeams: true } }
             }
-        })
-        if (!user) { return res.status(404).json({ message: 'Account not found' }) }
+        }),
         // this year's dues paid: a VIP — and j-board who've paid count as one,
         // though their role stays j-board
-        const paid = await prisma.duesPayment.findUnique({
-            where: { memberId_schoolYear: { memberId: req.userId, schoolYear: schoolYearOf(clubToday()) } },
+        prisma.duesPayment.findUnique({
+            where: { memberId_schoolYear: { memberId: req.userId, schoolYear } },
             select: { duesId: true }
-        })
+        })])
+        if (!user) { return res.status(404).json({ message: 'Account not found' }) }
 
         const { member, ...account } = user
         res.json({

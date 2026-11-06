@@ -1,4 +1,5 @@
 import prisma from './prismaClient.js'
+import { memo } from './memo.js'
 import { sendEmail } from './email.js'
 import { actionEmail } from './emailTemplate.js'
 import { APP_URL } from './verification.js'
@@ -7,7 +8,7 @@ import { clubToday, dateColumn, startsAt } from './clubTime.js'
 import { ledgerSource, recordDues } from './dues.js'
 import { lockParent, moveToWaitlist, notifyMovedToWaitlist, waitingFor } from './offers.js'
 import {
-    HOLDS, ITEMS, LATE_HOURS, REMIND_HOURS, REVISE_HOURS,
+    HOLDS, ITEMS, LATE_HOURS, PARENT_SELECT, REMIND_HOURS, REVISE_HOURS,
     dueCallout, dueLinkOf, dueText, dueWhen, goggleDueAt, offerLapse, payable, paymentDue, paymentDueAt, reviseBy
 } from './payable.js'
 
@@ -241,7 +242,13 @@ export async function declinePayment(tx, payment, reason) {
 // A payment waiting to be checked keeps their spot through all of it, and so
 // does one sent back that's still inside its 48 hours. Returns how many were
 // moved.
-export async function enforcePaymentRules(now = new Date()) {
+//
+// `only` ([kindName, id]) narrows it to one lab or event — what its check-in
+// page and a sign-up there need, without sweeping every other one (the hourly
+// run does those).
+export async function enforcePaymentRules(now = new Date(), { only = null } = {}) {
+    const kinds = only ? [only[0]] : Object.keys(ITEMS)
+    const mine = (kindName) => (only ? { [ITEMS[kindName].key]: only[1] } : {})
     const cutoff = new Date(now.getTime() - REVISE_HOURS * 3_600_000)
     // kindName -> lab or event id -> memberId -> { reason, missedBy, paymentId }
     const overdue = { lab: new Map(), event: new Map() }
@@ -256,9 +263,9 @@ export async function enforcePaymentRules(now = new Date()) {
         // is the day before)
         where: {
             status: 'rejected', reviewedAt: { lte: cutoff }, kind: { in: ['fee', 'dues'] },
-            OR: [{ labId: { not: null } }, { eventId: { not: null } }]
+            ...(only ? mine(only[0]) : { OR: [{ labId: { not: null } }, { eventId: { not: null } }] })
         },
-        include: { lab: true, event: true }
+        include: { lab: { select: PARENT_SELECT.lab }, event: { select: PARENT_SELECT.event } }
     })
     for (const payment of stale) {
         const [kindName, id] = itemOf(payment)
@@ -279,7 +286,7 @@ export async function enforcePaymentRules(now = new Date()) {
             await prisma.memberPayment.update({ where: { paymentId: payment.paymentId }, data: { status: 'declined' } })
             continue
         }
-        const standing = await payable(prisma, payment.memberId, kindName, id)
+        const standing = await payable(prisma, payment.memberId, kindName, id, parent)
         if (!standing?.owes || standing.sent) continue
         add(kindName, id, payment.memberId, { reason: 'not_revised', paymentId: payment.paymentId })
     }
@@ -287,14 +294,15 @@ export async function enforcePaymentRules(now = new Date()) {
     // the due date, and the 48 hours of owing late (with their reminders), and
     // offered a spot owing: a reminder
     const remindedBefore = new Date(now.getTime() - REMIND_HOURS * 3_600_000)
-    for (const kindName of Object.keys(ITEMS)) {
+    for (const kindName of kinds) {
         const kind = ITEMS[kindName]
         const rows = await prisma[kind.link].findMany({
             where: {
+                ...mine(kindName),
                 attendanceStatus: { in: ['rsvped', 'offered'] },
                 [kind.model]: { date: { gte: new Date(now.getTime() - 2 * 86_400_000) } }
             },
-            include: { [kind.model]: true }
+            include: { [kind.model]: { select: PARENT_SELECT[kindName] } }
         })
         for (const link of rows) {
             const parent = link[kind.model]
@@ -305,7 +313,7 @@ export async function enforcePaymentRules(now = new Date()) {
                 if (!link.offerSentAt) continue
                 const last = Math.max(link.offerSentAt.getTime(), link.payRemindedAt?.getTime() ?? 0)
                 if (last > remindedBefore.getTime()) continue
-                const standing = await payable(prisma, link.memberId, kindName, id)
+                const standing = await payable(prisma, link.memberId, kindName, id, parent)
                 if (!standing?.owes || standing.sent) continue
                 await remindOne(kindName, parent, link, standing, now)
                 continue
@@ -313,7 +321,7 @@ export async function enforcePaymentRules(now = new Date()) {
             if (paymentDueAt(parent, link).getTime() > now.getTime()) {
                 if (!link.payBy) continue
                 if (link.payRemindedAt && link.payRemindedAt.getTime() > remindedBefore.getTime()) continue
-                const standing = await payable(prisma, link.memberId, kindName, id)
+                const standing = await payable(prisma, link.memberId, kindName, id, parent)
                 if (!standing?.owes || standing.sent || standing.fixBy) continue
                 await remindOne(kindName, parent, link, standing, now)
                 continue
@@ -325,7 +333,7 @@ export async function enforcePaymentRules(now = new Date()) {
                 await owingLate(kindName, id, link.memberId, { now })
                 continue
             }
-            const standing = await payable(prisma, link.memberId, kindName, id)
+            const standing = await payable(prisma, link.memberId, kindName, id, parent)
             if (!standing?.owes || standing.sent) continue
             // still fixing one sent back
             const fixing = await prisma.memberPayment.count({
@@ -338,11 +346,13 @@ export async function enforcePaymentRules(now = new Date()) {
     }
 
     // the due date's been seen — once per lab or event, unless it's moved
-    for (const kindName of Object.keys(ITEMS)) {
+    for (const kindName of kinds) {
         const kind = ITEMS[kindName]
         // (a lab can be a draft with no date; an event always has one)
         const parents = await prisma[kind.model].findMany({
-            where: { paymentsDueSweptAt: null, ...(kindName === 'lab' ? { date: { not: null } } : {}) }
+            where: { ...mine(kindName), paymentsDueSweptAt: null, ...(kindName === 'lab' ? { date: { not: null } } : {}) },
+            // what paymentDueAt reads
+            select: { [kind.key]: true, date: true, startTime: true, paymentDueOverride: true }
         })
         for (const parent of parents) {
             const due = paymentDueAt(parent)
@@ -353,7 +363,7 @@ export async function enforcePaymentRules(now = new Date()) {
 
     // and the waitlist decides who it costs
     let moved = 0
-    for (const kindName of Object.keys(ITEMS)) {
+    for (const kindName of kinds) {
         const kind = ITEMS[kindName]
         for (const [id, people] of overdue[kindName]) {
             const memberIds = [...people.keys()]
@@ -392,13 +402,13 @@ export async function enforcePaymentRules(now = new Date()) {
 export async function owingLate(kindName, id, memberId, { now = new Date(), remind = true } = {}) {
     const kind = ITEMS[kindName]
     const where = { [kind.compound]: { memberId, [kind.key]: id } }
-    const link = await prisma[kind.link].findUnique({ where, include: { [kind.model]: true } })
+    const link = await prisma[kind.link].findUnique({ where, include: { [kind.model]: { select: PARENT_SELECT[kindName] } } })
     const parent = link?.[kind.model]
     if (link?.attendanceStatus !== 'rsvped' || link.payBy || !parent?.date) return false
     if (startsAt(parent).getTime() <= now.getTime()) return false
     const due = paymentDue(parent, link)
     if (due.at.getTime() > now.getTime()) return false
-    const standing = await payable(prisma, memberId, kindName, id)
+    const standing = await payable(prisma, memberId, kindName, id, parent)
     if (!standing?.owes || standing.sent || standing.fixBy) return false
     const started = await prisma[kind.link].update({
         where,
@@ -676,7 +686,7 @@ export async function notifyPayer(payment, status = payment.status) {
 export async function notifyDoorUndone({ memberId, kindName, id, title }) {
     const who = await prisma.user.findUnique({ where: { userId: memberId }, select: { email: true } })
     if (!who) return
-    const parent = await prisma[ITEMS[kindName].model].findUnique({ where: { [ITEMS[kindName].key]: id } })
+    const parent = await prisma[ITEMS[kindName].model].findUnique({ where: { [ITEMS[kindName].key]: id }, select: PARENT_SELECT[kindName] })
     // taken back after the due date: their 48 hours start now (this email's
     // the notice)
     await owingLate(kindName, id, memberId, { remind: false })
@@ -717,7 +727,9 @@ function attachment(dataUrl, name) {
 // (`offerBy`) or else before it starts. Returns how many went out (or were
 // printed, with no mail service).
 export async function remindUnpaid(item, people, { offered = false } = {}) {
-    const methods = await prisma.paymentMethod.findMany({ orderBy: { methodId: 'asc' } })
+    // the QR codes go along as attachments — the one place they're read
+    // whole outside GET /api/img
+    const methods = await memo('methods:full', 60_000, () => prisma.paymentMethod.findMany({ orderBy: { methodId: 'asc' }, omit: { image: false } }))
     const attachments = methods.map((method) => attachment(method.image, method.title)).filter(Boolean)
     const ways = methods.map((method) => `• ${method.title}${method.description ? `: ${method.description}` : ''}`)
     const url = `${APP_URL}${ITEMS[item.kind].page(item.id)}`

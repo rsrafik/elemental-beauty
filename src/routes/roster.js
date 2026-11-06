@@ -7,6 +7,8 @@ import { csvCell } from '../csv.js'
 import { DUES_ANSWERS, DUES_EXEMPT, asksDues, doorOwed, duesAnswerProblem, duesUnpaid, readPaidBy, schoolYearOf, settleDues } from '../dues.js'
 import { clubToday } from '../clubTime.js'
 import { lastSends, recordSend } from '../emailSends.js'
+import { PARENT_SELECT } from '../payable.js'
+import { versionOf } from '../changes.js'
 import { PAYMENT_INCLUDE, enforcePaymentRules, keepsBooks, notifyDoorUndone, notifyPayer, remindUnpaid, undoDoorPayment } from '../payments.js'
 
 // The officer check-in page's roster, shared by labs and events: the same
@@ -164,6 +166,18 @@ export function mountRoster(router, kind) {
         }
     }
 
+    // Whether the roster (or the payments waiting on it) has changed since
+    // the page last read it — `v` moves on every write to them (src/
+    // changes.js). Answered from memory: the page asks every few seconds and
+    // only reads the roster again when it's moved, so an open check-in page
+    // costs the database next to nothing while nothing's happening.
+    router.get('/:id/roster/version', ...staffOnly, (req, res) => {
+        const parentId = parseInt(req.params.id)
+        if (isNaN(parentId)) { return res.status(400).json({ message: `Invalid ${label.toLowerCase()} id` }) }
+        res.set('Cache-Control', 'no-store')
+        res.json({ v: versionOf(kindName, parentId) })
+    })
+
     router.get('/:id/roster', ...staffOnly, async (req, res) => {
         const parentId = parseInt(req.params.id)
         if (isNaN(parentId)) { return res.status(400).json({ message: `Invalid ${label.toLowerCase()} id` }) }
@@ -171,10 +185,12 @@ export function mountRoster(router, kind) {
         try {
             // an offer that's run out moves on before anyone sees it, and so
             // does a spot the waitlist needs from someone overdue
-            // (src/payments.js)
-            await expireOffers()
-            await enforcePaymentRules()
-            const item = await parent.findUnique({ where: { [key]: parentId } })
+            // (src/payments.js) — this one's, not every lab's and event's
+            // (the hourly run has those)
+            const only = [kindName, parentId]
+            await expireOffers({ only })
+            await enforcePaymentRules(new Date(), { only })
+            const item = await parent.findUnique({ where: { [key]: parentId }, select: PARENT_SELECT[kindName] })
             if (!item) { return res.status(404).json({ message: `${label} not found` }) }
             const rows = await link.findMany({
                 where: { [key]: parentId },
@@ -298,7 +314,7 @@ export function mountRoster(router, kind) {
         const parentId = parseInt(req.params.id)
         if (isNaN(parentId)) { return res.status(400).json({ message: `Invalid ${label.toLowerCase()} id` }) }
         try {
-            const item = await parent.findUnique({ where: { [key]: parentId } })
+            const item = await parent.findUnique({ where: { [key]: parentId }, select: PARENT_SELECT[kindName] })
             if (!item) { return res.status(404).json({ message: `${label} not found` }) }
             const rows = await link.findMany({
                 where: { [key]: parentId, attendanceStatus: { in: ['rsvped', 'offered'] }, doorPayment: null },
@@ -397,7 +413,7 @@ export function mountRoster(router, kind) {
 
         const { action } = req.body
         try {
-            const row = await parent.findUnique({ where: { [key]: parentId } })
+            const row = await parent.findUnique({ where: { [key]: parentId }, select: PARENT_SELECT[kindName] })
             if (!row) { return res.status(404).json({ message: `${label} not found` }) }
 
             if (action === 'add') {
@@ -421,8 +437,8 @@ export function mountRoster(router, kind) {
                 })
                 // someone waiting is what makes missed confirmation and
                 // payment deadlines count — see waitingFor in src/offers.js
-                await expireOffers()
-                await enforcePaymentRules()
+                await expireOffers({ only: [kindName, parentId] })
+                await enforcePaymentRules(new Date(), { only: [kindName, parentId] })
                 return res.status(201).json({ message: 'Added to the waitlist' })
             }
 

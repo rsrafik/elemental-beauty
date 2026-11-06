@@ -1,5 +1,6 @@
 import { clubFormat, clubInstant, clubToday, startsAt } from './clubTime.js'
 import { DUES_EXEMPT, asksDues, schoolYearOf } from './dues.js'
+import { memo } from './memo.js'
 
 // Where someone stands on paying for one lab or event — what the door would
 // charge them, whether they've sent a payment in, and when it's due. Its own
@@ -30,6 +31,23 @@ import { DUES_EXEMPT, asksDues, schoolYearOf } from './dues.js'
 export const ITEMS = {
     lab: { model: 'lab', link: 'memberLab', key: 'labId', compound: 'memberId_labId', page: (id) => `/labs/view?id=${id}` },
     event: { model: 'event', link: 'memberEvent', key: 'eventId', compound: 'memberId_eventId', page: (id) => `/events/view?id=${id}` }
+}
+
+// A lab's or event's own row as the spot rules read it: its day, time, place,
+// seats, price and due dates — not the long text, links or pictures only its
+// page shows. Every sweep reads these by the dozen (a row per person signed
+// up), so they read this much and no more.
+const PARENT_COMMON = {
+    title: true, date: true, startTime: true, endTime: true, location: true, capacity: true,
+    nonmemberPrice: true, paymentDueOverride: true, paymentsDueSweptAt: true,
+    confirmSentAt: true, reminderSentAt: true, checkinOpen: true
+}
+export const PARENT_SELECT = {
+    lab: { labId: true, ...PARENT_COMMON, published: true, acceptingRsvps: true, jboardCanEdit: true, prelabPdfName: true },
+    event: {
+        eventId: true, ...PARENT_COMMON, type: true, track: true, categoryId: true, team: true,
+        hideFromEvents: true, meetingUrl: true, createdById: true
+    }
 }
 
 // the spot a fee is paid on — signed up, not just queued for one
@@ -183,14 +201,16 @@ export function reviseBy(reviewedAt) {
 //     choices    [{ kind: 'fee' | 'dues', amount }] — what they could pay
 //                for now }
 //
-// Null if the lab or event doesn't exist.
-export async function payable(db, memberId, kindName = null, id = null) {
+// Null if the lab or event doesn't exist. `known` is its row when the caller
+// has already read it (with at least title, date, startTime, nonmemberPrice,
+// paymentDueOverride, and an event's track), so it isn't read twice.
+export async function payable(db, memberId, kindName = null, id = null, known = null) {
     let item = null
     let link = null
     let row = null
     if (kindName) {
         const kind = ITEMS[kindName]
-        row = await db[kind.model].findUnique({ where: { [kind.key]: id } })
+        row = known ?? await db[kind.model].findUnique({ where: { [kind.key]: id }, select: PARENT_SELECT[kindName] })
         if (!row) return null
         item = { kind: kindName, id, title: row.title, date: row.date }
         link = await db[kind.link].findUnique({ where: { [kind.compound]: { memberId, [kind.key]: id } } })
@@ -278,7 +298,7 @@ export async function duesDeadlines(db, memberId, now = new Date()) {
         const kind = ITEMS[kindName]
         const rows = await db[kind.link].findMany({
             where: { memberId, attendanceStatus: { in: ['rsvped', 'offered'] } },
-            include: { [kind.model]: true }
+            include: { [kind.model]: { select: PARENT_SELECT[kindName] } }
         })
         for (const link of rows) {
             const parent = link[kind.model]
@@ -290,7 +310,7 @@ export async function duesDeadlines(db, memberId, now = new Date()) {
     const deadlines = []
     for (const { kindName, link, parent, starts } of spots) {
         const id = parent[ITEMS[kindName].key]
-        const standing = await payable(db, memberId, kindName, id)
+        const standing = await payable(db, memberId, kindName, id, parent)
         if (!standing?.owes || standing.sent) continue
         let due
         if (link.attendanceStatus === 'offered') {
@@ -325,7 +345,9 @@ export function schoolYearOfLab(lab) {
 
 // what renting goggles costs (0 = not offered)
 export async function goggleRentalPrice(db) {
-    const row = await db.clubSettings.findUnique({ where: { settingId: 1 } })
+    // kept (src/memo.js) — every lab page and sweep asks, the treasurer
+    // changes it once in a while
+    const row = await memo('goggles', 60_000, () => db.clubSettings.findUnique({ where: { settingId: 1 }, select: { goggleRentalPrice: true } }))
     return Number(row?.goggleRentalPrice ?? 0)
 }
 
@@ -347,7 +369,7 @@ export function goggleDueAt(lab) {
 // Null if the lab doesn't exist.
 export async function goggleStanding(db, memberId, labId, now = new Date()) {
     const [lab, link, price, sent] = await Promise.all([
-        db.lab.findUnique({ where: { labId } }),
+        db.lab.findUnique({ where: { labId }, select: PARENT_SELECT.lab }),
         db.memberLab.findUnique({ where: { memberId_labId: { memberId, labId } } }),
         goggleRentalPrice(db),
         db.memberPayment.findFirst({
@@ -376,7 +398,7 @@ export async function goggleDeadlines(db, memberId, now = new Date()) {
     if (price <= 0) return []
     const rows = await db.memberLab.findMany({
         where: { memberId, attendanceStatus: { in: ['rsvped', 'offered'] } },
-        include: { lab: true }
+        include: { lab: { select: PARENT_SELECT.lab } }
     })
     const out = []
     for (const { lab } of rows) {
