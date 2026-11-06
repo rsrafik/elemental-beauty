@@ -3,6 +3,7 @@
 import { useEffect, useState } from 'react'
 import { useSession } from '@/lib/session'
 import { getToken } from '@/lib/api'
+import StoredImage from '@/components/StoredImage'
 
 // The salmon membership card. Click it to flip (3D rotateY) between the
 // front (member details) and the back (QR code). Front sets the height;
@@ -154,7 +155,7 @@ export default function ElementistPass() {
 						justify-center
 					">
 						{user?.profilePicture
-							? <img
+							? <StoredImage
 								src={user.profilePicture}
 								alt=""
 								className="

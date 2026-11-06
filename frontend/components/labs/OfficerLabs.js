@@ -12,6 +12,8 @@ import { QrPopup } from '@/components/labs/MemberLabQuiz'
 import { LeavePopup } from '@/components/labs/LabViewParts'
 import { canEditLab, canManageLabs } from '@/lib/roles'
 import { useSession } from '@/lib/session'
+import StoredImage from '@/components/StoredImage'
+import { SkeletonGrid } from '@/components/Skeleton'
 
 // /labs for officer / treasurer / admin: every lab on one sheet.
 //
@@ -321,7 +323,7 @@ function LabCard({ lab, onOpen, menu, onMenu, action = null, done = false }) {
 				bg-salmon-lightest
 			">
 				{image && (
-					<img
+					<StoredImage
 						src={image}
 						alt=""
 						className="
@@ -556,6 +558,8 @@ const GRID = `
 	px-3
 	pb-3
 `
+// the same columns as a map, for the placeholders' diagonal (Skeleton.js)
+const GRID_COLS = { base: 2, lg: 3, xl: 4, '2xl': 5 }
 
 // ---- page ------------------------------------------------------------------
 
@@ -566,6 +570,8 @@ export default function OfficerLabs({ openNew = false }) {
 	const manages = canManageLabs(user)
 	const signsUp = user?.role === 'jboard'
 	const [labs, setLabs] = useState([])
+	// false until the list is in — placeholders until then (Skeleton.js)
+	const [loaded, setLoaded] = useState(false)
 	// labs with an rsvp on its way, so a double click can't send two
 	const [rsvping, setRsvping] = useState(() => new Set())
 	// j-board's check-in code, up for an officer to scan
@@ -590,6 +596,7 @@ export default function OfficerLabs({ openNew = false }) {
 			.list()
 			.then((rows) => live && setLabs(rows.map(toCard)))
 			.catch((err) => live && setError(err.message))
+			.finally(() => live && setLoaded(true))
 		return () => { live = false }
 	}, [])
 
@@ -826,6 +833,7 @@ export default function OfficerLabs({ openNew = false }) {
 				</button>}
 			</div>
 
+			{!loaded && <SkeletonGrid className={GRID} cols={GRID_COLS} count={10} />}
 			<div className={GRID}>
 				{upcoming.map((lab) => (
 					<LabCard

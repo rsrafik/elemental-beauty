@@ -9,6 +9,12 @@ import { navFor, showInstagramFor } from '@/lib/nav'
 import { announcements as announcementsApi, members, labs as labsApi, events as eventsApi } from '@/lib/api'
 import { isoDate, today } from '@/lib/dates'
 
+// a number that hasn't arrived: a dimmed box where it goes, pulsing on its
+// place in the diagonal (Skeleton.js)
+function Pending({ wave = 0 }) {
+	return <span aria-hidden="true" className="skeleton inline-block align-middle h-[0.8em] w-[1.2em] rounded-[8px] bg-black/20" style={{ '--wave': wave }} />
+}
+
 function StatCard({ title, value, bg, valueColor }) {
 	return (
 		<div className={`
@@ -328,7 +334,7 @@ export default function MemberDashboard() {
 	useEffect(() => {
 		let live = true
 
-		Promise.all([labsApi.list(), eventsApi.list()])
+		Promise.all([labsApi.list({ summary: true }), eventsApi.list()])
 			.then(([labs, events]) => live && setWeek(buildWeek(labs, events)))
 			.catch(() => {})
 
@@ -445,7 +451,10 @@ export default function MemberDashboard() {
 						    empty one on its way to the real one. */}
 						{announcement === null
 							? 'Nothing new right now.'
-							: announcement?.body ?? ' '}
+							: announcement === undefined
+								// still on its way: a dimmed line, pulsing (Skeleton.js)
+								? <span aria-hidden="true" className="skeleton inline-block align-middle h-6 sm:h-8 w-3/4 rounded-full bg-black/15" />
+								: announcement.body}
 					</p>
 				</div>
 
@@ -469,12 +478,13 @@ export default function MemberDashboard() {
 						gap-y-4
 						lg:gap-y-6
 					">
-						{/* an em dash until the counts land, so the four cards keep
-						    their size instead of popping from 0 to the real number */}
-						<StatCard title="past labs" value={stats?.pastLabs ?? '—'} bg="bg-green" valueColor="text-green-dark" />
-						<StatCard title="rsvp'd labs" value={stats?.rsvpLabs ?? '—'} bg="bg-yellow-light" valueColor="text-yellow-dark" />
-						<StatCard title="past events" value={stats?.pastEvents ?? '—'} bg="bg-salmon-light" valueColor="text-salmon-dark" />
-						<StatCard title="rsvp'd events" value={stats?.rsvpEvents ?? '—'} bg="bg-orange" valueColor="text-orange-dark" />
+						{/* a pulsing placeholder until the counts land, so the four
+						    cards keep their size instead of popping from 0 to the
+						    real number — on the diagonal, like every grid's */}
+						<StatCard title="past labs" value={stats?.pastLabs ?? <Pending wave={0} />} bg="bg-green" valueColor="text-green-dark" />
+						<StatCard title="rsvp'd labs" value={stats?.rsvpLabs ?? <Pending wave={1} />} bg="bg-yellow-light" valueColor="text-yellow-dark" />
+						<StatCard title="past events" value={stats?.pastEvents ?? <Pending wave={1} />} bg="bg-salmon-light" valueColor="text-salmon-dark" />
+						<StatCard title="rsvp'd events" value={stats?.rsvpEvents ?? <Pending wave={2} />} bg="bg-orange" valueColor="text-orange-dark" />
 					</div>
 					{/* cloud overlapping the grid center */}
 					<div className="

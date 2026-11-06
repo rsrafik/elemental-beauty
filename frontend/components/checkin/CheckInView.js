@@ -1,5 +1,6 @@
 'use client'
 
+import usePoll from '@/lib/usePoll'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { canChange, keepsBooks } from '@/lib/roles'
 import { useRole } from '@/lib/session'
@@ -62,8 +63,14 @@ const BUTTON = `
 	px-[18px]
 `
 
-// how often the lists are re-read, to catch sign-ups and other officers
+// How often the page asks whether anything's changed — sign-ups, other
+// officers at the door, payments sent in. The answer comes from the server's
+// memory (GET /:id/roster/version), so asking is nearly free; the roster and
+// payments are only read again when it says they've moved.
 const POLL_MS = 5_000
+// ...and read again regardless this often, so a sign-up's offer running out
+// (which nothing writes until it's swept) still shows while the page is open
+const REFRESH_MS = 60_000
 
 function fullName(row) {
 	return [row.firstName, row.lastName].filter(Boolean).join(' ') || `@${row.username}`
@@ -504,8 +511,8 @@ function ManualAdd({ onAdd, people }) {
 				/>
 				<datalist id="checkin-people">
 					{people.map((person) => (
-						<option key={person.userId} value={person.user.username}>
-							{[person.user.firstName, person.user.lastName].filter(Boolean).join(' ')}
+						<option key={person.username} value={person.username}>
+							{[person.firstName, person.lastName].filter(Boolean).join(' ')}
 						</option>
 					))}
 				</datalist>
@@ -881,37 +888,33 @@ export default function CheckInView({ kind, id }) {
 		api.get(id)
 			.then((row) => live && setItem(row))
 			.catch((err) => live && setError(err.message))
-		api.roster(id)
-			.then((rows) => live && setRoster(rows))
-			.catch((err) => live && setError(err.message))
-		membersApi.list()
+		// just the handles and names, for "add by username"
+		membersApi.names()
 			.then((rows) => live && setPeople(rows))
 			.catch(() => {})
-		const timer = setInterval(() => {
-			api.roster(id).then((rows) => live && setRoster(rows)).catch(() => {})
-		}, POLL_MS)
 		return () => {
 			live = false
-			clearInterval(timer)
 		}
 	}, [api, id])
 
-	// the payments too, on the roster's beat (not for the advisor, who has no
-	// payments button)
+	// The roster and the payments waiting on it (not for the advisor, who has
+	// no payments button): read when the version moves, or once a minute —
+	// and not at all while the tab's in the background (usePoll). The tick
+	// re-renders the page too, which is what drops "start check-in" once the
+	// start time passes.
+	const seen = useRef({ version: null, at: 0 })
+	const [, setTick] = useState(0)
 	useEffect(() => {
-		if (!id || !changes) return
-		let live = true
-		const place = kind === 'lab' ? { labId: id } : { eventId: id }
-		const read = () => paymentsApi.list({ ...place, status: 'pending' })
-			.then((waiting) => live && setWaitingPayments(waiting))
-			.catch(() => {})
-		read()
-		const timer = setInterval(read, POLL_MS)
-		return () => {
-			live = false
-			clearInterval(timer)
-		}
-	}, [kind, id, changes])
+		seen.current = { version: null, at: 0 }
+	}, [id])
+	usePoll(async () => {
+		setTick((tick) => tick + 1)
+		const { v } = await api.rosterVersion(id)
+		const stale = Date.now() - seen.current.at > REFRESH_MS
+		if (v === seen.current.version && !stale) return
+		seen.current = { version: v, at: Date.now() }
+		await Promise.all([loadRoster(), changes ? loadPayments() : null])
+	}, POLL_MS, Boolean(id))
 
 	// "start check-in" / "close check-in": before the start time, whether the
 	// people signed up get their QR code on its page yet (members' pages read

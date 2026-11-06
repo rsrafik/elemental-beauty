@@ -8,7 +8,11 @@ export default defineConfig({
   migrations: {
     path: "prisma/migrations",
   },
+  // Migrations want a direct connection (they hold a lock across statements,
+  // which a transaction-mode pooler can't keep), so DIRECT_URL is used when
+  // it's set — Neon's host without "-pooler" — and the app runs on the pooled
+  // DATABASE_URL. Without it, both use DATABASE_URL, as before.
   datasource: {
-    url: process.env["DATABASE_URL"],
+    url: process.env["DIRECT_URL"] || process.env["DATABASE_URL"],
   },
 });

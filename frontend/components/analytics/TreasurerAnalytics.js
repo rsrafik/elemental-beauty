@@ -77,6 +77,7 @@ import {
 	yearEnd,
 	yearStart,
 } from '@/lib/finances'
+import StoredImage from '@/components/StoredImage'
 
 // /analytics for the treasurer: the same books the officers read, plus every
 // control for keeping them. Officers who aren't treasurer get OfficerAnalytics,
@@ -1002,7 +1003,7 @@ function ReceiptDialog({ request, onClose }) {
 			width="max-w-[520px]"
 		>
 			{request.image
-				? <img
+				? <StoredImage
 					src={request.image.preview}
 					alt={`Receipt for ${request.what}`}
 					className="
@@ -1412,7 +1413,7 @@ function RequestQueue({ requests, filter, onFilter, onApprove, onDeny, onReimbur
 											"
 										>
 											{request.image
-												? <img
+												? <StoredImage
 													src={request.image.preview}
 													alt=""
 													className="

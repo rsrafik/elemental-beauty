@@ -56,6 +56,7 @@ import {
 	yearLabel,
 	yearsIn,
 } from '@/lib/finances'
+import StoredImage from '@/components/StoredImage'
 
 // /analytics — the officer's view of the books. What came in, what went out,
 // where the balance sits, which grants are in flight, and where this officer's
@@ -337,7 +338,7 @@ export function ReceiptDialog({ request, onClose, onSave }) {
 							border-black/25
 						">
 							{image
-								? <img
+								? <StoredImage
 									src={image.preview}
 									alt=""
 									className="
@@ -517,7 +518,7 @@ export function ReceiptsCard({ receipts, onSubmit, onRevise, onRevoke }) {
 								bg-white
 							">
 								{receipt.image
-									? <img
+									? <StoredImage
 										src={receipt.image.preview}
 										alt=""
 										className="

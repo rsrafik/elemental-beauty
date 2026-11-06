@@ -9,6 +9,8 @@ import { BackButton, FitScaled, Scaled } from '@/components/labs/LabViewParts'
 import MemberLabSignup from '@/components/labs/MemberLabSignup'
 import MemberLabQuiz from '@/components/labs/MemberLabQuiz'
 import MemberLabContent from '@/components/labs/MemberLabContent'
+import usePoll from '@/lib/usePoll'
+import { SkeletonDetail } from '@/components/Skeleton'
 
 // /labs/view?id=N for a user or member. Which of the three stages you get is
 // worked out from the lab's date/time and your row on it:
@@ -28,11 +30,13 @@ import MemberLabContent from '@/components/labs/MemberLabContent'
 // mockups: from the left of the content column to the text, and from the
 // photo to the right edge.
 
-// How often the page looks at the clock and re-reads the lab (so it flips to
-// check-in at the start time, or as soon as the check-in page opens the door
-// early) and, while the QR is up, re-reads it to catch the scan.
+// How often the page looks at the clock (so it flips to check-in at the start
+// time), how often it re-reads the lab (to catch the check-in page opening
+// the door early), and — while the QR is up — how often it re-reads it to
+// catch the scan. The reads stop while the tab's in the background (usePoll).
 const CLOCK_MS = 30_000
-const CHECKIN_POLL_MS = 5_000
+const READ_MS = 60_000
+const CHECKIN_POLL_MS = 10_000
 
 function nowHHMM() {
 	const now = new Date()
@@ -85,21 +89,15 @@ export default function MemberLabView() {
 		return () => { live = false }
 	}, [id])
 
+	// the clock alone needs no request
 	useEffect(() => {
-		const timer = setInterval(() => {
-			setTick((n) => n + 1)
-			load()
-		}, CLOCK_MS)
+		const timer = setInterval(() => setTick((n) => n + 1), CLOCK_MS)
 		return () => clearInterval(timer)
-	}, [load])
+	}, [])
 
 	const stage = lab ? stageFor(lab) : null
 
-	useEffect(() => {
-		if (stage !== 'checkin') return
-		const timer = setInterval(load, CHECKIN_POLL_MS)
-		return () => clearInterval(timer)
-	}, [stage, load])
+	usePoll(load, stage === 'checkin' ? CHECKIN_POLL_MS : READ_MS, Boolean(id), { immediate: false })
 
 	let body = null
 	if (!id) {
@@ -150,6 +148,9 @@ export default function MemberLabView() {
 	} else if (stage === 'lab') {
 		// scales itself — it needs the zoom for its own measurements
 		body = <MemberLabContent lab={lab} />
+	} else if (!lab) {
+		// on its way: the page's shape, dimmed and pulsing (Skeleton.js)
+		body = <SkeletonDetail />
 	}
 
 	// Same bleed as the analytics pages: the scroll column is pulled out over

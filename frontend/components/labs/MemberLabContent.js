@@ -7,6 +7,7 @@ import LabMaterials from '@/components/labs/LabMaterials'
 import LabLesson from '@/components/labs/LabLesson'
 import LabInstructions from '@/components/labs/LabInstructions'
 import FitTitle from '@/components/FitTitle'
+import StoredImage from '@/components/StoredImage'
 
 // The full lab, once the member has passed the quiz. Two columns:
 //
@@ -229,7 +230,7 @@ export default function MemberLabContent({ lab }) {
 					bg-salmon-lightest
 				">
 					{lab.image && (
-						<img
+						<StoredImage
 							src={lab.image}
 							alt=""
 							className="

@@ -10,6 +10,7 @@ import { useDismiss } from '@/lib/dismiss'
 import AwardPointsDialog from '@/components/students/AwardPointsDialog'
 import ActivityLog from '@/components/students/ActivityLog'
 import StudentCard from '@/components/students/StudentCard'
+import StoredImage from '@/components/StoredImage'
 
 // /students — officer and up only. The member roster as one sheet: search,
 // sort by any column that holds a value, filter by role, add a student (an
@@ -405,7 +406,7 @@ function Avatar({ student }) {
 			${tint}
 		`}>
 			{student.photo
-				? <img
+				? <StoredImage
 					src={student.photo}
 					alt=""
 					className="
@@ -1456,6 +1457,9 @@ export default function OfficerStudents() {
 	const { user } = useSession()
 
 	const [students, setStudents] = useState([])
+	// false until the roster's in — placeholder rows until then, rather than
+	// "no students match" while it's still loading
+	const [loaded, setLoaded] = useState(false)
 	// Whatever the last write failed with. Shown in the toolbar rather than as a
 	// dialog: the table is the thing being changed, so the report belongs beside
 	// it and not on top of it.
@@ -1503,6 +1507,7 @@ export default function OfficerStudents() {
 		Promise.all([membersApi.list(), membersApi.accounts()])
 			.then(([members, accounts]) => live && setStudents([...members, ...accounts].map(toRow)))
 			.catch((err) => live && setError(err.message))
+			.finally(() => live && setLoaded(true))
 		return () => { live = false }
 	}, [])
 
@@ -2219,7 +2224,22 @@ export default function OfficerStudents() {
 									</tr>
 								))}
 
-								{visible.length === 0 && (
+								{/* rows not in yet: dim bars where the cells go, the
+								    pulse rolling down and across (Skeleton.js) */}
+								{!loaded && Array.from({ length: Math.max(pageSize, 1) }, (_, row) => (
+									<tr key={`loading-${row}`} aria-hidden="true" style={{ height: ROW_HEIGHT }}>
+										{Array.from({ length: 9 }, (_, cell) => (
+											<td key={cell} className="px-4">
+												<div
+													className={`skeleton bg-black/15 ${cell === 1 ? 'w-9 h-9 rounded-full' : 'h-3 rounded-full'} ${cell === 2 ? 'w-32' : cell === 1 ? '' : 'w-16'}`}
+													style={{ '--wave': row + cell }}
+												/>
+											</td>
+										))}
+									</tr>
+								))}
+
+								{loaded && visible.length === 0 && (
 									<tr>
 										<td
 											colSpan={9}

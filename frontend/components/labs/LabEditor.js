@@ -27,6 +27,7 @@ import { parseInstructions } from '@/lib/labContent'
 import { pastedSteps } from '@/lib/pasteSteps'
 // cover photos are shrunk before they're sent — see lib/images.js
 import { shrinkImage } from '@/lib/images'
+import StoredImage from '@/components/StoredImage'
 
 // /labs/edit (a new lab) and /labs/edit?id=N — the officer's lab editor.
 //
@@ -220,7 +221,7 @@ function Cover({ image, onRemove }) {
 				bg-[#CCCCCC]
 			">
 				{image && (
-					<img
+					<StoredImage
 						src={image}
 						alt=""
 						className="

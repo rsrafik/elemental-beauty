@@ -652,7 +652,8 @@ router.put('/:id', requireRole('officer'), requireLabEditor('id'), async (req, r
             Object.assign(update, resweep(after))
         }
 
-        const lab = await prisma.lab.update({ where: { labId }, data: update })
+        // the editor keeps what's parked (`draft`) from the reply
+        const lab = await prisma.lab.update({ where: { labId }, data: update, omit: { draft: false } })
         res.json(lab)
     } catch (err) {
         if (err.code === 'P2025') { return res.status(404).json({ message: 'Lab not found' }) }

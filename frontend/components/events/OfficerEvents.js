@@ -20,6 +20,8 @@ import { RsvpButton } from '@/components/events/MemberEvents'
 import { CardMenu } from '@/components/labs/OfficerLabs'
 import { QrPopup } from '@/components/labs/MemberLabQuiz'
 import { COVER_MAX, shrinkImage } from '@/lib/images'
+import StoredImage from '@/components/StoredImage'
+import { SkeletonGrid } from '@/components/Skeleton'
 
 // /events for officer / treasurer / admin: every event on one sheet. Clicking
 // a card opens its check-in page; the dots in its corner edit it.
@@ -193,7 +195,7 @@ function EventCard({ title, date, time, endTime, location, image, onOpen, onEdit
 				bg-blue-light/50
 			">
 				{image && (
-					<img
+					<StoredImage
 						src={image}
 						alt=""
 						className="
@@ -835,7 +837,7 @@ export function EventDialog({ event, categories, onClose, onSave, onDelete }) {
 								border-black/25
 							">
 								{image && (
-									<img
+									<StoredImage
 										src={image}
 										alt=""
 										className="
@@ -1007,6 +1009,8 @@ const GRID = `
 	px-3
 	pb-3
 `
+// the same columns as a map, for the placeholders' diagonal (Skeleton.js)
+const GRID_COLS = { base: 2, lg: 3, xl: 4, '2xl': 5 }
 
 // ---- page ------------------------------------------------------------------
 
@@ -1029,6 +1033,8 @@ export default function OfficerEvents({ openNew = false }) {
 	// j-board's check-in code, up for an officer to scan
 	const [showQr, setShowQr] = useState(false)
 	const [events, setEvents] = useState([])
+	// false until the list is in — placeholders until then (Skeleton.js)
+	const [loaded, setLoaded] = useState(false)
 	const [categories, setCategories] = useState([])
 	const [error, setError] = useState(null)
 
@@ -1054,6 +1060,7 @@ export default function OfficerEvents({ openNew = false }) {
 				setCategories(tags)
 			})
 			.catch((err) => live && setError(err.message))
+			.finally(() => live && setLoaded(true))
 		return () => { live = false }
 	}, [])
 
@@ -1299,6 +1306,7 @@ export default function OfficerEvents({ openNew = false }) {
 				</button>}
 			</div>
 
+			{!loaded && <SkeletonGrid className={GRID} cols={GRID_COLS} count={10} card={{ tint: 'bg-blue-light/50' }} />}
 			<div className={GRID}>
 				{upcoming.map((row) => (
 					<EventCard

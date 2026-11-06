@@ -18,6 +18,7 @@ import { useRole, useSession } from '@/lib/session'
 import { useCalendarEventDialogs } from '@/components/calendar/CalendarEventDialogs'
 import { DUE_CELL, DueLine, useDuesDeadlines } from '@/components/calendar/DuesDeadlines'
 import SubscribeCalendar from '@/components/calendar/SubscribeCalendar'
+import StoredImage from '@/components/StoredImage'
 
 // /calendar for officer / treasurer / admin: the member month view, plus the
 // button that puts something new on it.
@@ -1203,7 +1204,7 @@ function EventDialog({ categories, onClose, onSave }) {
 								border-black/25
 							">
 								{image && (
-									<img
+									<StoredImage
 										src={image}
 										alt=""
 										className="
@@ -1364,7 +1365,7 @@ export default function OfficerCalendar() {
 	// Everything on the page comes off these three, so a change to any of them
 	// reloads all three rather than trying to patch three shapes by hand.
 	const load = () =>
-		Promise.all([labsApi.list(), eventsApi.list(), eventCategories.list()])
+		Promise.all([labsApi.list({ summary: true }), eventsApi.list(), eventCategories.list()])
 			.then(([labs, events, tags]) => {
 				// drafts aren't happening yet — they stay on /labs until published
 				const built = buildMonths(labs.filter((lab) => lab.published !== false), events)
