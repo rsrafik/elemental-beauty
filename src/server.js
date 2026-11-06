@@ -15,6 +15,7 @@ import transactionRoutes from './routes/transactionRoutes.js'
 import financeCategoryRoutes from './routes/financeCategoryRoutes.js'
 import paymentMethodRoutes from './routes/paymentMethodRoutes.js'
 import paymentRoutes from './routes/paymentRoutes.js'
+import calendarRoutes, { feedRouter as calendarFeedRoutes } from './routes/calendarRoutes.js'
 import authMiddleware from './middleware/authMiddleware.js'
 import requireRole, { booksAccess } from './middleware/requireRole.js'
 import { sweepAbsences } from './sweepAbsences.js'
@@ -129,6 +130,13 @@ app.use('/api/offers', authLimiter, offerRoutes)
 app.use('/api/members', authMiddleware, requireRole('member'), memberRoutes)
 app.use('/api/labs', authMiddleware, requireRole('member'), labRoutes)
 app.use('/api/events', authMiddleware, requireRole('member'), eventRoutes)
+// "subscribe" on /calendar. The feed is fetched by Google itself, with no
+// login — the signed link is the proof — so it's mounted first and on its own,
+// with a limit loose enough for Google's shared IPs polling it. The popup's
+// own routes are a member's like the rest.
+const feedLimiter = rateLimit({ windowMs: 60 * 1000, limit: 120 })
+app.use('/api/calendar/feed', feedLimiter, calendarFeedRoutes)
+app.use('/api/calendar', authMiddleware, requireRole('member'), calendarRoutes)
 // the calendar's tag list and the club's announcements: every member reads
 // them, officers write them — that split is inside the routers
 app.use('/api/event-categories', authMiddleware, requireRole('member'), eventCategoryRoutes)

@@ -17,6 +17,7 @@ import { canAddEvents, canChange, canEditLab, defaultOffTracks, hiddenTracks, tr
 import { useRole, useSession } from '@/lib/session'
 import { useCalendarEventDialogs } from '@/components/calendar/CalendarEventDialogs'
 import { DUE_CELL, DueLine, useDuesDeadlines } from '@/components/calendar/DuesDeadlines'
+import SubscribeCalendar from '@/components/calendar/SubscribeCalendar'
 
 // /calendar for officer / treasurer / admin: the member month view, plus the
 // button that puts something new on it.
@@ -1771,6 +1772,14 @@ export default function OfficerCalendar() {
 							>
 								clear filter
 							</button>
+						</div>
+						{/* the calendar in their own Google Calendar, as a live
+						    feed of the tracks they pick (SubscribeCalendar) */}
+						<div className="
+							mt-4
+							text-center
+						">
+							<SubscribeCalendar />
 						</div>
 					</div>
 				</div>

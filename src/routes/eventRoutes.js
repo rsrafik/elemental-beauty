@@ -15,7 +15,7 @@ import { DUES_ANSWERS, asksDues, duesAnswerProblem, duesLookup, doorOwed, duesUn
 const router = express.Router()
 
 const EVENT_TYPES = ['official', 'social']
-const EVENT_TRACKS = ['members', 'officers', 'open', 'online', 'board', 'jboard']
+export const EVENT_TRACKS = ['members', 'officers', 'open', 'online', 'board', 'jboard']
 
 // The j-board team a j-board event is for — what the form asks in place of a
 // seat cap there. Only a j-board event has one. '' or null = the whole of
@@ -48,7 +48,7 @@ const HIDDEN_TRACKS = {
     advisor: ['officers', 'board', 'jboard'],
     jboard: ['officers'],
 }
-const hiddenTracks = (role) => HIDDEN_TRACKS[role] ?? []
+export const hiddenTracks = (role) => HIDDEN_TRACKS[role] ?? []
 
 // Inside j-board, each member sees the j-board events of every team they're
 // on and the ones for all of j-board, never another team's — so the teams'
@@ -65,7 +65,7 @@ const otherTeam = (event, viewer) =>
 const hiddenFrom = (event, viewer) => hiddenTracks(viewer.role).includes(event.track) || otherTeam(event, viewer)
 
 // The same rule as a query, for the list.
-function visibleWhere(viewer) {
+export function visibleWhere(viewer) {
     const where = []
     if (hiddenTracks(viewer.role).length) { where.push({ track: { notIn: hiddenTracks(viewer.role) } }) }
     if (viewer.role === 'jboard') {
@@ -130,7 +130,7 @@ function readUrl(typed) {
 // The tracks whose events can be held at a link: online ones, and the
 // meetings — officers, EB board, j-board. Mirrors hasMeetingLink in
 // frontend/lib/calendar.js.
-const MEETING_TRACKS = ['online', 'officers', 'board', 'jboard']
+export const MEETING_TRACKS = ['online', 'officers', 'board', 'jboard']
 
 // An event's meeting link (meetingUrl): undefined when not sent, null
 // for none (blank clears it), otherwise the address. Returns { meetingUrl }

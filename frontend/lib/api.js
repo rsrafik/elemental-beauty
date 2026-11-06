@@ -266,6 +266,16 @@ export const events = {
 	exportAttendance: (id) => download(`/events/${id}/attendance`, 'attendance.csv'),
 }
 
+// "Subscribe" on /calendar — the feed someone adds to Google Calendar. One
+// address per person that never changes; `save` changes what's on it, and
+// `stop` empties it. See src/routes/calendarRoutes.js.
+//   { subscribed, tracks, available, lost, url, webcalUrl, googleUrl, reachable }
+export const calendar = {
+	subscription: () => api('/calendar/subscription'),
+	save: (tracks) => api('/calendar/subscription', { method: 'PUT', body: { tracks } }),
+	stop: () => api('/calendar/subscription', { method: 'DELETE' }),
+}
+
 // A waitlist offer's "Accept my spot" link (the /offer page) — no login, the
 // token from the email is the proof.
 export const offers = {
