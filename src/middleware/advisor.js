@@ -11,6 +11,8 @@
 //   their own account — their profile and email settings (PUT /members/me),
 //               and the /auth routes that are about themselves (resending the
 //               verification email, the waiver, deleting their account)
+//   their own calendar subscription — the tracks they picked for their
+//               Google Calendar feed (PUT/DELETE /calendar/subscription)
 //
 // The pages hide the controls an advisor can't use (canChange in
 // frontend/lib/roles.js); this is the rule that actually holds.
@@ -20,6 +22,9 @@ const READS = new Set(['GET', 'HEAD', 'OPTIONS'])
 const ALLOWED = [
     ['POST', /^\/api\/members\/email-all$/],
     ['PUT', /^\/api\/members\/me$/],
+    // their own calendar subscription's picks (src/routes/calendarRoutes.js)
+    ['PUT', /^\/api\/calendar\/subscription$/],
+    ['DELETE', /^\/api\/calendar\/subscription$/],
     [null, /^\/api\/auth\//],
 ]
 

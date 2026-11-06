@@ -211,6 +211,13 @@ model Member {
   // ONE_TIME_ACTIONS in src/points.js): each is given once, and the same
   // button on /students takes it back.
   awardsClaimed String[] @default([]) @map("awards_claimed")
+  // "subscribe" on /calendar: the tracks they picked for their Google Calendar
+  // feed, and whether they've exported it — which turns the button into "edit
+  // calendar". The feed reads these on every fetch and drops any track their
+  // role can no longer see (src/routes/calendarRoutes.js), so these are their
+  // wish, not what they're shown.
+  calendarTracks     EventTrack[] @default([]) @map("calendar_tracks")
+  calendarSubscribed Boolean      @default(false) @map("calendar_subscribed")
 
   user           User            @relation(fields: [userId], references: [userId], onDelete: Cascade)
   labs           MemberLab[]

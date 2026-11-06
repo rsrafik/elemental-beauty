@@ -9,6 +9,7 @@ import { JoinMeetingButton } from '@/components/events/MeetingLink'
 import { thisMonth } from '@/lib/dates'
 import { hiddenTracks } from '@/lib/roles'
 import { DUE_CELL, DueLine, useDuesDeadlines } from '@/components/calendar/DuesDeadlines'
+import SubscribeCalendar from '@/components/calendar/SubscribeCalendar'
 
 // /calendar for a user or member: month view of labs + events, read only.
 //
@@ -719,6 +720,14 @@ export default function MemberCalendar() {
 							>
 								clear filter
 							</button>
+						</div>
+						{/* the calendar in their own Google Calendar, as a live
+						    feed of the tracks they pick (SubscribeCalendar) */}
+						<div className="
+							mt-4
+							text-center
+						">
+							<SubscribeCalendar />
 						</div>
 					</div>
 				</div>

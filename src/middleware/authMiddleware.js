@@ -15,6 +15,12 @@ async function authMiddleware(req, res, next) {
     } catch {
         return res.status(401).json({ message: 'Invalid token' })
     }
+    // Only a sign-in token signs anyone in. The others signed with the same
+    // secret — a calendar feed link, a waitlist offer, the verification
+    // email's — each say what they're for, and none of them is a session.
+    if (decoded.purpose !== undefined || !Number.isInteger(decoded.id)) {
+        return res.status(401).json({ message: 'Invalid token' })
+    }
 
     try {
         // The account is looked up, not just the membership, and the difference
