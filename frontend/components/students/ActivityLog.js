@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { Popup, PopupButton } from '@/components/labs/LabViewParts'
 import { activity as activityApi } from '@/lib/api'
 import { roleLabel } from '@/lib/roles'
@@ -10,6 +10,12 @@ import { teamLabel } from '@/lib/calendar'
 // taken back, check-ins, students added and removed, dues. Newest first, a page
 // at a time. Written by the server (src/activity.js); names are as they were
 // at the time, so a removed member still reads right.
+//
+// The search box at the top asks the server (?q=), so it searches the whole
+// log, not just the pages loaded: a person, a lab or event's title, "lab" or
+// "event" for all of either, or a reason like "instagram repost",
+// "instagram follow" or "discord join" (searchWhere in
+// src/routes/activityRoutes.js).
 
 const AWARD = {
 	instagram_repost: 'an instagram repost',
@@ -112,6 +118,23 @@ const DOT = {
 	payment_rejected: 'bg-red',
 }
 
+function SearchIcon({ className = '' }) {
+	return (
+		<svg
+			viewBox="0 0 24 24"
+			fill="none"
+			stroke="currentColor"
+			strokeWidth="2"
+			strokeLinecap="round"
+			className={className}
+			aria-hidden="true"
+		>
+			<circle cx="11" cy="11" r="6.5" />
+			<path d="M16 16l4.5 4.5" />
+		</svg>
+	)
+}
+
 function when(at) {
 	return new Date(at).toLocaleString('en-US', { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' }).toLowerCase()
 }
@@ -121,32 +144,49 @@ export default function ActivityLog({ onClose }) {
 	const [more, setMore] = useState(false)
 	const [loading, setLoading] = useState(true)
 	const [error, setError] = useState(null)
+	const [query, setQuery] = useState('')
+	// what the list on screen was searched for — the typed box runs a beat ahead
+	const [searched, setSearched] = useState('')
+	// each fetch's number, so an answer to an older search can't land over a newer one
+	const latest = useRef(0)
 
+	// the first page, again on every search — a beat after typing stops
 	useEffect(() => {
-		let live = true
-		activityApi
-			.list()
-			.then((page) => {
-				if (!live) return
-				setEntries(page.entries)
-				setMore(page.more)
-			})
-			.catch((err) => live && setError(err.message))
-			.finally(() => live && setLoading(false))
-		return () => { live = false }
-	}, [])
+		const q = query.trim()
+		const ticket = ++latest.current
+		const timer = setTimeout(() => {
+			setLoading(true)
+			setError(null)
+			activityApi
+				.list({ q })
+				.then((page) => {
+					if (ticket !== latest.current) return
+					setEntries(page.entries)
+					setMore(page.more)
+					setSearched(q)
+				})
+				.catch((err) => ticket === latest.current && setError(err.message))
+				.finally(() => ticket === latest.current && setLoading(false))
+		}, q ? 250 : 0)
+		return () => clearTimeout(timer)
+	}, [query])
+
+	// unmounting abandons whatever is in flight
+	useEffect(() => () => { latest.current += 1 }, [])
 
 	const loadMore = async () => {
 		if (loading || entries.length === 0) return
+		const ticket = ++latest.current
 		setLoading(true)
 		try {
-			const page = await activityApi.list({ before: entries[entries.length - 1].activityId })
+			const page = await activityApi.list({ before: entries[entries.length - 1].activityId, q: searched })
+			if (ticket !== latest.current) return
 			setEntries((previous) => [...previous, ...page.entries])
 			setMore(page.more)
 		} catch (err) {
-			setError(err.message)
+			if (ticket === latest.current) setError(err.message)
 		} finally {
-			setLoading(false)
+			if (ticket === latest.current) setLoading(false)
 		}
 	}
 
@@ -162,6 +202,38 @@ export default function ActivityLog({ onClose }) {
 					">
 						Who changed what: roles, points, check-ins, and who was added or removed.
 					</p>
+
+					<div className="
+						mt-4
+						flex
+						items-center
+						gap-2
+						border-b
+						border-black/25
+						pb-1
+						transition-colors
+						duration-200
+						ease-out
+						focus-within:border-black
+					">
+						<SearchIcon className="w-4 h-4 shrink-0 text-black/50" />
+						<input
+							type="search"
+							value={query}
+							onChange={(event) => setQuery(event.target.value)}
+							placeholder="Search a person, lab, event or reason"
+							aria-label="Search activity"
+							className="
+								w-full
+								bg-transparent
+								font-vietnam
+								text-sm
+								text-black
+								outline-none
+								placeholder:text-black/40
+							"
+						/>
+					</div>
 
 					{error && (
 						<p className="
@@ -181,7 +253,9 @@ export default function ActivityLog({ onClose }) {
 							text-sm
 							text-black/45
 						">
-							Nothing yet. It fills in as officers make changes.
+							{searched
+								? <>Nothing matches &ldquo;{searched}&rdquo;.</>
+								: 'Nothing yet. It fills in as officers make changes.'}
 						</p>
 					)}
 

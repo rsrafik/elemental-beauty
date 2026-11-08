@@ -251,3 +251,43 @@ test("staff see who's paid this year's dues and who hasn't; members see neither"
         assert.ok(rows.every((row) => !('dues' in row)))
     })
 })
+
+test('the activity search finds people, titles, labs or events, and reasons', { skip }, async () => {
+    const activityRoutes = (await import('../src/routes/activityRoutes.js')).default
+    const officer = await person('officer')
+    const member = await person('member')
+    // a word only these lines carry, so the other tests' lines stay out of it
+    const mark = `s${tag}`
+    const line = (action, details, points = 1) => prisma.activityLog.create({
+        data: { actorId: officer, actorName: `Officer ${mark}`, action, targetId: member, targetName: `Maya ${mark}`, points, details }
+    })
+    const lab = await line('checked_in', { kind: 'lab', id: 1, title: `${tag} Lip Lab`, by: 'qr' })
+    const event = await line('checked_in', { kind: 'event', id: 1, title: `${tag} Mixer`, by: 'hand' })
+    const repost = await line('points_awarded', { reason: 'instagram_repost' })
+    const follow = await line('points_awarded', { reason: 'instagram_follow' })
+    const discord = await line('points_awarded', { reason: 'discord_join' })
+
+    const app = express()
+    app.use((req, res, next) => { req.userId = officer; req.role = 'officer'; next() })
+    app.use('/activity', activityRoutes)
+    const server = app.listen(0)
+    const ids = async (q) => {
+        const page = await (await fetch(`http://localhost:${server.address().port}/activity?limit=200&q=${encodeURIComponent(`${q} ${mark}`)}`)).json()
+        return page.entries.map((row) => row.activityId).sort((a, b) => a - b)
+    }
+    const sorted = (...rows) => rows.map((row) => row.activityId).sort((a, b) => a - b)
+    try {
+        assert.deepEqual(await ids('maya'), sorted(lab, event, repost, follow, discord))
+        assert.deepEqual(await ids('labs'), sorted(lab))
+        assert.deepEqual(await ids('event'), sorted(event))
+        assert.deepEqual(await ids('mixer'), sorted(event))
+        assert.deepEqual(await ids('instagram'), sorted(repost, follow))
+        assert.deepEqual(await ids('instagram repost'), sorted(repost))
+        assert.deepEqual(await ids('INSTAGRAM FOLLOW'), sorted(follow))
+        assert.deepEqual(await ids('discord join'), sorted(discord))
+        assert.deepEqual(await ids('checked-in'), sorted(lab, event))
+        assert.deepEqual(await ids('nobody-by-this-name'), [])
+    } finally {
+        server.close()
+    }
+})

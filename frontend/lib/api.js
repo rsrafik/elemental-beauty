@@ -234,12 +234,14 @@ export const members = {
 }
 
 // The staff activity log (/students' "activity"): { entries, more }.
-// `before` is the last id you have, for the next page.
+// `before` is the last id you have, for the next page; `q` searches it (people,
+// titles, reasons, "lab" / "event" — see searchWhere in src/routes/activityRoutes.js).
 export const activity = {
-	list: ({ before, targetId, limit = 50 } = {}) => {
+	list: ({ before, targetId, q, limit = 50 } = {}) => {
 		const query = new URLSearchParams({ limit: String(limit) })
 		if (before) query.set('before', String(before))
 		if (targetId) query.set('targetId', String(targetId))
+		if (q) query.set('q', q)
 		return api(`/activity?${query}`)
 	},
 }
