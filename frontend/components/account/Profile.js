@@ -12,6 +12,7 @@ import { longDate, prettyTimeRange } from '@/lib/dates'
 import { useDismiss } from '@/lib/dismiss'
 import { AVATAR_MAX, shrinkImage } from '@/lib/images'
 import StoredImage from '@/components/StoredImage'
+import ScrollHint from '@/components/ScrollHint'
 
 // /account — the one page that's about the person looking at it rather than
 // about the club. Same sidebar as everywhere else; it's just another stop on
@@ -2280,6 +2281,7 @@ function ResetPasswordDialog({ email, onClose }) {
 						{sent ? 'done' : busy ? 'sending…' : 'send link'}
 					</button>
 				</div>
+				<ScrollHint />
 			</div>
 		</div>
 	)

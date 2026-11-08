@@ -19,6 +19,7 @@ import { useCalendarEventDialogs } from '@/components/calendar/CalendarEventDial
 import { DUE_CELL, DueLine, useDuesDeadlines } from '@/components/calendar/DuesDeadlines'
 import SubscribeCalendar from '@/components/calendar/SubscribeCalendar'
 import StoredImage from '@/components/StoredImage'
+import ScrollHint from '@/components/ScrollHint'
 
 // /calendar for officer / treasurer / admin: the member month view, plus the
 // button that puts something new on it.
@@ -1309,6 +1310,7 @@ function EventDialog({ categories, onClose, onSave }) {
 						add to calendar
 					</button>
 				</div>
+				<ScrollHint />
 			</form>
 		</div>
 	)

@@ -3,6 +3,7 @@
 import { useEffect, useRef, useState } from 'react'
 import { STATUS_PILL, grantValue, money, prettyDate, statusLabel, sum, yearLabel } from '@/lib/finances'
 import { useDismiss } from '@/lib/dismiss'
+import ScrollHint from '@/components/ScrollHint'
 
 // The pieces both analytics pages are built out of — the card, the pills, the
 // charts, the dialog shell. They live here rather than in either page because
@@ -902,6 +903,7 @@ export function Dialog({ title, note, onClose, onSubmit, children, closing = fal
 				)}
 
 				{children}
+				<ScrollHint />
 			</Body>
 		</div>
 	)

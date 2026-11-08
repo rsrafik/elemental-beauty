@@ -9,6 +9,7 @@ import { useDismiss } from '@/lib/dismiss'
 import { longDate, prettyTimeRange } from '@/lib/dates'
 import { payments as paymentsApi } from '@/lib/api'
 import StoredImage from '@/components/StoredImage'
+import ScrollHint from '@/components/ScrollHint'
 
 // The pieces every stage of the member lab view is built from: the scaling
 // frame, the header (meta line, title, description, photo), the big shadowed
@@ -763,6 +764,7 @@ export function Popup({ title, label, onClose, children, width = 'max-w-[420px]'
 				</div>
 
 				{children(dismiss)}
+				<ScrollHint />
 			</div>
 		</div>,
 		document.body

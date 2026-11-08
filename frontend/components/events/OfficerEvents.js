@@ -22,6 +22,7 @@ import { QrPopup } from '@/components/labs/MemberLabQuiz'
 import { COVER_MAX, shrinkImage } from '@/lib/images'
 import StoredImage from '@/components/StoredImage'
 import { SkeletonGrid } from '@/components/Skeleton'
+import ScrollHint from '@/components/ScrollHint'
 
 // /events for officer / treasurer / admin: every event on one sheet. Clicking
 // a card opens its check-in page; the dots in its corner edit it.
@@ -991,6 +992,7 @@ export function EventDialog({ event, categories, onClose, onSave, onDelete }) {
 						onConfirm={onDelete}
 					/>
 				)}
+				<ScrollHint />
 			</form>
 		</div>
 	)

@@ -3,6 +3,7 @@
 import { useEffect, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
 import { useDismiss } from '@/lib/dismiss'
+import ScrollHint from '@/components/ScrollHint'
 
 // The waiver, to be read and signed: /waiver.pdf drawn page by page into a
 // scrolling box, and under it a first name, a last name and "sign". Those
@@ -286,6 +287,7 @@ export default function WaiverPopup({ onClose, onSign }) {
 							{loadError}
 						</p>
 					)}
+					<ScrollHint />
 				</div>
 
 				<div className="shrink-0 mt-4">

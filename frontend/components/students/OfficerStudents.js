@@ -11,6 +11,7 @@ import AwardPointsDialog from '@/components/students/AwardPointsDialog'
 import ActivityLog from '@/components/students/ActivityLog'
 import StudentCard from '@/components/students/StudentCard'
 import StoredImage from '@/components/StoredImage'
+import ScrollHint from '@/components/ScrollHint'
 
 // /students — officer and up only. The member roster as one sheet: search,
 // sort by any column that holds a value, filter by role, add a student (an
@@ -947,6 +948,7 @@ function ConfirmDeleteDialog({ students, onCancel, onConfirm }) {
 						delete {many ? 'them' : 'student'}
 					</button>
 				</div>
+				<ScrollHint />
 			</div>
 		</div>
 	)
@@ -1210,6 +1212,7 @@ function AddStudentDialog({ roles, onClose, onSave }) {
 						add student
 					</button>
 				</div>
+				<ScrollHint />
 			</form>
 		</div>
 	)
