@@ -6,7 +6,7 @@ import { csvCell } from '../src/csv.js'
 import { hashPassword, needsRehash, passwordProblem, checkPassword } from '../src/passwords.js'
 import { wantsEmail } from '../src/emailPrefs.js'
 import { readMessage, emailAll, batchSize } from '../src/emailAll.js'
-import { mailService } from '../src/email.js'
+import { mailService, sendEmail } from '../src/email.js'
 import { fromEmail } from '../src/accountEmail.js'
 import { schoolYearOf } from '../src/dues.js'
 import { wipeProblem } from '../scripts/localDatabase.js'
@@ -227,4 +227,40 @@ test('only a send that asks for Gmail skips Resend; either works alone', (t) => 
     assert.equal(mailService('gmail'), null)
     assert.equal(batchSize('resend'), 49)
     assert.equal(batchSize('gmail'), 90)
+})
+
+test('the Gmail API sends one message with everyone in Bcc, over HTTPS', async (t) => {
+    const saved = { ...process.env }
+    const realFetch = globalThis.fetch
+    t.after(() => { process.env = saved; globalThis.fetch = realFetch })
+    process.env.RESEND_API_KEY = 'key'
+    process.env.GMAIL_USER = 'club@gmail.com'
+    process.env.GMAIL_APP_PASSWORD = ''
+    process.env.GMAIL_CLIENT_ID = 'id'
+    process.env.GMAIL_CLIENT_SECRET = 'secret'
+    process.env.GMAIL_REFRESH_TOKEN = 'refresh'
+
+    const calls = []
+    globalThis.fetch = async (url, opts) => {
+        calls.push({ url: String(url), opts })
+        if (String(url).includes('oauth2.googleapis.com/token')) {
+            return Response.json({ access_token: 'access', expires_in: 3600 })
+        }
+        return Response.json({ id: 'sent' })
+    }
+    assert.equal(mailService('gmail'), 'gmail')
+    const ok = await sendEmail({ to: 'club@gmail.com', bcc: ['a@x.com', 'b@x.com'], subject: 'Hi', text: 'Hello', prefer: 'gmail' })
+    assert.equal(ok, true)
+    assert.equal(calls.length, 2)
+    assert.match(calls[0].opts.body.toString(), /grant_type=refresh_token/)
+    const send = calls[1]
+    assert.match(send.url, /gmail\/v1\/users\/me\/messages\/send/)
+    assert.equal(send.opts.headers.Authorization, 'Bearer access')
+    const raw = send.opts.body.toString()
+    assert.match(raw, /^Bcc: a@x\.com, b@x\.com/m)
+    assert.match(raw, /^From: .*<club@gmail\.com>/m)
+
+    // a second send reuses the access token
+    await sendEmail({ to: 'club@gmail.com', bcc: ['c@x.com'], subject: 'Hi', text: 'Hello', prefer: 'gmail' })
+    assert.equal(calls.length, 3)
 })

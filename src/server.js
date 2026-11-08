@@ -27,6 +27,7 @@ import offerRoutes from './routes/offerRoutes.js'
 import duesRoutes from './routes/duesRoutes.js'
 import activityRoutes from './routes/activityRoutes.js'
 import { sendReminders } from './reminders.js'
+import { mailService } from './email.js'
 import prisma from './prismaClient.js'
 import { syncVipRoles } from './dues.js'
 
@@ -55,9 +56,9 @@ if (process.env.NODE_ENV === 'production') {
 }
 // one way or another the verification and reset emails have to go out —
 // through a Gmail account or through Resend (see email.js)
-const canEmail = (process.env.GMAIL_USER && process.env.GMAIL_APP_PASSWORD) || process.env.RESEND_API_KEY
+const canEmail = mailService() !== null
 if (process.env.NODE_ENV === 'production' && !canEmail) {
-    console.error('Email is required in production (verification + password resets): set GMAIL_USER + GMAIL_APP_PASSWORD, or RESEND_API_KEY')
+    console.error('Email is required in production (verification + password resets): set RESEND_API_KEY, or GMAIL_USER with GMAIL_APP_PASSWORD or the Gmail API settings')
     process.exit(1)
 }
 // the links in those emails are built on it
