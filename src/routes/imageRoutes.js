@@ -33,8 +33,8 @@ const ACCESS = {
         allowed: (req, row) => row.published || STAFF.includes(req.role)
     },
     event: {
-        select: { track: true },
-        allowed: (req, row) => row.track !== 'officers' || STAFF.includes(req.role)
+        select: { track: true, published: true },
+        allowed: (req, row) => (row.published && row.track !== 'officers') || STAFF.includes(req.role)
     },
     // your own photo whatever your standing (the account page shows it to
     // someone not yet a member); everyone else's to members, as on /members

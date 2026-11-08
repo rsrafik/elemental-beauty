@@ -102,7 +102,7 @@ function soonest(labs, events) {
 			taken: lab.taken,
 			capacity: lab.capacity,
 		})),
-		...events.map((event) => {
+		...events.filter((event) => event.published !== false).map((event) => {
 			const onCalendarOnly = calendarOnly(event.track, event.category?.name) || event.hideFromEvents
 			return {
 				id: `event-${event.eventId}`,

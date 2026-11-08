@@ -24,7 +24,7 @@ const adapter = new PrismaPg({ connectionString: process.env.DATABASE_URL })
 // their lab never drags a file or a photo along.
 const OMIT = {
     lab: { lessonPdf: true, prelabPdf: true, image: true, draft: true, quizDraft: true },
-    event: { image: true },
+    event: { image: true, draft: true },
     user: { profilePicture: true },
     paymentMethod: { image: true },
     memberPayment: { screenshot: true },

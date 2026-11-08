@@ -2,10 +2,9 @@
 
 import { useState } from 'react'
 import { events as eventsApi } from '@/lib/api'
-import { STAFF_TRACKS, capacityField, hasMeetingLink, hasNonmemberPrice } from '@/lib/calendar'
-import { priceBody } from '@/lib/finances'
+import { STAFF_TRACKS } from '@/lib/calendar'
 import EventDetailsDialog from '@/components/events/EventDetailsDialog'
-import { EventDialog as EditEventDialog, toCard } from '@/components/events/OfficerEvents'
+import { EventDialog as EditEventDialog, eventBody, toCard, withDraft } from '@/components/events/OfficerEvents'
 
 // What clicking an event on the staff calendar opens: the same editor /events
 // uses, or — for one that isn't this person's to change (the API's `canEdit`
@@ -27,32 +26,37 @@ export function useCalendarEventDialogs({ categories, onChanged, onError }) {
 	// or the row open read-only
 	const [viewing, setViewing] = useState(null)
 
-	const open = (row) => {
-		if (row.canEdit === false) setViewing(row)
-		else setEditing(toCard(row))
-	}
-
-	// Same body /events sends.
-	const update = async (values) => {
+	// on the saved draft, if it has one (withDraft)
+	const open = async (row) => {
+		if (row.canEdit === false) {
+			setViewing(row)
+			return
+		}
 		onError?.(null)
 		try {
-			await eventsApi.update(editing.id, {
-				title: values.title,
-				date: values.date,
-				startTime: values.time || null,
-				endTime: values.time ? values.endTime || null : null,
-				categoryId: values.categoryId === '' ? null : Number(values.categoryId),
-				track: values.track,
-				description: values.description,
-				image: values.image,
-				capacity: capacityField(values.track) !== 'spots' || values.spots.trim() === '' ? null : Number(values.spots),
-				team: values.track === 'jboard' ? values.team || null : null,
-				location: values.location.trim() || null,
-				hideFromEvents: values.hideFromEvents,
-				links: values.links,
-				meetingUrl: hasMeetingLink(values.track) ? values.meetingUrl.trim() || null : null,
-				nonmemberPrice: hasNonmemberPrice(values.track) ? priceBody(values.price) : 0,
-			})
+			setEditing(await withDraft(toCard(row)))
+		} catch (err) {
+			onError?.(err.message)
+		}
+	}
+
+	// Same body /events sends — publish, or `published` false for a draft.
+	const update = async (values, published = true) => {
+		onError?.(null)
+		try {
+			await eventsApi.update(editing.id, { ...eventBody(values), published })
+			await onChanged?.()
+		} catch (err) {
+			onError?.(err.message)
+		}
+		setEditing(null)
+	}
+
+	// discard on one with a draft saved: the draft goes, the live event stays
+	const discardDraft = async () => {
+		onError?.(null)
+		try {
+			await eventsApi.update(editing.id, { discardDraft: true })
 			await onChanged?.()
 		} catch (err) {
 			onError?.(err.message)
@@ -79,6 +83,7 @@ export function useCalendarEventDialogs({ categories, onChanged, onError }) {
 					categories={categories}
 					onClose={() => setEditing(null)}
 					onSave={update}
+					onDiscardDraft={discardDraft}
 					onDelete={remove}
 				/>
 			)}

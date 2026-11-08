@@ -456,6 +456,14 @@ model Event {
   paymentsDueSweptAt DateTime? @map("payments_due_swept_at") @db.Timestamptz()
   // the day-before reminder, same as a lab's (src/reminders.js)
   reminderSentAt DateTime? @map("reminder_sent_at") @db.Timestamptz()
+  // "save draft", as on a lab: an event saved that way and never published
+  // is hidden from members entirely. Existing events were all live, hence the
+  // default.
+  published      Boolean  @default(true)
+  // a draft saved on an event that's already live can't touch the live row —
+  // people are signed up to it — so the edits wait here, in the shape
+  // PUT /events/:id takes, until they're published or discarded
+  draft          Json?
 
   // Deleting a tag off the calendar's legend leaves the events that used it
   // standing — they just stop being filed under anything.

@@ -211,7 +211,8 @@ async function entriesFor(userId, member, site) {
 
     const viewer = { role: member.role, teams: member.jboardTeams ?? [] }
     const events = await prisma.event.findMany({
-        where: { date: { gte: from }, track: { in: tracks }, AND: visibleWhere(viewer) },
+        // a draft event never goes out either, as a lab's doesn't below
+        where: { published: true, date: { gte: from }, track: { in: tracks }, AND: visibleWhere(viewer) },
         select: {
             eventId: true, title: true, date: true, startTime: true, endTime: true,
             location: true, description: true, track: true, meetingUrl: true, capacity: true,

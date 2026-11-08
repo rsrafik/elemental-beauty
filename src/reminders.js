@@ -39,7 +39,8 @@ export async function sendReminders(now = new Date()) {
             where: {
                 reminderSentAt: null,
                 date: { gte: from, lte: to },
-                ...(kindName === 'lab' ? { published: true } : {})
+                // a draft lab or event isn't happening yet
+                published: true
             },
             select: { [kind.key]: true, title: true, date: true, startTime: true, location: true }
         })

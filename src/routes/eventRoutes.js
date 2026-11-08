@@ -1,6 +1,7 @@
 import express from 'express'
 import jwt from 'jsonwebtoken'
 import prisma from '../prismaClient.js'
+import { Prisma } from '../generated/prisma/client.ts'
 import { imageFrom, readImage } from '../images.js'
 import requireRole from '../middleware/requireRole.js'
 import { onTreasuryTeam } from '../middleware/treasury.js'
@@ -101,6 +102,19 @@ function withCreator({ createdBy, ...event }, role) {
         canEdit: RANK_OFFICER.includes(role) && !lockedFor(event, role, createdBy?.member?.role)
     }
 }
+
+// Who sees an event saved as a draft and never published: whoever can add
+// events, and the advisor, who reads everything staff do. To everyone else
+// it doesn't exist (`published: true` on every read of theirs).
+const DRAFT_READERS = ['officer', 'jboard', 'treasurer', 'admin', 'advisor']
+export const seesDrafts = (role) => DRAFT_READERS.includes(role)
+
+// The fields "save draft" parks on a live event, as the body sent them — the
+// editor loads them straight back over the event.
+const DRAFT_FIELDS = [
+    'title', 'description', 'date', 'startTime', 'endTime', 'location', 'track', 'categoryId',
+    'capacity', 'team', 'hideFromEvents', 'links', 'meetingUrl', 'nonmemberPrice', 'image'
+]
 
 // The 403 PUT and DELETE give j-board on a locked event (see lockedFor).
 async function refuseLocked(eventId, viewer, res) {
@@ -204,9 +218,12 @@ router.get('/', async (req, res) => {
     try {
         const [viewer, owe] = await Promise.all([viewerOf(req), duesLookup(prisma, req.userId)])
         where.AND = visibleWhere(viewer)
+        // a draft never published is only there for whoever can edit it
+        const drafts = seesDrafts(req.role)
+        if (!drafts) { where.published = true }
         // the events and their waitlist counts together, the counts asked
         // by the same filter rather than by the ids the first one finds
-        const [events, queues] = await Promise.all([prisma.event.findMany({
+        const [events, queues, drafted] = await Promise.all([prisma.event.findMany({
             where,
             include: {
                 category: { select: { name: true } },
@@ -223,13 +240,24 @@ router.get('/', async (req, res) => {
             by: ['eventId'],
             where: { ...WAITING, event: where },
             _count: true
-        })])
+        }),
+        // which have unpublished edits parked — asked as a filter, so the
+        // drafts themselves stay put. A cleared draft is a database NULL
+        // (Prisma.DbNull — a plain null in `data` stores JSON's null instead,
+        // which still counts as a value), and AnyNull matches either.
+        drafts
+            ? prisma.event.findMany({ where: { ...where, NOT: { draft: { equals: Prisma.AnyNull } } }, select: { eventId: true } })
+            : []
+        ])
         const waiting = new Map(queues.map((queue) => [queue.eventId, queue._count]))
+        const parked = new Set(drafted.map((event) => event.eventId))
 
         // Same extras the lab list carries: how many seats are gone, how many
         // are waiting behind them, and where the person asking stands on it.
         res.json(events.map(({ members, _count, ...event }) => ({
             ...withCreator(event, req.role),
+            // staff: whether a live one has edits saved as a draft waiting
+            hasDraft: parked.has(event.eventId),
             taken: _count.members,
             waitlistCount: waiting.get(event.eventId) ?? 0,
             mine: members[0]?.attendanceStatus ?? null,
@@ -251,11 +279,14 @@ router.get('/:id', async (req, res) => {
         const [event, viewer] = await Promise.all([
             prisma.event.findUnique({
                 where: { eventId },
-                include: { category: { select: { name: true } }, createdBy: CREATOR }
+                include: { category: { select: { name: true } }, createdBy: CREATOR },
+                // the editor loads the parked edits too
+                ...(seesDrafts(req.role) ? { omit: { draft: false } } : {})
             }),
             viewerOf(req)
         ])
-        if (!event) { return res.status(404).json({ message: 'Event not found' }) }
+        // a draft never published doesn't exist for a member
+        if (!event || (!event.published && !seesDrafts(req.role))) { return res.status(404).json({ message: 'Event not found' }) }
         // a board-only event doesn't exist as far as a member is concerned —
         // 404, not 403, so the reply doesn't confirm there's something there
         if (hiddenFrom(event, viewer)) {
@@ -344,6 +375,11 @@ router.post('/', requireRole('officer'), async (req, res) => {
         return res.status(403).json({ message: 'You can only add j-board events for your own team' })
     }
     const uncapped = UNCAPPED_TRACKS.includes(track)
+    // `published: false` is "save draft": kept off members' pages until it's
+    // published (PUT). A draft still needs its date — every event has one.
+    if (req.body.published !== undefined && typeof req.body.published !== 'boolean') {
+        return res.status(400).json({ message: 'published must be true or false' })
+    }
 
     if (!title || !date) {
         return res.status(400).json({ message: 'title and date are required' })
@@ -406,11 +442,12 @@ router.post('/', requireRole('officer'), async (req, res) => {
                 paymentDueOverride,
                 hideFromEvents: hideFromEvents ?? false,
                 links,
+                published: req.body.published !== false,
                 createdById: req.userId
             },
             include: { createdBy: CREATOR }
         })
-        res.status(201).json(withCreator(event, req.role))
+        res.status(201).json({ ...withCreator(event, req.role), hasDraft: false })
     } catch (err) {
         // categoryId naming a tag that isn't on the calendar's legend
         if (err.code === 'P2003') { return res.status(400).json({ message: 'Unknown categoryId' }) }
@@ -419,9 +456,22 @@ router.post('/', requireRole('officer'), async (req, res) => {
     }
 })
 
+// Partial update. How a save lands depends on the event, as a lab's does:
+//
+//   published: true    the fields go onto the event, it goes (or stays) live,
+//                      and any waiting draft is cleared — it's been published
+//   published: false   on one members can't see yet, the same but it stays
+//                      hidden. On a live one it can't be the row itself —
+//                      people are signed up to what it says — so the fields
+//                      are parked in `draft` and the live event is untouched.
+//   discardDraft       throws the parked edits away
+//   neither            a plain edit, as before
 router.put('/:id', requireRole('officer'), async (req, res) => {
     const eventId = parseInt(req.params.id)
     if (isNaN(eventId)) { return res.status(400).json({ message: 'Invalid event id' }) }
+    if (req.body.published !== undefined && typeof req.body.published !== 'boolean') {
+        return res.status(400).json({ message: 'published must be true or false' })
+    }
 
     // partial update: only touch fields the client actually sent
     const data = {}
@@ -506,8 +556,12 @@ router.put('/:id', requireRole('officer'), async (req, res) => {
         // this edit
         const existing = await prisma.event.findUnique({
             where: { eventId },
-            select: { track: true, team: true, date: true, startTime: true, endTime: true, paymentDueOverride: true }
+            select: { track: true, team: true, date: true, startTime: true, endTime: true, paymentDueOverride: true, published: true }
         })
+        if (req.body.discardDraft === true) {
+            const event = await prisma.event.update({ where: { eventId }, data: { draft: Prisma.DbNull }, include: { createdBy: CREATOR } })
+            return res.json({ ...withCreator(event, req.role), hasDraft: false })
+        }
         const track = data.track ?? existing.track
         if (UNCAPPED_TRACKS.includes(track)) { data.capacity = null }
         if (track !== 'jboard') { data.team = null }
@@ -540,8 +594,26 @@ router.put('/:id', requireRole('officer'), async (req, res) => {
             if (badDue) { return res.status(400).json({ message: badDue }) }
             Object.assign(data, resweep(after))
         }
-        const event = await prisma.event.update({ where: { eventId }, data, include: { createdBy: CREATOR } })
-        res.json(withCreator(event, req.role))
+        // Everything's been checked against what it'd become either way, so
+        // a draft parked here is one that would publish cleanly.
+        let update = data
+        if (req.body.published === true) {
+            update = { ...data, published: true, draft: Prisma.DbNull }
+        } else if (req.body.published === false) {
+            update = existing.published
+                // stored as the body was sent, so the editor can load it
+                // back; an untouched picture isn't parked — it's the live
+                // one already
+                ? { draft: Object.fromEntries(
+                    DRAFT_FIELDS
+                        .filter((field) => (field === 'image' ? readImage(req.body.image) : req.body[field]) !== undefined)
+                        .map((field) => [field, req.body[field]])
+                ) }
+                : { ...data, published: false }
+        }
+        const event = await prisma.event.update({ where: { eventId }, data: update, include: { createdBy: CREATOR }, omit: { draft: false } })
+        const { draft, ...rest } = event
+        res.json({ ...withCreator(rest, req.role), draft: draft ?? null, hasDraft: draft != null })
     } catch (err) {
         if (err.code === 'P2025') { return res.status(404).json({ message: 'Event not found' }) }
         if (err.code === 'P2003') { return res.status(400).json({ message: 'Unknown categoryId' }) }
@@ -590,7 +662,8 @@ router.post('/:eventId/rsvp', async (req, res) => {
         const event = await prisma.event.findUnique({ where: { eventId }, select: PARENT_SELECT.event })
         // a board-only event doesn't exist for a member — the same 404
         // GET /:id gives, so signing up by id can't get round it
-        if (!event || hiddenFrom(event, await viewerOf(req))) {
+        // nor does one never published, for anyone signing up
+        if (!event || !event.published || hiddenFrom(event, await viewerOf(req))) {
             return res.status(404).json({ message: 'Event not found' })
         }
 
@@ -753,7 +826,8 @@ router.post('/:eventId/checkin', requireRole('officer'), requireNotAttendee('eve
 
     try {
         const event = await prisma.event.findUnique({ where: { eventId }, select: PARENT_SELECT.event })
-        if (!event) { return res.status(404).json({ message: 'Event not found' }) }
+        // nobody's coming to a draft yet
+        if (!event || !event.published) { return res.status(404).json({ message: 'Event not found' }) }
 
         const existing = await prisma.memberEvent.findUnique({
             where: { memberId_eventId: { memberId: decoded.id, eventId } }

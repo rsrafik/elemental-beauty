@@ -46,7 +46,7 @@ export const PARENT_SELECT = {
     lab: { labId: true, ...PARENT_COMMON, published: true, acceptingRsvps: true, jboardCanEdit: true, prelabPdfName: true },
     event: {
         eventId: true, ...PARENT_COMMON, type: true, track: true, categoryId: true, team: true,
-        hideFromEvents: true, meetingUrl: true, createdById: true
+        hideFromEvents: true, meetingUrl: true, createdById: true, published: true
     }
 }
 

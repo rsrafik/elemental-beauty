@@ -444,7 +444,8 @@ export default function MemberCalendar() {
 		Promise.all([labsApi.list({ summary: true }), eventsApi.list(), eventCategories.list()])
 			.then(([labs, events, categories]) => {
 				if (!live) return
-				const built = buildMonths(labs, events)
+				// drafts aren't happening yet (only staff are sent any)
+				const built = buildMonths(labs.filter((lab) => lab.published !== false), events.filter((event) => event.published !== false))
 				setMonths(built)
 				setTypes(typesIn(built, categories))
 			})

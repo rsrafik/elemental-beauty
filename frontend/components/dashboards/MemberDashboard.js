@@ -335,7 +335,8 @@ export default function MemberDashboard() {
 		let live = true
 
 		Promise.all([labsApi.list({ summary: true }), eventsApi.list()])
-			.then(([labs, events]) => live && setWeek(buildWeek(labs, events)))
+			// drafts aren't happening yet (only staff are sent any)
+			.then(([labs, events]) => live && setWeek(buildWeek(labs.filter((lab) => lab.published !== false), events.filter((event) => event.published !== false))))
 			.catch(() => {})
 
 		announcementsApi

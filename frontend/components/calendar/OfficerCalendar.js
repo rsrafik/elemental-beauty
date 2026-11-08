@@ -1388,8 +1388,9 @@ export default function OfficerCalendar() {
 	const load = () =>
 		Promise.all([labsApi.list({ summary: true }), eventsApi.list(), eventCategories.list()])
 			.then(([labs, events, tags]) => {
-				// drafts aren't happening yet — they stay on /labs until published
-				const built = buildMonths(labs.filter((lab) => lab.published !== false), events)
+				// drafts aren't happening yet — they stay on /labs and /events
+				// until published
+				const built = buildMonths(labs.filter((lab) => lab.published !== false), events.filter((event) => event.published !== false))
 				setMonths(built)
 				setEventRows(events)
 				setLabRows(new Map(labs.map((lab) => [lab.labId, lab])))

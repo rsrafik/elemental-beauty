@@ -1,6 +1,8 @@
 'use client'
 
-import { LeavePopup } from '@/components/labs/LabViewParts'
+import { LeavePopup, Popup, PopupButton } from '@/components/labs/LabViewParts'
+import { DiscardPopup } from '@/components/labs/EditorParts'
+import { useUnsavedChanges } from '@/components/LeaveGuard'
 import { useCallback, useEffect, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { useDismiss } from '@/lib/dismiss'
@@ -88,7 +90,46 @@ export function toCard(event) {
 		// rsvp button reads both
 		taken: event.taken ?? 0,
 		mine: event.mine ?? null,
+		// "save draft", as on /labs: one never published is a purple card
+		// members can't see; a live one can have edits waiting (hasDraft)
+		published: event.published !== false,
+		hasDraft: Boolean(event.hasDraft),
 	}
+}
+
+// What the editor's values go to the API as — /events and the calendar send
+// the same body. `type` is what the club scores attendance on and the form
+// doesn't ask for it (see saveEvent below).
+export function eventBody(values) {
+	return {
+		title: values.title,
+		date: values.date,
+		startTime: values.time || null,
+		endTime: values.time ? values.endTime || null : null,
+		categoryId: values.categoryId === '' ? null : Number(values.categoryId),
+		track: values.track,
+		description: values.description,
+		image: values.image,
+		// a j-board event has a team instead of a seat cap
+		capacity: capacityField(values.track) !== 'spots' || values.spots.trim() === '' ? null : Number(values.spots),
+		team: values.track === 'jboard' ? values.team || null : null,
+		location: values.location.trim() || null,
+		hideFromEvents: values.hideFromEvents,
+		links: values.links,
+		// the link only where the form asks for one
+		meetingUrl: hasMeetingLink(values.track) ? values.meetingUrl.trim() || null : null,
+		// and a door price only on a members-only one
+		nonmemberPrice: hasNonmemberPrice(values.track) ? priceBody(values.price) : 0,
+	}
+}
+
+// A card ready for the editor: one with edits saved as a draft has them read
+// (the list only says there are some) and laid over it, so the editor opens on
+// the draft — it's newer than what's live — the way /labs' editor does.
+export async function withDraft(card) {
+	if (!card?.hasDraft) return card
+	const full = await eventsApi.get(card.id)
+	return { ...toCard({ ...full, ...(full.draft ?? {}) }), published: card.published, hasDraft: Boolean(full.draft) }
 }
 
 // '2026-08-30' -> 'August 30, 2026'. Split by hand rather than through Date,
@@ -162,7 +203,10 @@ function CloseIcon({ className = '' }) {
 // `action` is j-board's rsvp row under the card (see rsvpFor on the page).
 // The advisor, who edits nothing, gets `onMenu` instead of `onEdit`: the dots
 // open `menu`, which only offers "view content".
-function EventCard({ title, date, time, endTime, location, image, onOpen, onEdit, onMenu, menu = null, action = null, done = false }) {
+// Drafts — events members can't see yet — are light purple instead of white,
+// the same as /labs' cards; a live one with edits saved as a draft says so
+// across its photo.
+function EventCard({ title, date, time, endTime, location, image, published = true, hasDraft = false, onOpen, onEdit, onMenu, menu = null, action = null, done = false }) {
 	return (
 		<div
 			role="link"
@@ -174,7 +218,7 @@ function EventCard({ title, date, time, endTime, location, image, onOpen, onEdit
 			className={`
 			group
 			relative
-			bg-white
+			${published ? 'bg-white' : 'bg-[#E8DEFF]'}
 			${done ? COMPLETED_CARD : ''}
 			rounded-[10px]
 			p-3
@@ -210,6 +254,24 @@ function EventCard({ title, date, time, endTime, location, image, onOpen, onEdit
 					/>
 				)}
 			</div>
+			{published && hasDraft && (
+				<span className="
+					absolute
+					left-5
+					top-5
+					rounded-full
+					bg-yellow-light
+					px-2.5
+					py-0.5
+					font-vietnam
+					font-semibold
+					text-[11px]
+					text-[#8A7500]
+					shadow-[0_2px_6px_rgba(0,0,0,0.15)]
+				">
+					unpublished edits
+				</span>
+			)}
 
 			<div className="
 				mt-3
@@ -453,6 +515,63 @@ function ConfirmDeleteDialog({ label, onCancel, onConfirm }) {
 	)
 }
 
+// The dialog's footer buttons: pills that lift on hover, greyed out while
+// they can't be pressed.
+const PILL = `
+	rounded-full
+	px-3
+	sm:px-6
+	py-2
+	font-vietnam
+	font-semibold
+	text-sm
+	whitespace-nowrap
+	cursor-pointer
+	transition-all
+	duration-200
+	ease-out
+	hover:-translate-y-0.5
+	hover:shadow-lg
+	hover:shadow-black/10
+	active:translate-y-0
+	active:shadow-none
+	disabled:opacity-40
+	disabled:cursor-not-allowed
+	disabled:hover:translate-y-0
+	disabled:hover:shadow-none
+`
+
+// Asked when the editor's closed with changes that haven't been saved — the
+// same question LeaveGuard asks on the way off a page.
+function UnsavedPopup({ onCancel, onConfirm }) {
+	return (
+		<Popup title="unsaved changes" onClose={onCancel}>
+			{(dismissPopup) => (
+				<>
+					<p className="
+						font-vietnam
+						text-sm
+						text-black/60
+						mt-3
+					">
+						You have changes to this event that haven&apos;t been saved. If you
+						close it now, they&apos;ll be lost.
+					</p>
+					<div className="
+						mt-8
+						flex
+						justify-end
+						gap-3
+					">
+						<PopupButton onClick={() => dismissPopup(onCancel)}>keep editing</PopupButton>
+						<PopupButton danger onClick={() => dismissPopup(onConfirm)}>discard</PopupButton>
+					</div>
+				</>
+			)}
+		</Popup>
+	)
+}
+
 // Mounted only while open, so it always starts from whatever `event` it was
 // handed — an existing row to edit, or nothing for a new one. Same fields as
 // the calendar's new-event dialog.
@@ -463,9 +582,16 @@ function ConfirmDeleteDialog({ label, onCancel, onConfirm }) {
 // `onDelete` only comes in when there's an event to delete, which is what puts
 // the delete button on the footer.
 //
+// The footer is /labs' editor's: publish, save draft, discard. `onSave(values,
+// published)` takes both saves — `published` false is the draft. Discard asks
+// first when there's anything to lose, and throws away a saved draft too
+// (`onDiscardDraft`, on an event that has one — see withDraft). Closing any
+// other way (the ×, the backdrop, Escape, leaving the page) with changes
+// that aren't saved asks before they go.
+//
 // The officer calendar opens this too, when an event on it is clicked —
 // including the ones this page doesn't list, which have nowhere else to edit.
-export function EventDialog({ event, categories, onClose, onSave, onDelete }) {
+export function EventDialog({ event, categories, onClose, onSave, onDiscardDraft, onDelete }) {
 	const role = useRole()
 	// dismiss plays the exit animation and then closes for real — lib/dismiss.js
 	const { closing, dismiss } = useDismiss()
@@ -490,15 +616,29 @@ export function EventDialog({ event, categories, onClose, onSave, onDelete }) {
 	// { title, url } rows, blank ones included while they're being filled in
 	const [links, setLinks] = useState(event?.links ?? [])
 	const [confirmingDelete, setConfirmingDelete] = useState(false)
+	// "discard?" from the discard button, and "unsaved changes" from closing
+	const [confirmingDiscard, setConfirmingDiscard] = useState(false)
+	const [confirmingClose, setConfirmingClose] = useState(false)
+
+	// what it opened with, to tell whether anything's been changed since —
+	// typing something back the way it was counts as no change
+	const [initial] = useState(() => ({ form: JSON.stringify(form), image, links: JSON.stringify(links) }))
+	const dirty = JSON.stringify(form) !== initial.form || image !== initial.image || JSON.stringify(links) !== initial.links
+	// the sidebar, a link, back: asked about the same as closing (LeaveGuard)
+	useUnsavedChanges(dirty)
+
+	const hasDraft = Boolean(event?.hasDraft)
+	const askClose = () => (dirty ? setConfirmingClose(true) : close())
+	const askDiscard = () => (dirty || hasDraft ? setConfirmingDiscard(true) : close())
 
 	const set = (field) => (changed) =>
 		setForm((prev) => ({ ...prev, [field]: changed.target.value }))
 
-	// Escape closes, same as the backdrop — but not while the delete
-	// confirmation is up, or one keypress would dismiss both layers at once.
+	// Escape closes, same as the backdrop — but not while one of the popups
+	// on top is up, or one keypress would dismiss both layers at once.
 	useEffect(() => {
 		const onKey = (pressed) => {
-			if (pressed.key === 'Escape' && !confirmingDelete) close()
+			if (pressed.key === 'Escape' && !confirmingDelete && !confirmingDiscard && !confirmingClose) askClose()
 		}
 		window.addEventListener('keydown', onKey)
 		return () => window.removeEventListener('keydown', onKey)
@@ -528,8 +668,9 @@ export function EventDialog({ event, categories, onClose, onSave, onDelete }) {
 	const priceFine = !hasNonmemberPrice(form.track) || priceOk(form.price)
 	const ready = form.title.trim() !== '' && form.date !== '' && spotsOk && endOk && priceFine
 
-	const submit = (submitted) => {
-		submitted.preventDefault()
+	// publish, or with `published` false save it as a draft. A draft needs
+	// the same as publishing: every event has a date, even one not out yet.
+	const save = (published) => {
 		if (!ready) return
 		dismiss(() =>
 			onSave({
@@ -538,8 +679,13 @@ export function EventDialog({ event, categories, onClose, onSave, onDelete }) {
 				description: form.description.trim(),
 				image,
 				links: cleanLinks(links),
-			})
+			}, published)
 		)
+	}
+	// Enter in a box publishes, as it saved before there were drafts
+	const submit = (submitted) => {
+		submitted.preventDefault()
+		save(true)
 	}
 
 	return (
@@ -556,7 +702,7 @@ export function EventDialog({ event, categories, onClose, onSave, onDelete }) {
 				sm:p-8
 				${closing ? 'dialog-leaving' : 'dialog-open'}
 			`}
-			onClick={close}
+			onClick={askClose}
 		>
 			{/* the card swallows clicks so only the backdrop itself closes */}
 			<form
@@ -594,7 +740,7 @@ export function EventDialog({ event, categories, onClose, onSave, onDelete }) {
 					</h2>
 					<button
 						type="button"
-						onClick={close}
+						onClick={askClose}
 						aria-label="Close"
 						className="
 							w-9
@@ -627,6 +773,23 @@ export function EventDialog({ event, categories, onClose, onSave, onDelete }) {
 					Labs are scheduled from the labs page, since they need sign-ups and
 					check-in.
 				</p>
+				{/* where this one stands, when it isn't simply live */}
+				{event && (!event.published || hasDraft) && (
+					<p className="
+						mt-3
+						rounded-[10px]
+						bg-[#E8DEFF]
+						px-4
+						py-2
+						font-vietnam
+						text-sm
+						text-black/70
+					">
+						{event.published
+							? 'You’re editing a saved draft. Members still see the published version until you publish.'
+							: 'This is a draft. Members can’t see it until it’s published.'}
+					</p>
+				)}
 
 				<div className="
 					mt-6
@@ -887,104 +1050,65 @@ export function EventDialog({ event, categories, onClose, onSave, onDelete }) {
 					<LinksField links={links} onChange={setLinks} fieldClass={FIELD} Label={Label} />
 				</div>
 
-				{/* delete sits apart from the pair on the right, so it can't be hit
-				    while reaching for save */}
+				{/* delete sits apart from the three on the right, so it can't be
+				    hit while reaching for publish. On a phone the three take a row
+				    of their own, with delete under them. */}
 				<div className="
 					mt-8
 					flex
-					items-center
-					justify-between
+					flex-col-reverse
+					items-stretch
 					gap-3
+					sm:flex-row
+					sm:items-center
+					sm:justify-between
 				">
 					{onDelete ? (
 						<button
 							type="button"
 							onClick={() => setConfirmingDelete(true)}
-							className="
-								rounded-full
+							className={`
+								${PILL}
 								border
 								border-red
-								px-6
-								py-2
-								font-vietnam
-								font-semibold
-								text-sm
 								text-red
-								cursor-pointer
-								transition-all
-								duration-200
-								ease-out
 								hover:bg-red
 								hover:text-white
-								hover:-translate-y-0.5
-								hover:shadow-lg
-								hover:shadow-black/10
-								active:translate-y-0
-								active:shadow-none
-							"
+							`}
 						>
 							delete event
 						</button>
 					) : (
-						<span />
+						<span className="hidden sm:block" />
 					)}
 
 					<div className="
 						flex
-						gap-3
+						gap-2
+						sm:gap-3
 					">
 						<button
 							type="button"
-							onClick={close}
-							className="
-								rounded-full
-								border
-								border-black/70
-								px-6
-								py-2
-								font-vietnam
-								font-semibold
-								text-sm
-								text-black
-								cursor-pointer
-								transition-all
-								duration-200
-								ease-out
-								hover:-translate-y-0.5
-								hover:shadow-lg
-								hover:shadow-black/10
-								active:translate-y-0
-								active:shadow-none
-							"
+							onClick={askDiscard}
+							className={`${PILL} min-w-0 flex-1 sm:flex-none border border-black/70 text-black`}
 						>
-							cancel
+							discard
+						</button>
+						<button
+							type="button"
+							onClick={() => save(false)}
+							disabled={!ready}
+							title={ready ? undefined : 'A draft needs a name and a date'}
+							className={`${PILL} min-w-0 flex-1 sm:flex-none border border-[#7A5CC8] text-[#5B3FA8] bg-[#E8DEFF]`}
+						>
+							save draft
 						</button>
 						<button
 							type="submit"
 							disabled={!ready}
-							className={`
-								rounded-full
-								px-6
-								py-2
-								font-vietnam
-								font-semibold
-								text-sm
-								transition-all
-								duration-200
-								ease-out
-								${ready
-									? `bg-blue
-									   text-white
-									   cursor-pointer
-									   hover:-translate-y-0.5
-									   hover:shadow-lg
-									   hover:shadow-black/20
-									   active:translate-y-0
-									   active:shadow-none`
-									: 'bg-black/10 text-black/40 cursor-not-allowed'}
-							`}
+							className={`${PILL} min-w-0 flex-1 sm:flex-none bg-blue text-white`}
 						>
-							{event ? 'save changes' : 'add event'}
+							publish
 						</button>
 					</div>
 				</div>
@@ -994,6 +1118,28 @@ export function EventDialog({ event, categories, onClose, onSave, onDelete }) {
 						label={event.title}
 						onCancel={() => setConfirmingDelete(false)}
 						onConfirm={onDelete}
+					/>
+				)}
+				{/* the discard button: what's unsaved goes, and a saved draft
+				    with it — the live event stays as it is */}
+				{confirmingDiscard && (
+					<DiscardPopup
+						onCancel={() => setConfirmingDiscard(false)}
+						onConfirm={() => {
+							setConfirmingDiscard(false)
+							if (hasDraft && onDiscardDraft) dismiss(onDiscardDraft)
+							else close()
+						}}
+					/>
+				)}
+				{/* closing any other way: only what's unsaved goes */}
+				{confirmingClose && (
+					<UnsavedPopup
+						onCancel={() => setConfirmingClose(false)}
+						onConfirm={() => {
+							setConfirmingClose(false)
+							close()
+						}}
 					/>
 				)}
 				<ScrollHint />
@@ -1051,6 +1197,15 @@ export default function OfficerEvents() {
 	useEffect(() => doneOpeningNew('events'), [])
 
 	const closeEditor = () => setEditing(null)
+	// the dots: the editor, on the saved draft if the event has one
+	const openEditor = async (row) => {
+		setError(null)
+		try {
+			setEditing({ event: await withDraft(row) })
+		} catch (err) {
+			setError(err.message)
+		}
+	}
 
 	useEffect(() => {
 		let live = true
@@ -1111,7 +1266,8 @@ export default function OfficerEvents() {
 	// from sign-up through the event's own day (on the day it's the only
 	// button — sign-ups are the door's business by then)
 	const rsvpFor = (row) => {
-		if (!signsUp || row.date < today()) return null
+		// nobody signs up for a draft
+		if (!signsUp || !row.published || row.date < today()) return null
 		const upcoming = row.date > today()
 		const holding = row.mine === 'rsvped' || row.mine === 'offered'
 		if (!upcoming && !holding && row.mine !== 'attended') return null
@@ -1190,28 +1346,13 @@ export default function OfficerEvents() {
 	// more than socials — and the form doesn't ask for it, so a new event takes
 	// 'social' and an edit leaves whatever it had. The tag the form *does* ask
 	// for is the calendar's label and a separate thing entirely.
-	const saveEvent = async (values) => {
+	//
+	// `published` false saves it as a draft: a new one, or one never
+	// published, stays a purple card members can't see; on a live one the
+	// edits are parked and the card says so (see PUT /api/events/:id).
+	const saveEvent = async (values, published = true) => {
 		const target = editing.event
-		const body = {
-			title: values.title,
-			date: values.date,
-			startTime: values.time || null,
-			endTime: values.time ? values.endTime || null : null,
-			categoryId: values.categoryId === '' ? null : Number(values.categoryId),
-			track: values.track,
-			description: values.description,
-			image: values.image,
-			// a j-board event has a team instead of a seat cap
-			capacity: capacityField(values.track) !== 'spots' || values.spots.trim() === '' ? null : Number(values.spots),
-			team: values.track === 'jboard' ? values.team || null : null,
-			location: values.location.trim() || null,
-			hideFromEvents: values.hideFromEvents,
-			links: values.links,
-			// the link only where the form asks for one
-			meetingUrl: hasMeetingLink(values.track) ? values.meetingUrl.trim() || null : null,
-			// and a door price only on a members-only one
-			nonmemberPrice: hasNonmemberPrice(values.track) ? priceBody(values.price) : 0,
-		}
+		const body = { ...eventBody(values), published }
 
 		setError(null)
 		try {
@@ -1228,11 +1369,27 @@ export default function OfficerEvents() {
 		closeEditor()
 	}
 
+	// discard on a live event with a draft saved: the draft goes, the event
+	// stays as members see it
+	const discardDraft = async () => {
+		const target = editing.event
+		setError(null)
+		try {
+			const saved = await eventsApi.update(target.id, { discardDraft: true })
+			setEvents((prev) => prev.map((row) => (row.id === target.id ? toCard(saved) : row)))
+		} catch (err) {
+			setError(err.message)
+		}
+		closeEditor()
+	}
+
 	// Board and meeting events are calendar-only (see calendarOnly), and so is
 	// anything with "hide from events" switched on. Dropped here rather than on
 	// load, so one saved that way leaves the sheet the moment the form closes.
+	// A draft stays here whatever it is until it's published: the calendar
+	// doesn't show drafts, so this is the only place to find it again.
 	const listed = events.filter((row) =>
-		!row.hideFromEvents && !calendarOnly(row.track, categoryNameOf(categories, row.categoryId))
+		!row.published || (!row.hideFromEvents && !calendarOnly(row.track, categoryNameOf(categories, row.categoryId)))
 	)
 
 	// coming up (or today) first, then what's already happened, greyed out
@@ -1318,8 +1475,10 @@ export default function OfficerEvents() {
 						endTime={row.endTime}
 						location={row.location}
 						image={row.image}
+						published={row.published}
+						hasDraft={row.hasDraft}
 						onOpen={() => router.push(`/events/view?id=${row.id}`)}
-						onEdit={changes ? () => setEditing({ event: row }) : null}
+						onEdit={changes ? () => openEditor(row) : null}
 						{...advisorMenu(row)}
 						action={rsvpFor(row)}
 					/>
@@ -1340,8 +1499,10 @@ export default function OfficerEvents() {
 								endTime={row.endTime}
 								location={row.location}
 								image={row.image}
+								published={row.published}
+								hasDraft={row.hasDraft}
 								onOpen={() => router.push(`/events/view?id=${row.id}`)}
-								onEdit={changes ? () => setEditing({ event: row }) : null}
+								onEdit={changes ? () => openEditor(row) : null}
 								{...advisorMenu(row)}
 							/>
 						))}
@@ -1362,6 +1523,7 @@ export default function OfficerEvents() {
 					categories={categories}
 					onClose={closeEditor}
 					onSave={saveEvent}
+					onDiscardDraft={discardDraft}
 					onDelete={editing.event ? deleteEvent : undefined}
 				/>
 			)}

@@ -437,3 +437,90 @@ test('a full event counts its waitlist alongside the seats, and joining or leavi
     await rsvp(third, 'DELETE')
     assert.deepEqual(await counts(first), [1, 1])
 })
+
+test('an event saved as a draft is hidden from members until it’s published', { skip }, async () => {
+    const officer = await person('officer')
+    const member = await person('member')
+    const body = { title: `${tag} draft`, type: 'social', track: 'members', date: '2030-02-01' }
+
+    const id = await as(officer, 'officer', async (base) => {
+        const created = await (await fetch(base, {
+            method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ ...body, published: false })
+        })).json()
+        made.events.push(created.eventId)
+        assert.equal(created.published, false)
+        // staff still see it, to finish it
+        const listed = (await (await fetch(base)).json()).find((row) => row.eventId === created.eventId)
+        assert.equal(listed?.published, false)
+        return created.eventId
+    })
+
+    await as(member, 'member', async (base) => {
+        assert.ok(!(await (await fetch(base)).json()).some((row) => row.eventId === id), 'member list')
+        assert.equal((await fetch(`${base}/${id}`)).status, 404, 'member by id')
+        assert.equal((await fetch(`${base}/${id}/rsvp`, { method: 'POST' })).status, 404, 'member rsvp')
+    })
+
+    // saving it as a draft again keeps it hidden and takes the edit
+    await as(officer, 'officer', async (base) => {
+        const saved = await (await fetch(`${base}/${id}`, {
+            method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ title: `${tag} draft 2`, published: false })
+        })).json()
+        assert.equal(saved.published, false)
+        assert.equal(saved.title, `${tag} draft 2`)
+        assert.equal(saved.hasDraft, false)
+        const published = await (await fetch(`${base}/${id}`, {
+            method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ published: true })
+        })).json()
+        assert.equal(published.published, true)
+    })
+
+    await as(member, 'member', async (base) => {
+        assert.ok((await (await fetch(base)).json()).some((row) => row.eventId === id), 'published, in the member list')
+    })
+})
+
+test('a draft on a live event is parked until it’s published or discarded', { skip }, async () => {
+    const officer = await person('officer')
+    const member = await person('member')
+    const id = await event('members')
+    const json = { 'Content-Type': 'application/json' }
+
+    await as(officer, 'officer', async (base) => {
+        const parked = await (await fetch(`${base}/${id}`, {
+            method: 'PUT', headers: json, body: JSON.stringify({ title: `${tag} renamed`, location: 'WTHR 200', published: false })
+        })).json()
+        // the live row's untouched; the edits wait in the draft
+        assert.equal(parked.title, `${tag} members`)
+        assert.equal(parked.hasDraft, true)
+        assert.equal(parked.draft.title, `${tag} renamed`)
+        const listed = (await (await fetch(base)).json()).find((row) => row.eventId === id)
+        assert.equal(listed.hasDraft, true)
+        assert.equal(listed.draft, undefined, 'the list says there is one, without carrying it')
+        assert.equal((await (await fetch(`${base}/${id}`)).json()).draft.location, 'WTHR 200')
+    })
+
+    await as(member, 'member', async (base) => {
+        const seen = await (await fetch(`${base}/${id}`)).json()
+        assert.equal(seen.title, `${tag} members`)
+        assert.equal(seen.draft, undefined, 'members never get the draft')
+    })
+
+    await as(officer, 'officer', async (base) => {
+        const discarded = await (await fetch(`${base}/${id}`, {
+            method: 'PUT', headers: json, body: JSON.stringify({ discardDraft: true })
+        })).json()
+        assert.equal(discarded.hasDraft, false)
+        assert.equal(discarded.title, `${tag} members`)
+        // and it stays gone on the next read of the list
+        assert.equal((await (await fetch(base)).json()).find((row) => row.eventId === id).hasDraft, false)
+
+        await fetch(`${base}/${id}`, { method: 'PUT', headers: json, body: JSON.stringify({ title: `${tag} again`, published: false }) })
+        const published = await (await fetch(`${base}/${id}`, {
+            method: 'PUT', headers: json, body: JSON.stringify({ title: `${tag} again`, published: true })
+        })).json()
+        assert.equal(published.title, `${tag} again`)
+        assert.equal(published.hasDraft, false)
+        assert.equal(published.draft, null)
+    })
+})
