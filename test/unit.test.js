@@ -5,7 +5,8 @@ import { clubInstant, clubToday, clubFormat, dateColumn, readEndTime, startsAt }
 import { csvCell } from '../src/csv.js'
 import { hashPassword, needsRehash, passwordProblem, checkPassword } from '../src/passwords.js'
 import { wantsEmail } from '../src/emailPrefs.js'
-import { readMessage } from '../src/emailAll.js'
+import { readMessage, emailAll, batchSize } from '../src/emailAll.js'
+import { mailService } from '../src/email.js'
 import { fromEmail } from '../src/accountEmail.js'
 import { schoolYearOf } from '../src/dues.js'
 import { wipeProblem } from '../scripts/localDatabase.js'
@@ -169,4 +170,48 @@ test('an advisor can read anything but only change the club-wide email-all and t
     assert.equal(advisorMayDo('PUT', '/api/members/email-all'), false)
     // a look-alike path doesn't slip through
     assert.equal(advisorMayDo('POST', '/api/labs/12/email-all/extra'), false)
+})
+
+test('email all through Resend stays under its 50-recipient cap per message', async (t) => {
+    const saved = { ...process.env }
+    const realFetch = globalThis.fetch
+    t.after(() => { process.env = saved; globalThis.fetch = realFetch })
+    delete process.env.GMAIL_USER
+    delete process.env.GMAIL_APP_PASSWORD
+    process.env.RESEND_API_KEY = 'test'
+    process.env.EMAIL_REPLY_TO = 'club@example.com'
+
+    const sent = []
+    globalThis.fetch = async (url, opts) => {
+        sent.push(JSON.parse(opts.body))
+        return new Response('{}', { status: 200 })
+    }
+    const recipients = Array.from({ length: 120 }, (_, i) => `m${i}@example.com`)
+    assert.equal(await emailAll({ recipients, subject: 'Hi', message: 'Hello' }), 120)
+    assert.equal(sent.length, 3)
+    for (const email of sent) {
+        assert.ok(email.to.length + email.bcc.length <= 50)
+    }
+    assert.deepEqual(sent.flatMap((e) => e.bcc).sort(), [...recipients].sort())
+})
+
+test('only a send that asks for Gmail skips Resend; either works alone', (t) => {
+    const saved = { ...process.env }
+    t.after(() => { process.env = saved })
+    const set = (resend, gmail) => {
+        process.env.RESEND_API_KEY = resend ? 'key' : ''
+        process.env.GMAIL_USER = gmail ? 'club@gmail.com' : ''
+        process.env.GMAIL_APP_PASSWORD = gmail ? 'app pass' : ''
+    }
+    set(true, true)
+    assert.equal(mailService(), 'resend')
+    assert.equal(mailService('gmail'), 'gmail')
+    set(true, false)
+    assert.equal(mailService('gmail'), 'resend')
+    set(false, true)
+    assert.equal(mailService(), 'gmail')
+    set(false, false)
+    assert.equal(mailService('gmail'), null)
+    assert.equal(batchSize('resend'), 49)
+    assert.equal(batchSize('gmail'), 90)
 })

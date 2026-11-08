@@ -219,7 +219,10 @@ router.post('/email-all', requireRole('officer'), async (req, res) => {
             recipients,
             subject,
             message,
-            reason: 'You’re getting this because you’re a member of Elemental Beauty. You can turn these emails off on your account page.'
+            reason: 'You’re getting this because you’re a member of Elemental Beauty. You can turn these emails off on your account page.',
+            // through the club's Gmail when it's set, so a big list doesn't
+            // use up Resend's daily allowance (see src/email.js)
+            prefer: 'gmail'
         })
         await recordSend({ kind: 'email_all', sent, by: req.userId })
         res.json({ message: `Sent to ${sent} ${sent === 1 ? 'person' : 'people'}`, sent })

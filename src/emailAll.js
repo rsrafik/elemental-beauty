@@ -1,4 +1,4 @@
-import { sendEmail } from './email.js'
+import { sendEmail, mailService } from './email.js'
 import { actionEmail } from './emailTemplate.js'
 
 // "Email all": an officer's message, sent by the server from the club's own
@@ -6,10 +6,22 @@ import { actionEmail } from './emailTemplate.js'
 // EMAIL_REPLY_TO. Everyone's in BCC, so nobody sees anyone else's address; the
 // message is addressed to the club's inbox itself, which keeps a copy.
 //
-// Gmail takes at most about 100 recipients a message, so a long list goes out
-// in batches. Returns how many were sent to, or throws if a batch failed.
+// Each mail service caps how many people one message can go to, so a long
+// list goes out in batches: Gmail takes about 100, Resend 50 counting the
+// club's own address in To. Resend also turns away more than a couple of
+// requests a second, so its batches are spaced out. Returns how many were
+// sent to, or throws if a batch failed.
+//
+// `prefer: 'gmail'` sends through Gmail when it's set (the officer
+// dashboard's "Email all"); otherwise it goes the way every email does
+// (see email.js).
 
-const BATCH = 90
+export function batchSize(service) {
+    return service === 'resend' ? 49 : 90
+}
+
+const RESEND_GAP_MS = 600
+const wait = (ms) => new Promise((resolve) => setTimeout(resolve, ms))
 
 // a blank line starts a new paragraph; single line breaks are kept inside one
 function paragraphs(message) {
@@ -19,7 +31,7 @@ function paragraphs(message) {
         .filter(Boolean)
 }
 
-export async function emailAll({ recipients, subject, message, reason }) {
+export async function emailAll({ recipients, subject, message, reason, prefer }) {
     const list = [...new Set(recipients.filter(Boolean))]
     if (list.length === 0) { return 0 }
 
@@ -27,12 +39,14 @@ export async function emailAll({ recipients, subject, message, reason }) {
         /<([^>]+)>/.exec(process.env.EMAIL_FROM ?? '')?.[1] || 'onboarding@resend.dev'
     const body = actionEmail({ heading: subject, lines: paragraphs(message), reason })
 
-    for (let i = 0; i < list.length; i += BATCH) {
-        const ok = await sendEmail({ to, bcc: list.slice(i, i + BATCH), subject, ...body })
+    const service = mailService(prefer)
+    const size = batchSize(service)
+    for (let i = 0; i < list.length; i += size) {
+        if (i > 0 && service === 'resend') { await wait(RESEND_GAP_MS) }
+        const ok = await sendEmail({ to, bcc: list.slice(i, i + size), subject, ...body, prefer })
         // no mail service configured: printed to the console, which is fine
         // for trying it out locally
-        const configured = (process.env.GMAIL_USER && process.env.GMAIL_APP_PASSWORD) || process.env.RESEND_API_KEY
-        if (!ok && configured) {
+        if (!ok && service) {
             throw new Error(i === 0
                 ? 'The email didn’t go out. Check the server log'
                 : `Only the first ${i} went out. Check the server log`)
