@@ -44,6 +44,13 @@ import { usePathname } from 'next/navigation'
 // somewhere you can see, and a bar that has scrolled off the top leaves no way
 // to open the menu at all.
 //
+// From `lg` it's back in flow (lg:static). The frame there is one screen tall
+// and never scrolls, so sticky had nothing to do — except follow a page whose
+// content reached past the frame's edge: the calendar's grid runs out to the
+// window's bottom edge, and while it rose into place on arrival the sticky
+// sidebar was pushed down with it and slid back up. In flow, nothing a page
+// does can move it.
+//
 // Which state you get is Tailwind's `lg:` prefix, so there's no viewport
 // measuring and nothing to hydrate wrong.
 
@@ -253,7 +260,7 @@ export default function Sidebar({
 				${open
 					? 'h-[calc(100dvh-2rem)] sm:h-[calc(100dvh-3rem)]'
 					: 'h-16'}
-				lg:top-8
+				lg:static
 				lg:self-start
 				lg:h-[calc(100vh-4rem)]
 				lg:z-auto
