@@ -127,6 +127,12 @@ function splitDateInput(value) {
 	return { key: `${year}-${String(month).padStart(2, '0')}`, day, year, month }
 }
 
+// (2026, 7, 30) -> '2026-08-30', for the date field — `month` counts from 0,
+// as Date does
+function dateInput(year, month, day) {
+	return `${year}-${String(month + 1).padStart(2, '0')}-${String(day).padStart(2, '0')}`
+}
+
 // '13:30' -> '1:30pm', and with an end '1:30-3:00pm' (or '11:00am-1:00pm')
 const prettyTimes = (start, end) => prettyTimeRange(start, end).replace(/ /g, '').toLowerCase()
 
@@ -639,8 +645,12 @@ function isToday(view, number) {
 // `dues` are the viewer's own unpaid due dates that land on it (j-board owe
 // dues too): the box goes light red and each says what's owed by when
 // (DuesDeadlines).
-function Day({ number, inMonth, entries: dayEntries, dues = [], wave = 0, today = false, onOpen }) {
+//
+// `onAdd`, for whoever can add events, makes the badge a button: clicking a
+// day's number opens "add event" with that day already filled in.
+function Day({ number, inMonth, entries: dayEntries, dues = [], wave = 0, today = false, onOpen, onAdd, label }) {
 	const badge = dayBadge(dayEntries, TRACKS)
+	const Badge = onAdd ? 'button' : 'span'
 	return (
 		<div
 			style={{ '--wave': wave }}
@@ -661,7 +671,8 @@ function Day({ number, inMonth, entries: dayEntries, dues = [], wave = 0, today 
 				${dues.length ? DUE_CELL : ''}
 			`}
 		>
-			<span
+			<Badge
+				{...(onAdd ? { type: 'button', onClick: onAdd, 'aria-label': `Add an event on ${label}`, title: 'Add an event on this day' } : {})}
 				style={inMonth ? badge.style : undefined}
 				className={`
 					w-7
@@ -680,10 +691,11 @@ function Day({ number, inMonth, entries: dayEntries, dues = [], wave = 0, today 
 						? `${badge.className} group-hover:scale-110`
 						: 'text-black/40'}
 					${today ? 'calendar-today' : ''}
+					${onAdd ? 'cursor-pointer hover:!scale-125 active:!scale-100 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-black' : ''}
 				`}
 			>
 				{number}
-			</span>
+			</Badge>
 
 			{/* A seven-column month on a phone gives each day about 45px, which is
 			    room for the badge and nothing else — so below `md` the cell is just
@@ -840,7 +852,9 @@ function Label({ children }) {
 // to be an object URL in an object, which the API refused, so any event added
 // here with a picture failed to save.) The calendar never draws it; the events
 // pages do.
-function EventDialog({ categories, onClose, onSave }) {
+// `date` ('YYYY-MM-DD') starts it on that day — a day's number clicked on the
+// grid; blank from the "add event" button.
+function EventDialog({ categories, date = '', onClose, onSave }) {
 	const role = useRole()
 	// dismiss plays the exit animation and then closes for real — lib/dismiss.js
 	const { closing, dismiss } = useDismiss()
@@ -848,7 +862,7 @@ function EventDialog({ categories, onClose, onSave }) {
 
 	const [form, setForm] = useState({
 		title: '',
-		date: '',
+		date,
 		time: '',
 		endTime: '',
 		categoryId: categories[0]?.categoryId ?? '',
@@ -1333,7 +1347,9 @@ export default function OfficerCalendar() {
 	// Which month is on screen. Stepping goes through Date so December rolls
 	// into January of the next year on its own.
 	const [view, setView] = useState(thisMonth)
-	const [dialogOpen, setDialogOpen] = useState(false)
+	// null while the add-event dialog is shut; the date it opens on otherwise
+	// ('' from the button, 'YYYY-MM-DD' from a day's number on the grid)
+	const [dialogDate, setDialogDate] = useState(null)
 
 	// The tracks switched off in the colour key: their days leave the grid and
 	// the agenda. Everything starts on, bar j-board for officers and the
@@ -1482,7 +1498,7 @@ export default function OfficerCalendar() {
 		} catch (err) {
 			setError(err.message)
 		}
-		setDialogOpen(false)
+		setDialogDate(null)
 	}
 
 	// A lab has a whole page of an editor (lessons, quiz, PDFs), so it goes
@@ -1628,7 +1644,7 @@ export default function OfficerCalendar() {
 
 					{adds && <button
 						type="button"
-						onClick={() => setDialogOpen(true)}
+						onClick={() => setDialogDate('')}
 						className="
 							group
 							mt-8
@@ -1890,6 +1906,8 @@ export default function OfficerCalendar() {
 									entries={day.inMonth ? shown(day.number) : []}
 									dues={day.inMonth ? dueOn(view.year, view.month, day.number) : []}
 									onOpen={openEntry}
+									onAdd={adds && day.inMonth ? () => setDialogDate(dateInput(view.year, view.month, day.number)) : undefined}
+									label={day.inMonth ? `${monthName(view.year, view.month)} ${day.number}` : undefined}
 								/>
 							))}
 						</div>
@@ -1906,10 +1924,11 @@ export default function OfficerCalendar() {
 				</div>
 			</div>
 
-			{dialogOpen && (
+			{dialogDate !== null && (
 				<EventDialog
 					categories={categoriesFrom(categories)}
-					onClose={() => setDialogOpen(false)}
+					date={dialogDate}
+					onClose={() => setDialogDate(null)}
 					onSave={saveEvent}
 				/>
 			)}
