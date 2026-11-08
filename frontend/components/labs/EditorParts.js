@@ -145,19 +145,21 @@ export function FieldLabel({ htmlFor, required = false, className = '', children
 
 // The white boxes. `tone` is the border: orange for the lab's details and the
 // quiz, pink for materials, green for the instructions. A field that's
-// missing on publish goes red until it's filled.
+// missing on publish goes red until it's filled. A field that's `changed`
+// from what members see now — edits not yet published, saved as a draft or
+// not — turns pink inside.
 const BORDERS = {
 	orange: 'border-orange',
 	pink: 'border-[#FF3992]',
 	green: 'border-[#6AAC24]',
 }
 
-export function fieldClass(tone = 'orange', invalid = false) {
+export function fieldClass(tone = 'orange', invalid = false, changed = false) {
 	return `
 		w-full
 		rounded-[5px]
 		border
-		bg-white
+		${changed ? 'bg-[#FFE0EE]' : 'bg-white'}
 		font-vietnam
 		text-[15px]
 		text-black

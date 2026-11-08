@@ -77,8 +77,21 @@ function Checkbox({ checked, onChange, label }) {
 	)
 }
 
-function Question({ index, value, onChange, onRemove, invalid }) {
+// `live` is this question as members see it now and `saved` as the saved
+// draft has it (each null when there isn't one): a box the draft changes —
+// its wording, or an answer's words or tick — turns pink until it's
+// published. Typing doesn't mark anything until "save draft" does.
+function Question({ index, value, live, saved, onChange, onRemove, invalid }) {
 	const n = index + 1
+	const compare = Boolean(live && saved)
+	const option = (q, i) => q?.options[i] ?? { answerText: '', isCorrect: false }
+	const same = (a, b) => String(a ?? '').trim() === String(b ?? '').trim()
+	const questionChanged = compare && !same(saved.question, live.question)
+	const optionChanged = (i) =>
+		compare && (
+			!same(option(saved, i).answerText, option(live, i).answerText) ||
+			Boolean(option(saved, i).isCorrect) !== Boolean(option(live, i).isCorrect)
+		)
 	const setOption = (i, patch) =>
 		onChange({ ...value, options: value.options.map((o, j) => (j === i ? { ...o, ...patch } : o)) })
 	// one right answer: ticking a box unticks the others, ticking it again clears it
@@ -116,7 +129,7 @@ function Question({ index, value, onChange, onRemove, invalid }) {
 				onChange={(event) => onChange({ ...value, question: event.target.value })}
 				aria-invalid={invalid}
 				className={`
-					${fieldClass('orange', invalid)}
+					${fieldClass('orange', invalid, questionChanged)}
 					mt-[1.5px]
 					h-[41.6px]
 					px-[14px]
@@ -165,7 +178,7 @@ function Question({ index, value, onChange, onRemove, invalid }) {
 							onChange={(event) => setOption(i, { answerText: event.target.value })}
 							aria-label={`Question ${n}, answer ${i + 1}`}
 							className={`
-								${fieldClass('orange')}
+								${fieldClass('orange', false, optionChanged(i))}
 								h-[41.5px]
 								px-[14px]
 							`}
@@ -192,6 +205,10 @@ export default function QuizEditor({ id }) {
 	const [title, setTitle] = useState('')
 	const [questions, setQuestions] = useState(null)
 	const [hasDraft, setHasDraft] = useState(false)
+	// the quiz members take now and the saved draft, to mark what the draft
+	// changes (each null when there isn't one)
+	const [liveQuestions, setLiveQuestions] = useState(null)
+	const [draftQuestions, setDraftQuestions] = useState(null)
 	const [invalid, setInvalid] = useState(() => new Set())
 	const [status, setStatus] = useState(null)
 	const [busy, setBusy] = useState(false)
@@ -209,6 +226,8 @@ export default function QuizEditor({ id }) {
 				if (!live) return
 				setTitle(quiz.title)
 				setHasDraft(Boolean(quiz.draft))
+				setLiveQuestions(quiz.questions.length ? quiz.questions.map(toEditable) : null)
+				setDraftQuestions(quiz.draft ? quiz.draft.map(toEditable) : null)
 				// the draft is newer than what's live, so that's what opens
 				const source = quiz.draft ?? quiz.questions
 				setQuestions(source.length ? source.map(toEditable) : [blankQuestion()])
@@ -251,6 +270,7 @@ export default function QuizEditor({ id }) {
 				return
 			}
 			setHasDraft(true)
+			setDraftQuestions(questions)
 			setDirty(false)
 			setStatus({ text: 'Draft saved. Members still see the published quiz' })
 		} catch (err) {
@@ -331,6 +351,8 @@ export default function QuizEditor({ id }) {
 									key={i}
 									index={i}
 									value={question}
+									live={liveQuestions ? liveQuestions[i] ?? blankQuestion() : null}
+									saved={draftQuestions ? draftQuestions[i] ?? blankQuestion() : null}
 									onChange={(value) => setQuestion(i, value)}
 									onRemove={() => removeQuestion(i)}
 									invalid={invalid.has(i)}

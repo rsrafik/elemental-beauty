@@ -19,7 +19,7 @@ import {
 	StatusLine,
 	PublishBar,
 } from '@/components/labs/EditorParts'
-import DateTimeField from '@/components/labs/DateTimeField'
+import DateTimeField, { TimeField } from '@/components/labs/DateTimeField'
 import { labs as labsApi } from '@/lib/api'
 import { isoDate } from '@/lib/dates'
 import { priceBody, priceInput, priceOk } from '@/lib/finances'
@@ -198,6 +198,27 @@ function missingFor(form, hasLesson, publishing) {
 	return missing
 }
 
+// Which boxes the saved draft changes from the live lab — what members will
+// see differently once it's published. Only what's been saved counts: typing
+// doesn't mark a box until "save draft" does. A lab with no draft parked on
+// it (or one that's never been published, so has no live version) marks
+// nothing.
+function changesFrom(live, saved) {
+	if (!live || !saved) return () => false
+	const same = (a, b) => String(a ?? '').trim() === String(b ?? '').trim()
+	const steps = (text) => JSON.stringify(fromSteps(text ?? ''))
+	const section = (form, i) => form.sections[i] ?? emptySection()
+	return (key, i) => {
+		switch (key) {
+			case 'date': return !same(saved.when.split('T')[0], live.when.split('T')[0])
+			case 'time': return !same(startTime(saved.when), startTime(live.when))
+			case 'section-title': return !same(section(saved, i).title, section(live, i).title)
+			case 'section-steps': return steps(section(saved, i).steps) !== steps(section(live, i).steps)
+			default: return !same(saved[key], live[key])
+		}
+	}
+}
+
 // ---- pieces ----------------------------------------------------------------
 
 function CrossIcon({ className }) {
@@ -261,13 +282,31 @@ function Cover({ image, onRemove }) {
 	)
 }
 
+// The start time held in `when` ('YYYY-MM-DDTHH:MM'), for its own box: ''
+// when there isn't one (a bare date is held as 00:00, read as "no time").
+function startTime(when) {
+	const time = when.split('T')[1] ?? ''
+	return time === '00:00' ? '' : time
+}
+
+// `when` with its time swapped for `time` ('' clears it back to 00:00). A time
+// picked before any date goes on today, as the date picker's own time does.
+function withStartTime(when, time) {
+	if (!time && !when) return ''
+	const now = new Date()
+	const today = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`
+	const date = when.split('T')[0] || today
+	return `${date}T${time || '00:00'}`
+}
+
 // A label and its box on one line — date, location, seats available, price.
-function InlineField({ id, label, required, invalid, className = '', children }) {
+// `tight` closes the gap up, for the two that share a line (time and ends).
+function InlineField({ id, label, required, invalid, tight = false, className = '', children }) {
 	return (
 		<div className={`
 			flex
 			items-center
-			gap-[9px]
+			${tight ? 'gap-[5px]' : 'gap-[9px]'}
 			${className}
 		`}>
 			<FieldLabel htmlFor={id} required={required} className="shrink-0">
@@ -294,7 +333,7 @@ function InlineField({ id, label, required, invalid, className = '', children })
 // `onChange(steps, extra)` — `extra` is `{ title }` when a paste supplies one,
 // sent in the same call because two separate section updates in one event
 // would each start from the same old form and the second would undo the first.
-function StepsBox({ id, value, onChange, invalid, title }) {
+function StepsBox({ id, value, onChange, invalid, changed, title }) {
 	const ref = useRef(null)
 	// where to put the caret once the edit lands
 	const caret = useRef(null)
@@ -404,7 +443,7 @@ function StepsBox({ id, value, onChange, invalid, title }) {
 				onKeyDown={onKeyDown}
 				onPaste={onPaste}
 				className={`
-					${fieldClass('green', invalid)}
+					${fieldClass('green', invalid, changed)}
 					block
 					h-[180px]
 					resize-y
@@ -571,6 +610,11 @@ export default function LabEditor({ id }) {
 	// filled — re-checked against the same rule the save used.
 	const still = form ? missingFor(form, hasLesson, true) : new Set()
 	const flagged = new Set([...missing].filter((key) => still.has(key)))
+
+	// the pink on boxes the saved draft changes from what members see now
+	const changed = lab?.published && lab.draft
+		? changesFrom(toForm({ ...lab, draft: null }), toForm(lab))
+		: () => false
 
 	const pickCover = async (event) => {
 		const file = event.target.files?.[0]
@@ -781,11 +825,12 @@ export default function LabEditor({ id }) {
 						<InlineField id="lab-when" label="date" required className="mt-[17.6px]">
 							<DateTimeField
 								id="lab-when"
+								dateOnly
 								value={form.when}
 								onChange={(when) => update({ when })}
 								zoom={zoom}
 								className={`
-									${fieldClass('orange', flagged.has('when'))}
+									${fieldClass('orange', flagged.has('when'), changed('date'))}
 									h-[27.3px]
 									px-[6px]
 									text-[13px]
@@ -794,22 +839,48 @@ export default function LabEditor({ id }) {
 							/>
 						</InlineField>
 
-						{/* optional; the lab's pages print it as a range with the
-						    start ('5:00-7:00PM') */}
-						<InlineField id="lab-ends" label="ends" className="mt-[15.2px]">
-							<input
-								type="time"
-								{...field('ends')}
-								aria-invalid={flagged.has('ends')}
-								className={`
-									${fieldClass('orange', flagged.has('ends'))}
-									h-[27.3px]
-									px-[6px]
-									text-[13px]
-									${form.ends ? '' : 'text-black/40'}
-								`}
-							/>
-						</InlineField>
+						{/* the start and the optional end side by side under the date;
+						    the lab's pages print them as a range ('5:00-7:00PM') */}
+						<div className="
+							mt-[15.2px]
+							grid
+							grid-cols-2
+							gap-[6px]
+						">
+							<InlineField id="lab-time" label="time" tight>
+								<TimeField
+									id="lab-time"
+									value={startTime(form.when)}
+									onChange={(time) => update({ when: withStartTime(form.when, time) })}
+									zoom={zoom}
+									tight
+									className={`
+										${fieldClass('orange', false, changed('time'))}
+										h-[27.3px]
+										px-[4px]
+										text-[13px]
+										${startTime(form.when) ? '' : 'text-black/40'}
+									`}
+								/>
+							</InlineField>
+							<InlineField id="lab-ends" label="ends" tight>
+								<TimeField
+									id="lab-ends"
+									value={form.ends}
+									onChange={(ends) => update({ ends })}
+									zoom={zoom}
+									tight
+									aria-invalid={flagged.has('ends')}
+									className={`
+										${fieldClass('orange', flagged.has('ends'), changed('ends'))}
+										h-[27.3px]
+										px-[4px]
+										text-[13px]
+										${form.ends ? '' : 'text-black/40'}
+									`}
+								/>
+							</InlineField>
+						</div>
 
 						<InlineField id="lab-location" label="location" required className="mt-[15.2px]">
 							<input
@@ -817,7 +888,7 @@ export default function LabEditor({ id }) {
 								{...field('location')}
 								aria-invalid={flagged.has('location')}
 								className={`
-									${fieldClass('orange', flagged.has('location'))}
+									${fieldClass('orange', flagged.has('location'), changed('location'))}
 									h-[26.5px]
 									px-[8px]
 									text-[13px]
@@ -835,7 +906,7 @@ export default function LabEditor({ id }) {
 								{...field('seats')}
 								aria-invalid={flagged.has('seats')}
 								className={`
-									${fieldClass('orange', flagged.has('seats'))}
+									${fieldClass('orange', flagged.has('seats'), changed('seats'))}
 									h-[26.4px]
 									px-[8px]
 									text-[13px]
@@ -859,7 +930,7 @@ export default function LabEditor({ id }) {
 								{...field('price')}
 								aria-invalid={flagged.has('price')}
 								className={`
-									${fieldClass('orange', flagged.has('price'))}
+									${fieldClass('orange', flagged.has('price'), changed('price'))}
 									h-[26.4px]
 									px-[8px]
 									text-[13px]
@@ -877,7 +948,7 @@ export default function LabEditor({ id }) {
 							{...field('title')}
 							aria-invalid={flagged.has('title')}
 							className={`
-								${fieldClass('orange', flagged.has('title'))}
+								${fieldClass('orange', flagged.has('title'), changed('title'))}
 								mt-[5.6px]
 								h-[48.8px]
 								px-[12px]
@@ -889,7 +960,7 @@ export default function LabEditor({ id }) {
 							{...field('description')}
 							aria-invalid={flagged.has('description')}
 							className={`
-								${fieldClass('orange', flagged.has('description'))}
+								${fieldClass('orange', flagged.has('description'), changed('description'))}
 								block
 								mt-[7.1px]
 								h-[179.5px]
@@ -970,7 +1041,7 @@ export default function LabEditor({ id }) {
 							placeholder={MATERIALS_HINT}
 							aria-invalid={flagged.has('materials')}
 							className={`
-								${fieldClass('pink', flagged.has('materials'))}
+								${fieldClass('pink', flagged.has('materials'), changed('materials'))}
 								block
 								mt-[5.6px]
 								h-[206px]
@@ -987,7 +1058,7 @@ export default function LabEditor({ id }) {
 							{...field('equipment')}
 							aria-invalid={flagged.has('equipment')}
 							className={`
-								${fieldClass('pink', flagged.has('equipment'))}
+								${fieldClass('pink', flagged.has('equipment'), changed('equipment'))}
 								block
 								mt-[2.4px]
 								h-[206px]
@@ -1039,7 +1110,7 @@ export default function LabEditor({ id }) {
 										onChange={(event) => setSection(i, { title: event.target.value })}
 										aria-invalid={first && flagged.has('section-title')}
 										className={`
-											${fieldClass('green', first && flagged.has('section-title'))}
+											${fieldClass('green', first && flagged.has('section-title'), changed('section-title', i))}
 											mt-[4.7px]
 											h-[46.5px]
 											px-[14px]
@@ -1055,6 +1126,7 @@ export default function LabEditor({ id }) {
 											onChange={(steps, extra) => setSection(i, { steps, ...extra })}
 											title={section.title}
 											invalid={first && flagged.has('section-steps')}
+											changed={changed('section-steps', i)}
 										/>
 									</div>
 								</div>
