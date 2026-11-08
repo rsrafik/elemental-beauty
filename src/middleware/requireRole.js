@@ -42,18 +42,16 @@ export function denyRole(role) {
 }
 
 // The same for the club's books (/analytics — transactions, grants, receipts,
-// targets, dues): j-board outranks an officer but doesn't get them, and nor
-// does the advisor, who reads everything else. The exception is j-board's
-// treasury team, who read all of it and change only grants and sponsorships
-// (see treasury.js).
+// targets, dues): the advisor reads everything else but not these. J-board
+// gets them the way an officer does — the overview and their own receipts,
+// with every treasurer-only gate inside the routers still shut to them. The
+// exception is j-board's treasury team, who read all of it and change only
+// grants and sponsorships (see treasury.js).
 export function booksAccess(req, res, next) {
     if (req.role === 'advisor') {
         return res.status(403).json({ message: 'Insufficient permissions' })
     }
-    if (req.role !== 'jboard') { return next() }
-    if (!onTreasuryTeam(req)) {
-        return res.status(403).json({ message: 'Insufficient permissions' })
-    }
+    if (!onTreasuryTeam(req)) { return next() }
     if (!treasuryMayDo(req.method, req.originalUrl)) {
         return res.status(403).json({ message: TREASURY_REFUSAL })
     }

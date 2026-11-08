@@ -175,9 +175,9 @@ app.use('/api/payments', authMiddleware, requireRole('member'), paymentRoutes)
 // the income goal and spending budget: on the summary cards every officer
 // sees, set by the treasurer alone (enforced inside the router)
 //
-// J-board outranks an officer but the books aren't theirs, so every finance
-// route turns them away — bar j-board's treasury team, who read them all and
-// change only grants and sponsorships (see booksAccess).
+// J-board reads the books the way an officer does (the overview, and files
+// their own receipts); j-board's treasury team reads them all and changes
+// only grants and sponsorships (see booksAccess).
 app.use('/api/year-targets', authMiddleware, requireRole('officer'), booksAccess, yearTargetRoutes)
 app.use('/api/reimbursements', authMiddleware, requireRole('officer'), booksAccess, reimbursementRoutes)
 app.use('/api/transactions', authMiddleware, requireRole('officer'), booksAccess, transactionRoutes)

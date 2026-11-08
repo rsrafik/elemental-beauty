@@ -29,13 +29,13 @@ const OFFICER_ONLY = [
 	{ label: 'students', href: '/students' },
 ]
 
-// every officer's but j-board's (bar its treasury team) and the advisor's —
-// see canSeeAnalytics
+// every officer's, j-board included, but not the advisor's — see canSeeAnalytics
 const ANALYTICS = [
 	{ label: 'analytics', href: '/analytics' },
 ]
 
-// `teams` is the session's jboardTeams — only j-board's say anything — and
+// `teams` is the session's jboardTeams (no longer read here: every j-board
+// member gets analytics) and
 // `duesPaid` its duesPaid (this year's dues in)
 export function navFor(role, teams, duesPaid = false) {
 	if (!hasRole('member', role)) return BASE
@@ -44,7 +44,7 @@ export function navFor(role, teams, duesPaid = false) {
 		...BASE,
 		...MEMBER_ONLY,
 		...OFFICER_ONLY,
-		...(canSeeAnalytics(role, teams) ? ANALYTICS : []),
+		...(canSeeAnalytics(role) ? ANALYTICS : []),
 		...(role === 'jboard' && !duesPaid ? BECOME_VIP : []),
 	]
 }

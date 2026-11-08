@@ -124,8 +124,8 @@ export function useRole() {
 	return user?.role ?? 'user'
 }
 
-// The j-board teams they're on ([] for anyone not on j-board) — what puts
-// /analytics in the treasury team's menu (see onTreasuryTeam in lib/roles).
+// The j-board teams they're on ([] for anyone not on j-board) — what gives the
+// treasury team the treasurer's /analytics (see onTreasuryTeam in lib/roles).
 export function useJboardTeams() {
 	const { user } = useSession()
 	return user?.jboardTeams ?? []

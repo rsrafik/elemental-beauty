@@ -71,12 +71,13 @@ export function canAddEvents(role, teams) {
 	return canChange(role) && !onTreasuryTeam(role, teams)
 }
 
-// /analytics — the club's books — is every officer's except j-board's and the
-// advisor's: both outrank an officer everywhere else, but the money isn't
-// theirs to see — bar j-board's treasury team (onTreasuryTeam). The server
+// /analytics — the club's books — is every officer's, j-board included (they
+// get the officer's page: the overview and their own receipts; the treasury
+// team gets the treasurer's, see onTreasuryTeam). The advisor outranks an
+// officer everywhere else, but the money isn't theirs to see. The server
 // refuses them the same data (booksAccess in src/middleware/requireRole.js).
-export function canSeeAnalytics(role, teams) {
-	return hasRole('officer', role) && role !== 'advisor' && (role !== 'jboard' || onTreasuryTeam(role, teams))
+export function canSeeAnalytics(role) {
+	return hasRole('officer', role) && role !== 'advisor'
 }
 
 // Event tracks a role never sees — the page side of the rule the API enforces

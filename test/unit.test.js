@@ -11,7 +11,7 @@ import { fromEmail } from '../src/accountEmail.js'
 import { schoolYearOf } from '../src/dues.js'
 import { wipeProblem } from '../scripts/localDatabase.js'
 import { advisorMayDo } from '../src/middleware/advisor.js'
-import { booksAccess } from '../src/middleware/requireRole.js'
+import requireRole, { booksAccess } from '../src/middleware/requireRole.js'
 
 // ---- the club's clock ------------------------------------------------------
 
@@ -147,7 +147,20 @@ test('the advisor is kept off the books', () => {
     }
     assert.equal(through('advisor'), 403)
     assert.equal(through('officer'), true)
+    assert.equal(through('jboard'), true)
     assert.equal(through('treasurer'), true)
+})
+
+test('j-board reads the books like an officer but gets none of the treasurer’s gates', () => {
+    const gate = (req) => {
+        let status = null
+        let passed = false
+        requireRole('treasurer')(req, { status: (code) => { status = code; return { json: () => {} } } }, () => { passed = true })
+        return passed || status
+    }
+    assert.equal(gate({ role: 'jboard', jboardTeams: [] }), 403)
+    assert.equal(gate({ role: 'jboard', jboardTeams: ['formula'] }), 403)
+    assert.equal(gate({ role: 'jboard', jboardTeams: ['treasury'] }), true)
 })
 
 test('an advisor can read anything but only change the club-wide email-all and their own account', () => {
