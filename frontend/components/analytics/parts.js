@@ -1567,8 +1567,15 @@ export function SummaryCard({ title, categories, totals, total, goal, goalNote, 
 		amount: totals[category.key] ?? 0,
 	}))
 
+	// The card is as tall as its row, which is often taller than what's in it.
+	// A column: the donut and its legend take the spare height and sit in the
+	// middle of it, centred on each other, and the budget line goes to the
+	// bottom — the same space under it as every other card.
 	return (
-		<Card>
+		<Card className="
+			flex
+			flex-col
+		">
 			<div className="
 				flex
 				items-start
@@ -1581,6 +1588,7 @@ export function SummaryCard({ title, categories, totals, total, goal, goalNote, 
 
 			<div className="
 				mt-4
+				flex-1
 				flex
 				items-center
 				gap-5
