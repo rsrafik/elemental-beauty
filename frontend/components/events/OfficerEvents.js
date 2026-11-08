@@ -22,6 +22,7 @@ import { QrPopup } from '@/components/labs/MemberLabQuiz'
 import { COVER_MAX, shrinkImage } from '@/lib/images'
 import StoredImage from '@/components/StoredImage'
 import { SkeletonGrid } from '@/components/Skeleton'
+import { DateField, TimeField } from '@/components/labs/DateTimeField'
 import ScrollHint from '@/components/ScrollHint'
 
 // /events for officer / treasurer / admin: every event on one sheet. Clicking
@@ -643,18 +644,20 @@ export function EventDialog({ event, categories, onClose, onSave, onDelete }) {
 						/>
 					</label>
 
+					{/* the date takes a third and the two times the rest: a date fits
+					    in less than half, and an even split cut the times' AM/PM off */}
 					<div className="
 						grid
 						grid-cols-1
-						sm:grid-cols-2
+						sm:grid-cols-[minmax(0,1fr)_minmax(0,2fr)]
 						gap-4
 					">
 						<label className="block">
 							<Label>date</Label>
-							<input
-								type="date"
+							<DateField
+								roomy
 								value={form.date}
-								onChange={set('date')}
+								onChange={(date) => setForm((prev) => ({ ...prev, date }))}
 								className={FIELD}
 							/>
 						</label>
@@ -667,19 +670,19 @@ export function EventDialog({ event, categories, onClose, onSave, onDelete }) {
 						">
 							<label className="block">
 								<Label>time</Label>
-								<input
-									type="time"
+								<TimeField
+									roomy
 									value={form.time}
-									onChange={set('time')}
+									onChange={(time) => setForm((prev) => ({ ...prev, time }))}
 									className={FIELD}
 								/>
 							</label>
 							<label className="block">
 								<Label>ends</Label>
-								<input
-									type="time"
+								<TimeField
+									roomy
 									value={form.endTime}
-									onChange={set('endTime')}
+									onChange={(endTime) => setForm((prev) => ({ ...prev, endTime }))}
 									disabled={!form.time}
 									title={form.time ? undefined : 'Set a start time first'}
 									className={`${FIELD} ${endOk ? '' : 'border-red focus:border-red'} disabled:opacity-50`}

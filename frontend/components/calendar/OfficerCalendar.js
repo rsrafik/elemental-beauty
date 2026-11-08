@@ -19,6 +19,7 @@ import { useCalendarEventDialogs } from '@/components/calendar/CalendarEventDial
 import { DUE_CELL, DueLine, useDuesDeadlines } from '@/components/calendar/DuesDeadlines'
 import SubscribeCalendar from '@/components/calendar/SubscribeCalendar'
 import StoredImage from '@/components/StoredImage'
+import { DateField, TimeField } from '@/components/labs/DateTimeField'
 import ScrollHint from '@/components/ScrollHint'
 
 // /calendar for officer / treasurer / admin: the member month view, plus the
@@ -1010,18 +1011,20 @@ function EventDialog({ categories, onClose, onSave }) {
 						/>
 					</label>
 
+					{/* the date takes a third and the two times the rest: a date fits
+					    in less than half, and an even split cut the times' AM/PM off */}
 					<div className="
 						grid
 						grid-cols-1
-						sm:grid-cols-2
+						sm:grid-cols-[minmax(0,1fr)_minmax(0,2fr)]
 						gap-4
 					">
 						<label className="block">
 							<Label>date</Label>
-							<input
-								type="date"
+							<DateField
+								roomy
 								value={form.date}
-								onChange={set('date')}
+								onChange={(date) => setForm((prev) => ({ ...prev, date }))}
 								className={FIELD}
 							/>
 						</label>
@@ -1034,19 +1037,19 @@ function EventDialog({ categories, onClose, onSave }) {
 						">
 							<label className="block">
 								<Label>time</Label>
-								<input
-									type="time"
+								<TimeField
+									roomy
 									value={form.time}
-									onChange={set('time')}
+									onChange={(time) => setForm((prev) => ({ ...prev, time }))}
 									className={FIELD}
 								/>
 							</label>
 							<label className="block">
 								<Label>ends</Label>
-								<input
-									type="time"
+								<TimeField
+									roomy
 									value={form.endTime}
-									onChange={set('endTime')}
+									onChange={(endTime) => setForm((prev) => ({ ...prev, endTime }))}
 									disabled={!form.time}
 									title={form.time ? undefined : 'Set a start time first'}
 									className={`${FIELD} ${endOk ? '' : 'border-red focus:border-red'} disabled:opacity-50`}

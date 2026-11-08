@@ -57,6 +57,7 @@ import {
 	yearsIn,
 } from '@/lib/finances'
 import StoredImage from '@/components/StoredImage'
+import { DateField } from '@/components/labs/DateTimeField'
 
 // /analytics — the officer's view of the books. What came in, what went out,
 // where the balance sits, which grants are in flight, and where this officer's
@@ -244,10 +245,10 @@ export function ReceiptDialog({ request, onClose, onSave }) {
 
 					<label className="block">
 						<Label>date</Label>
-						<input
-							type="date"
+						<DateField
+							roomy
 							value={form.date}
-							onChange={set('date')}
+							onChange={(date) => setForm((previous) => ({ ...previous, date }))}
 							className={FIELD}
 						/>
 					</label>

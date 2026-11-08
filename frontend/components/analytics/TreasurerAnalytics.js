@@ -78,6 +78,7 @@ import {
 	yearStart,
 } from '@/lib/finances'
 import StoredImage from '@/components/StoredImage'
+import { DateField } from '@/components/labs/DateTimeField'
 
 // /analytics for the treasurer: the same books the officers read, plus every
 // control for keeping them. Officers who aren't treasurer get OfficerAnalytics,
@@ -749,10 +750,10 @@ function EntryDialog({ kind, entry, only, onClose, onSave }) {
 
 					<label className="block">
 						<Label>date</Label>
-						<input
-							type="date"
+						<DateField
+							roomy
 							value={form.date}
-							onChange={set('date')}
+							onChange={(date) => setForm((previous) => ({ ...previous, date }))}
 							className={FIELD}
 						/>
 					</label>
@@ -904,10 +905,10 @@ function GrantDialog({ grant, onClose, onSave }) {
 
 					<label className="block">
 						<Label>deadline</Label>
-						<input
-							type="date"
+						<DateField
+							roomy
 							value={form.due}
-							onChange={set('due')}
+							onChange={(due) => setForm((previous) => ({ ...previous, due }))}
 							className={FIELD}
 						/>
 					</label>

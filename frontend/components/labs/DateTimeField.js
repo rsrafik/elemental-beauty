@@ -13,6 +13,21 @@ import { INSET } from '@/components/labs/EditorParts'
 // or '' for nothing. A date with no time picked yet is held as 00:00, which
 // the editor already reads as "no start time".
 //
+// `dateOnly` shows and picks just the day (the lab editor, whose start time
+// has a box of its own beside "ends"): the value is still the whole
+// 'YYYY-MM-DDTHH:MM', and changing the day keeps the time it had.
+//
+// Every other date and time box in the app uses the two below it, so they all
+// carry the same icons and pickers — Safari, for one, draws no icon of its own
+// in a date or time input, which left them looking like plain text boxes:
+//
+//   DateField   'YYYY-MM-DD'  the calendar alone
+//   TimeField   'HH:MM'       the hour : minute AM/PM row alone
+//
+// Both take `roomy` for the dialogs' larger boxes (the icon sits further in)
+// or `tight` for a narrow one (a smaller icon, tucked closer to the edge — the
+// lab editor's time and ends, side by side), and pass anything else (disabled, title, aria-invalid) on to the input.
+//
 // The picker is portalled to <body> so the middle column's scroll box can't
 // clip it; `zoom` is the page's, so it comes out the same size as everything
 // else, and its position is divided back by it (zoom scales top/left too).
@@ -43,6 +58,15 @@ function join(date, hour, minute, pm) {
 	let h = Number(hour) % 12
 	if (pm) h += 12
 	return `${date}T${pad(h)}:${minute || '00'}`
+}
+
+function ClockIcon({ className }) {
+	return (
+		<svg viewBox="0 0 24 24" fill="none" className={className} aria-hidden="true">
+			<circle cx="12" cy="12" r="8.5" stroke="currentColor" strokeWidth="1.6" />
+			<path d="M12 7.5V12l3 2" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" />
+		</svg>
+	)
 }
 
 export function CalendarIcon({ className }) {
@@ -99,7 +123,11 @@ const SELECT = `
 	cursor-pointer
 `
 
-function Picker({ value, onChange, onClose, anchor, rect, zoom }) {
+// `mode` is what it picks: 'datetime', 'date' (no time row) or 'time' (no
+// calendar)
+function Picker({ value, onChange, onClose, anchor, rect, zoom, mode }) {
+	const showCalendar = mode !== 'time'
+	const showTime = mode !== 'date'
 	const ref = useRef(null)
 	const { date, hour, minute, pm } = split(value)
 	const today = todayParts()
@@ -134,7 +162,8 @@ function Picker({ value, onChange, onClose, anchor, rect, zoom }) {
 		position: 'fixed',
 		zoom,
 		top: (rect.bottom + 6 * zoom) / zoom,
-		left: rect.right / zoom - WIDTH,
+		// lined up with the box's right edge, but never off the left of the screen
+		left: Math.max(8, rect.right / zoom - WIDTH),
 		width: WIDTH,
 	}
 
@@ -162,7 +191,7 @@ function Picker({ value, onChange, onClose, anchor, rect, zoom }) {
 		<div
 			ref={ref}
 			role="dialog"
-			aria-label="Pick a date and time"
+			aria-label={{ date: 'Pick a date', time: 'Pick a time' }[mode] ?? 'Pick a date and time'}
 			style={style}
 			className="
 				menu-open
@@ -176,6 +205,7 @@ function Picker({ value, onChange, onClose, anchor, rect, zoom }) {
 				[transform-origin:top_right]
 			"
 		>
+			{showCalendar && <>
 			<div className="
 				flex
 				items-center
@@ -242,16 +272,14 @@ function Picker({ value, onChange, onClose, anchor, rect, zoom }) {
 					)
 				})}
 			</div>
+			</>}
 
-			<div className="
-				mt-[10px]
-				pt-[10px]
-				border-t
-				border-black/10
+			{showTime && <div className={`
+				${showCalendar ? 'mt-[10px] pt-[10px] border-t border-black/10' : ''}
 				flex
 				items-center
 				gap-[6px]
-			">
+			`}>
 				<span className="
 					mr-auto
 					font-vietnam
@@ -311,7 +339,7 @@ function Picker({ value, onChange, onClose, anchor, rect, zoom }) {
 						</button>
 					))}
 				</div>
-			</div>
+			</div>}
 
 			<div className="
 				mt-[12px]
@@ -356,36 +384,47 @@ function Picker({ value, onChange, onClose, anchor, rect, zoom }) {
 	)
 }
 
-export default function DateTimeField({ id, value, onChange, className, zoom }) {
+// The box itself: the browser's own input, which can still be typed into, with
+// our icon over its right end (the browser's own hidden) opening the picker.
+const FIT = {
+	roomy: { pad: 'pr-[42px]', at: 'right-[12px]', icon: 'w-[19px] h-[19px]' },
+	normal: { pad: 'pr-[28px]', at: 'right-[4px]', icon: 'w-[20px] h-[20px]' },
+	tight: { pad: 'pr-[17px]', at: 'right-[1px]', icon: 'w-[14px] h-[14px]' },
+}
+
+function PickerField({ id, type, shown, onType, value, onChange, mode, icon, label, className, zoom, roomy = false, tight = false, ...rest }) {
+	const fit = FIT[roomy ? 'roomy' : tight ? 'tight' : 'normal']
 	const anchor = useRef(null)
 	// the box's position when the picker was opened, or null while it's shut
 	const [open, setOpen] = useState(null)
+	const Icon = icon
 
 	return (
 		<div ref={anchor} className="relative">
 			<input
 				id={id}
-				type="datetime-local"
-				value={value}
-				onChange={(event) => onChange(event.target.value)}
+				type={type}
+				value={shown}
+				onChange={(event) => onType(event.target.value)}
+				{...rest}
 				className={`
 					${className}
-					pr-[28px]
+					${fit.pad}
 					[&::-webkit-calendar-picker-indicator]:hidden
 				`}
 			/>
 			<button
 				type="button"
 				onClick={() => setOpen((was) => (was ? null : anchor.current.getBoundingClientRect()))}
-				aria-label="Open calendar"
+				disabled={rest.disabled}
+				aria-label={label}
 				aria-expanded={Boolean(open)}
-				className="
+				className={`
 					absolute
-					right-[4px]
+					${fit.at}
 					top-1/2
 					-translate-y-1/2
-					w-[22px]
-					h-[22px]
+					${tight ? 'w-[16px] h-[16px]' : 'w-[22px] h-[22px]'}
 					flex
 					items-center
 					justify-center
@@ -394,9 +433,12 @@ export default function DateTimeField({ id, value, onChange, className, zoom }) 
 					transition-colors
 					duration-150
 					hover:text-orange
-				"
+					disabled:cursor-default
+					disabled:opacity-50
+					disabled:hover:text-[#BDBDBD]
+				`}
 			>
-				<CalendarIcon className="w-[20px] h-[20px]" />
+				<Icon className={fit.icon} />
 			</button>
 			{open && (
 				<Picker
@@ -405,9 +447,65 @@ export default function DateTimeField({ id, value, onChange, className, zoom }) 
 					onClose={() => setOpen(null)}
 					anchor={anchor}
 					rect={open}
-					zoom={zoom}
+					zoom={zoom ?? 1}
+					mode={mode}
 				/>
 			)}
 		</div>
+	)
+}
+
+export default function DateTimeField({ value, onChange, dateOnly = false, ...rest }) {
+	const [date, time = '00:00'] = value.split('T')
+	return (
+		<PickerField
+			{...rest}
+			type={dateOnly ? 'date' : 'datetime-local'}
+			shown={dateOnly ? date : value}
+			onType={(typed) => onChange(dateOnly ? (typed ? `${typed}T${time}` : '') : typed)}
+			value={value}
+			onChange={onChange}
+			mode={dateOnly ? 'date' : 'datetime'}
+			icon={CalendarIcon}
+			label="Open calendar"
+		/>
+	)
+}
+
+// value 'YYYY-MM-DD' or ''
+export function DateField({ value, onChange, ...rest }) {
+	return (
+		<PickerField
+			{...rest}
+			type="date"
+			shown={value}
+			onType={onChange}
+			value={value ? `${value}T00:00` : ''}
+			onChange={(when) => onChange(when.split('T')[0])}
+			mode="date"
+			icon={CalendarIcon}
+			label="Open calendar"
+		/>
+	)
+}
+
+// value 'HH:MM' (24-hour) or ''. The picker reads 00:00 as "no time" — the
+// calendar's convention — so midnight is typed rather than picked.
+export function TimeField({ value, onChange, ...rest }) {
+	return (
+		<PickerField
+			{...rest}
+			type="time"
+			shown={value}
+			onType={onChange}
+			value={value ? `2000-01-01T${value}` : ''}
+			onChange={(when) => {
+				const time = when.split('T')[1] ?? ''
+				onChange(time === '00:00' ? '' : time)
+			}}
+			mode="time"
+			icon={ClockIcon}
+			label="Pick a time"
+		/>
 	)
 }
