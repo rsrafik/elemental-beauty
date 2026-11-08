@@ -175,11 +175,11 @@ const duesFor = (event, owe) => asksDues('event', event) ? owe(event.date.toISOS
 // Seats spoken for. A waitlisted row is NOT one of them — that's the whole
 // point of the waitlist — so the count is what fills the cap and nothing else.
 // An open waitlist offer holds a seat too (see src/offers.js).
-const TAKEN = { attendanceStatus: { in: ['rsvped', 'attended', 'offered'] } }
+export const TAKEN = { attendanceStatus: { in: ['rsvped', 'attended', 'offered'] } }
 
 // Who's queued behind those seats — shown on top of them on the cards ('25/20'),
 // as on a lab's (labRoutes.js).
-const WAITING = { attendanceStatus: 'waitlisted' }
+export const WAITING = { attendanceStatus: 'waitlisted' }
 
 // ---- member-visible reads ----
 

@@ -23,7 +23,7 @@ import prisma from '../prismaClient.js'
 import { APP_URL } from '../verification.js'
 import { clubToday, dateColumn } from '../clubTime.js'
 import { buildCalendar } from '../calendarFeed.js'
-import { EVENT_TRACKS, MEETING_TRACKS, hiddenTracks, visibleWhere } from './eventRoutes.js'
+import { EVENT_TRACKS, MEETING_TRACKS, TAKEN, WAITING, hiddenTracks, visibleWhere } from './eventRoutes.js'
 
 const router = express.Router()
 export const feedRouter = express.Router()
@@ -41,6 +41,30 @@ const LAB_TRACK = 'members'
 const MONTHS_BACK = 6
 
 const PURPOSE = 'calendar'
+
+// What goes in front of each title: where the person whose feed it is stands
+// on it. An offered spot isn't theirs until they accept it, so it still reads
+// as waitlisted; absent (signed up, didn't come) was on the list all the same.
+function standingTag(status) {
+    if (status == null) { return '[NOT RSVP’D]' }
+    if (status === 'waitlisted' || status === 'offered') { return '[WAITLISTED]' }
+    return '[RSVP’D]'
+}
+
+// The description's first line, counted as the cards count it: seats gone
+// plus everyone queued behind them, over the seats there are — so a full
+// event with 5 waiting reads '25/20'.
+function signedUpLine(taken, waiting, capacity) {
+    const count = taken + waiting
+    return capacity == null ? `Signed up: ${count}` : `Signed up: ${count}/${capacity}`
+}
+
+// Each row's own status and its counts, for buildCalendar's entries:
+// `members` is the person's row (at most one), `_count.members` the seats.
+const STANDING = (userId) => ({
+    members: { where: { memberId: userId }, select: { attendanceStatus: true } },
+    _count: { select: { members: { where: TAKEN } } },
+})
 
 // The feed token: who it's for and what it's for, and nothing that changes —
 // no timestamp (noTimestamp), no expiry, no tracks — so signing it again gives
@@ -172,7 +196,11 @@ router.delete('/subscription', async (req, res) => {
 // What goes on someone's feed, as buildCalendar's entries. Only the columns
 // the file needs: an event's or lab's `image` is a data URL in the row, and
 // every Google refresh would otherwise pull it.
-async function entriesFor(member, site) {
+//
+// Each title carries where they stand on it ([RSVP’D], [WAITLISTED],
+// [NOT RSVP’D]) and each description the sign-up count, as of the fetch —
+// so it's only as fresh as the calendar app's last refresh.
+async function entriesFor(userId, member, site) {
     if (!member?.calendarSubscribed) { return [] }
     const available = availableFor(member.role)
     const tracks = (member.calendarTracks ?? []).filter((track) => available.includes(track))
@@ -186,7 +214,8 @@ async function entriesFor(member, site) {
         where: { date: { gte: from }, track: { in: tracks }, AND: visibleWhere(viewer) },
         select: {
             eventId: true, title: true, date: true, startTime: true, endTime: true,
-            location: true, description: true, track: true, meetingUrl: true,
+            location: true, description: true, track: true, meetingUrl: true, capacity: true,
+            ...STANDING(userId),
         },
         orderBy: [{ date: 'asc' }, { startTime: 'asc' }],
     })
@@ -195,21 +224,40 @@ async function entriesFor(member, site) {
     const labs = tracks.includes(LAB_TRACK)
         ? await prisma.lab.findMany({
             where: { published: true, date: { gte: from } },
-            select: { labId: true, title: true, date: true, startTime: true, endTime: true, location: true, description: true },
+            select: {
+                labId: true, title: true, date: true, startTime: true, endTime: true,
+                location: true, description: true, capacity: true,
+                ...STANDING(userId),
+            },
             orderBy: { date: 'asc' },
         })
         : []
 
+    // who's waiting on each, asked of the rows just found
+    const [labQueues, eventQueues] = await Promise.all([
+        labs.length
+            ? prisma.memberLab.groupBy({ by: ['labId'], where: { ...WAITING, labId: { in: labs.map((lab) => lab.labId) } }, _count: true })
+            : [],
+        events.length
+            ? prisma.memberEvent.groupBy({ by: ['eventId'], where: { ...WAITING, eventId: { in: events.map((event) => event.eventId) } }, _count: true })
+            : [],
+    ])
+    const labWaiting = new Map(labQueues.map((queue) => [queue.labId, queue._count]))
+    const eventWaiting = new Map(eventQueues.map((queue) => [queue.eventId, queue._count]))
+
     const day = (date) => date.toISOString().slice(0, 10)
+    const titled = (row) => `${standingTag(row.members[0]?.attendanceStatus)} ${row.title}`
+    const described = (row, waiting, ...rest) =>
+        [signedUpLine(row._count.members, waiting, row.capacity), ...rest].filter(Boolean).join('\n\n')
     return [
         ...labs.map((lab) => ({
             uid: `lab-${lab.labId}`,
-            title: lab.title,
+            title: titled(lab),
             day: day(lab.date),
             startTime: lab.startTime,
             endTime: lab.endTime,
             location: lab.location,
-            description: lab.description,
+            description: described(lab, labWaiting.get(lab.labId) ?? 0, lab.description),
             url: `${site}/labs/view?id=${lab.labId}`,
         })),
         ...events.map((event) => {
@@ -217,12 +265,12 @@ async function entriesFor(member, site) {
             const join = MEETING_TRACKS.includes(event.track) && event.meetingUrl ? `Join: ${event.meetingUrl}` : null
             return {
                 uid: `event-${event.eventId}`,
-                title: event.title,
+                title: titled(event),
                 day: day(event.date),
                 startTime: event.startTime,
                 endTime: event.endTime,
                 location: event.location,
-                description: [event.description, join].filter(Boolean).join('\n\n') || null,
+                description: described(event, eventWaiting.get(event.eventId) ?? 0, event.description, join),
                 url: `${site}/events/view?id=${event.eventId}`,
             }
         }),
@@ -242,7 +290,7 @@ feedRouter.get('/:file', async (req, res) => {
 
     try {
         const member = await prisma.member.findUnique({ where: { userId }, select: MEMBER_SELECT })
-        const body = buildCalendar(await entriesFor(member, siteOf(req)))
+        const body = buildCalendar(await entriesFor(userId, member, siteOf(req)))
         res.set({
             'Content-Type': 'text/calendar; charset=utf-8',
             'Content-Disposition': 'inline; filename="elemental-beauty.ics"',

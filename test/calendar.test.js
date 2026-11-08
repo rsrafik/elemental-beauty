@@ -111,8 +111,26 @@ const feed = async (base, userId) => {
     const res = await fetch(`${base}/feed/${feedToken(userId)}.ics`)
     return { status: res.status, type: res.headers.get('content-type'), text: await res.text() }
 }
-// which of this test's rows are on a feed, by title
-const ours = (text, prefix) => text.split('\r\n').filter((line) => line.startsWith(`SUMMARY:${prefix} `)).map((line) => line.slice(`SUMMARY:${prefix} `.length)).sort()
+// the feed's lines with folding undone
+const unfold = (text) => text.replace(/\r\n /g, '').split('\r\n')
+// which of this test's rows are on a feed, by title, past the standing tag
+const TAG = /^SUMMARY:\[(?:RSVP’D|WAITLISTED|NOT RSVP’D)\] /
+const ours = (text, prefix) => unfold(text)
+    .map((line) => line.replace(TAG, 'SUMMARY:'))
+    .filter((line) => line.startsWith(`SUMMARY:${prefix} `))
+    .map((line) => line.slice(`SUMMARY:${prefix} `.length))
+    .sort()
+// a row's SUMMARY and DESCRIPTION, found by its title
+function entry(text, title) {
+    const lines = unfold(text)
+    const at = lines.findIndex((line) => line.startsWith('SUMMARY:') && line.endsWith(` ${title}`))
+    if (at < 0) { return null }
+    const end = lines.indexOf('END:VEVENT', at)
+    return {
+        summary: lines[at].slice('SUMMARY:'.length),
+        description: lines.slice(at, end).find((line) => line.startsWith('DESCRIPTION:'))?.slice('DESCRIPTION:'.length) ?? null,
+    }
+}
 
 test('a member is offered online, open and members, and can’t save a board track', { skip }, async () => {
     const p = scope()
@@ -253,6 +271,52 @@ test('the feed leaves out cover images, and meeting links off tracks that don’
         assert.doesNotMatch(text, /base64/)
         assert.match(text, /Join: https:\/\/zoom\.us\/j\/123/)
         assert.doesNotMatch(text, /zoom\.us\/j\/999/)
+    })
+})
+
+test('each title says where the person stands, and each description the sign-up count with the waitlist on top', { skip }, async () => {
+    const p = scope()
+    const member = await person('member')
+    const others = [await person('member'), await person('member'), await person('member')]
+    const full = await event(p, 'open', { title: 'full', capacity: 2, description: 'Bring a mirror' })
+    const queued = await event(p, 'open', { title: 'queued', capacity: 1 })
+    const offered = await event(p, 'open', { title: 'offered', capacity: 1 })
+    await event(p, 'open', { title: 'unlimited' })
+    const labId = await lab(p, true)
+    await prisma.lab.update({ where: { labId }, data: { capacity: 10 } })
+
+    // full: two seats gone (the member's one of them) and one queued
+    await prisma.memberEvent.createMany({ data: [
+        { memberId: member, eventId: full },
+        { memberId: others[0], eventId: full },
+        { memberId: others[1], eventId: full, attendanceStatus: 'waitlisted', waitlistedAt: new Date() },
+        { memberId: others[0], eventId: queued },
+        { memberId: member, eventId: queued, attendanceStatus: 'waitlisted', waitlistedAt: new Date() },
+        { memberId: member, eventId: offered, attendanceStatus: 'offered' },
+    ] })
+    await prisma.memberLab.create({ data: { memberId: others[2], labId } })
+
+    await serve(async (base) => {
+        await call(base, member, 'PUT', { tracks: ['open', 'members'] })
+        const { text } = await feed(base, member)
+
+        const fullRow = entry(text, `${p} full`)
+        assert.equal(fullRow.summary, `[RSVP’D] ${p} full`)
+        assert.equal(fullRow.description, 'Signed up: 3/2\\n\\nBring a mirror')
+
+        const queuedRow = entry(text, `${p} queued`)
+        assert.equal(queuedRow.summary, `[WAITLISTED] ${p} queued`)
+        assert.equal(queuedRow.description, 'Signed up: 2/1')
+
+        assert.equal(entry(text, `${p} offered`).summary, `[WAITLISTED] ${p} offered`)
+
+        const unlimited = entry(text, `${p} unlimited`)
+        assert.equal(unlimited.summary, `[NOT RSVP’D] ${p} unlimited`)
+        assert.equal(unlimited.description, 'Signed up: 0')
+
+        const labRow = entry(text, `${p} lab published`)
+        assert.equal(labRow.summary, `[NOT RSVP’D] ${p} lab published`)
+        assert.equal(labRow.description, 'Signed up: 1/10')
     })
 })
 
