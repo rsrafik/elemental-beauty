@@ -156,9 +156,12 @@ router.get('/', async (req, res) => {
                 _count: true
             }),
             // which have unpublished edits parked — asked as a filter, so
-            // the drafts themselves (a whole lab's text each) stay put
+            // the drafts themselves (a whole lab's text each) stay put. A
+            // cleared one is Prisma.DbNull (a plain null stores JSON's null,
+            // which still counts); AnyNull also catches ones cleared that way
+            // before
             officer
-                ? prisma.lab.findMany({ where: { ...where, NOT: { draft: { equals: Prisma.DbNull } } }, select: { labId: true } })
+                ? prisma.lab.findMany({ where: { ...where, NOT: { draft: { equals: Prisma.AnyNull } } }, select: { labId: true } })
                 : []
         ])
         const waiting = new Map(queues.map((queue) => [queue.labId, queue._count]))
@@ -623,9 +626,9 @@ router.put('/:id', requireRole('officer'), requireLabEditor('id'), async (req, r
 
         let update = data
         if (req.body.discardDraft === true) {
-            update = { draft: null }
+            update = { draft: Prisma.DbNull }
         } else if (req.body.published === true) {
-            update = { ...data, published: true, draft: null }
+            update = { ...data, published: true, draft: Prisma.DbNull }
         } else if (req.body.published === false) {
             update = current.published
                 // stored as the body was sent, so the editor can load it back
@@ -828,7 +831,7 @@ router.put('/:labId/quiz', requireRole('officer'), requireLabEditor('labId'), as
                     data: q.options.map((o) => ({ questionId: created.questionId, ...o }))
                 })
             }
-            await tx.lab.update({ where: { labId }, data: { quizDraft: null }, select: { labId: true } })
+            await tx.lab.update({ where: { labId }, data: { quizDraft: Prisma.DbNull }, select: { labId: true } })
         })
         res.json({ message: 'Quiz published', count: live.length })
     } catch (err) {
@@ -842,7 +845,7 @@ router.delete('/:labId/quiz/draft', requireRole('officer'), requireLabEditor('la
     const labId = parseInt(req.params.labId)
     if (isNaN(labId)) { return res.status(400).json({ message: 'Invalid lab id' }) }
     try {
-        await prisma.lab.update({ where: { labId }, data: { quizDraft: null }, select: { labId: true } })
+        await prisma.lab.update({ where: { labId }, data: { quizDraft: Prisma.DbNull }, select: { labId: true } })
         res.json({ message: 'Draft discarded' })
     } catch (err) {
         if (err.code === 'P2025') { return res.status(404).json({ message: 'Lab not found' }) }
