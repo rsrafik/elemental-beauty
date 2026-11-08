@@ -7,7 +7,8 @@ import NoAccess from '@/components/NoAccess'
 import LabAccessGuard from '@/components/labs/LabAccessGuard'
 import LabEditor from '@/components/labs/LabEditor'
 
-// /labs/edit for a new lab, /labs/edit?id=N for an existing one. Officers only.
+// /labs/edit?new=1 for a new lab (NEW_LAB in lib/openNew.js says why it isn't
+// a bare /labs/edit), /labs/edit?id=N for an existing one. Officers only.
 function EditRoute() {
 	const id = useSearchParams().get('id')
 	return (

@@ -5,6 +5,7 @@ import { useRouter } from 'next/navigation'
 import Sidebar from '@/components/dashboards/Sidebar'
 import { useDuesPaid, useJboardTeams, useRole, useSession, useSignOut } from '@/lib/session'
 import { navFor, showInstagramFor } from '@/lib/nav'
+import { NEW_LAB, openNewOn } from '@/lib/openNew'
 import { announcements as announcementsApi, eventCategories, events as eventsApi, labs as labsApi, members } from '@/lib/api'
 import EmailAllPopup from '@/components/EmailAllPopup'
 import { useUnsavedChanges } from '@/components/LeaveGuard'
@@ -478,8 +479,8 @@ export default function OfficerDashboard() {
 					{/* Two of the three go where the thing is actually made rather
 					    than opening a dialog here — the event and lab forms live on
 					    their own pages, and a second copy of either would be a second
-					    form to keep in step. `?new` asks that page to open its form
-					    on arrival, so it's still one click from here.
+					    form to keep in step. Each still opens its form on arrival
+					    (lib/openNew.js), so it's one click from here.
 
 					    "Email All" opens a form here for a subject and message, which
 					    the server sends from the club's address to everyone who wants
@@ -516,7 +517,10 @@ export default function OfficerDashboard() {
 					</button>
 					<button
 						type="button"
-						onClick={() => router.push('/events?new=1')}
+						onClick={() => {
+							openNewOn('events')
+							router.push('/events')
+						}}
 						disabled={!addsEvents}
 						title={addsEvents ? undefined : changes
 							? 'J-board’s treasury team doesn’t add events'
@@ -548,7 +552,7 @@ export default function OfficerDashboard() {
 					    keep their places */}
 					<button
 						type="button"
-						onClick={() => router.push('/labs?new=1')}
+						onClick={() => router.push(NEW_LAB)}
 						disabled={!labEditor}
 						title={labEditor ? undefined : changes
 							? 'Only officers, the treasurer and admins add labs'

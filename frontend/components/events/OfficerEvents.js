@@ -15,6 +15,7 @@ import TeamField from '@/components/events/TeamField'
 import { MeetingLinkField } from '@/components/events/MeetingLink'
 import { canAddEvents, canChange, hiddenTracks } from '@/lib/roles'
 import { useJboardTeams, useRole } from '@/lib/session'
+import { doneOpeningNew, wantsNew } from '@/lib/openNew'
 import { splitByDate, CompletedDivider, COMPLETED_CARD } from '@/components/CardSections'
 import { RsvpButton } from '@/components/events/MemberEvents'
 import { CardMenu } from '@/components/labs/OfficerLabs'
@@ -1019,7 +1020,7 @@ const GRID_COLS = { base: 2, lg: 3, xl: 4, '2xl': 5 }
 
 // ---- page ------------------------------------------------------------------
 
-export default function OfficerEvents({ openNew = false }) {
+export default function OfficerEvents() {
 	const router = useRouter()
 	// the advisor sees every event and edits none: no +, and dots that only
 	// offer "view content" — the event as a VIP sees it, without the rsvp.
@@ -1044,17 +1045,12 @@ export default function OfficerEvents({ openNew = false }) {
 	const [error, setError] = useState(null)
 
 	// null = closed. { event: null } opens an empty dialog, { event } loads that
-	// row into it — one dialog serving both the + and the dots.
-	const [editing, setEditing] = useState(openNew && adds ? { event: null } : null)
+	// row into it — one dialog serving both the + and the dots. The dashboard's
+	// "New Event" arrives with it already open (lib/openNew.js).
+	const [editing, setEditing] = useState(() => (wantsNew('events') && adds ? { event: null } : null))
+	useEffect(() => doneOpeningNew('events'), [])
 
-	// Closing the form takes `?new` back off the URL, so a refresh doesn't
-	// reopen something you just dismissed. Done on close rather than on arrival
-	// because the parameter is what seeds the state above — stripping it the
-	// moment the page mounts would race that.
-	const closeEditor = () => {
-		setEditing(null)
-		if (openNew) router.replace('/events')
-	}
+	const closeEditor = () => setEditing(null)
 
 	useEffect(() => {
 		let live = true

@@ -12,6 +12,7 @@ import { QrPopup } from '@/components/labs/MemberLabQuiz'
 import { LeavePopup } from '@/components/labs/LabViewParts'
 import { canEditLab, canManageLabs } from '@/lib/roles'
 import { useSession } from '@/lib/session'
+import { NEW_LAB } from '@/lib/openNew'
 import StoredImage from '@/components/StoredImage'
 import { SkeletonGrid } from '@/components/Skeleton'
 
@@ -563,7 +564,7 @@ const GRID_COLS = { base: 2, lg: 3, xl: 4, '2xl': 5 }
 
 // ---- page ------------------------------------------------------------------
 
-export default function OfficerLabs({ openNew = false }) {
+export default function OfficerLabs() {
 	const router = useRouter()
 	const { user } = useSession()
 	// adding and deleting labs, and j-board's switch on each
@@ -583,12 +584,6 @@ export default function OfficerLabs({ openNew = false }) {
 	// the card whose dots menu is open, and the one being asked about deleting
 	const [menuFor, setMenuFor] = useState(null)
 	const [deleting, setDeleting] = useState(null)
-
-	// The dashboard's "New Lab" button still arrives as /labs?new — the form
-	// is its own page now, so pass it on there.
-	useEffect(() => {
-		if (openNew && manages) router.replace('/labs/edit')
-	}, [openNew, manages, router])
 
 	useEffect(() => {
 		let live = true
@@ -801,7 +796,7 @@ export default function OfficerLabs({ openNew = false }) {
 				)}
 				{manages && <button
 					type="button"
-					onClick={() => router.push('/labs/edit')}
+					onClick={() => router.push(NEW_LAB)}
 					aria-label="New lab"
 					className="
 						group
