@@ -2,7 +2,7 @@ import express from 'express'
 import jwt from 'jsonwebtoken'
 import prisma from '../prismaClient.js'
 import { Prisma } from '../generated/prisma/client.ts'
-import { imageFrom, readImage } from '../images.js'
+import { draftImagePath, imageFrom, readImage } from '../images.js'
 import requireRole from '../middleware/requireRole.js'
 import { onTreasuryTeam } from '../middleware/treasury.js'
 import { eventPoints } from '../points.js'
@@ -251,13 +251,38 @@ router.get('/', async (req, res) => {
         ])
         const waiting = new Map(queues.map((queue) => [queue.eventId, queue._count]))
         const parked = new Set(drafted.map((event) => event.eventId))
+        // What staff's cards show for one with edits parked: the draft — its
+        // fields as saved, less the picture, which is a data URL and goes as
+        // an address like every other (draftImagePath). Its fingerprint is
+        // worked out in the database (the same left(md5(x), 12) as imageKey)
+        // so the picture itself never leaves it here. A draft with no `image`
+        // didn't touch the picture; one with `image` null cleared it.
+        const previews = parked.size
+            ? await prisma.$queryRaw`
+                SELECT event_id AS "eventId",
+                       draft - 'image' AS fields,
+                       draft ? 'image' AS "touchesImage",
+                       left(md5(draft->>'image'), 12) AS "imageKey"
+                FROM events WHERE event_id = ANY(${[...parked]}::int[])`
+            : []
+        const draftCards = new Map(previews.map(({ eventId, fields, touchesImage, imageKey }) => [eventId, {
+            fields,
+            imageUrl: touchesImage ? draftImagePath(eventId, imageKey) : undefined
+        }]))
 
         // Same extras the lab list carries: how many seats are gone, how many
         // are waiting behind them, and where the person asking stands on it.
         res.json(events.map(({ members, _count, ...event }) => ({
             ...withCreator(event, req.role),
-            // staff: whether a live one has edits saved as a draft waiting
+            // staff: whether a live one has edits saved as a draft waiting,
+            // and what they'd make the card (see draftCards above)
             hasDraft: parked.has(event.eventId),
+            ...(draftCards.has(event.eventId) ? { draftCard: {
+                ...draftCards.get(event.eventId).fields,
+                imageUrl: draftCards.get(event.eventId).imageUrl === undefined
+                    ? event.imageUrl
+                    : draftCards.get(event.eventId).imageUrl
+            } } : {}),
             taken: _count.members,
             waitlistCount: waiting.get(event.eventId) ?? 0,
             mine: members[0]?.attendanceStatus ?? null,

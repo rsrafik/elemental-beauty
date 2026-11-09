@@ -29,6 +29,13 @@ export function imagePath(kind, id, key) {
     return key ? `/api/img/${kind}/${id}/${key}` : null
 }
 
+// The picture in a live event's parked draft (`draft.image`), for staff —
+// served by its own route (src/routes/imageRoutes.js), since it's in the
+// draft's JSON rather than a column of its own.
+export function draftImagePath(eventId, key) {
+    return key ? `/api/img/eventdraft/${eventId}/${key}` : null
+}
+
 // What a page sends back for a picture it didn't touch: the address it was
 // given. A save that carries it means "leave it as it is".
 export function isImagePath(value) {

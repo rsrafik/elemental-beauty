@@ -1,6 +1,6 @@
 import express from 'express'
 import prisma from '../prismaClient.js'
-import { IMAGES, decodeDataUrl } from '../images.js'
+import { IMAGES, decodeDataUrl, imageKey } from '../images.js'
 import { onTreasuryTeam } from '../middleware/treasury.js'
 import { runsDoor } from '../payments.js'
 
@@ -84,6 +84,43 @@ function recall(name) {
     return picture
 }
 
+// the picture, with the headers every one goes out with
+function send(res, picture, isPrivate = false) {
+    res.set({
+        'Content-Type': picture.type,
+        'Content-Length': picture.bytes.length,
+        'Cache-Control': isPrivate ? 'private, no-store' : 'private, max-age=31536000, immutable',
+        'X-Content-Type-Options': 'nosniff',
+        'Content-Security-Policy': "default-src 'none'; sandbox"
+    })
+    res.end(picture.bytes)
+}
+
+// GET /api/img/eventdraft/:id/:key — the picture in a live event's parked
+// draft (draftImagePath in src/images.js), which staff's cards on /events
+// show. Drafts are staff's alone, as GET /api/events has them.
+router.get('/eventdraft/:id/:key', async (req, res) => {
+    const id = parseInt(req.params.id)
+    const key = req.params.key
+    if (!STAFF.includes(req.role) || isNaN(id) || !/^[0-9a-f]{12}$/.test(key)) { return res.sendStatus(404) }
+
+    try {
+        const name = `eventdraft/${id}/${key}`
+        let picture = recall(name)
+        if (!picture) {
+            const [row] = await prisma.$queryRaw`SELECT draft->>'image' AS image FROM events WHERE event_id = ${id}`
+            if (!row?.image || imageKey(row.image) !== key) { return res.sendStatus(404) }
+            picture = decodeDataUrl(row.image)
+            if (!picture || !RASTER.includes(picture.type)) { return res.sendStatus(404) }
+            remember(name, picture)
+        }
+        send(res, picture)
+    } catch (err) {
+        console.error(err.message)
+        res.sendStatus(500)
+    }
+})
+
 router.get('/:kind/:id/:key', async (req, res) => {
     const spec = IMAGES[req.params.kind]
     const access = ACCESS[req.params.kind]
@@ -108,14 +145,7 @@ router.get('/:kind/:id/:key', async (req, res) => {
         if (!picture || !RASTER.includes(picture.type)) { return res.sendStatus(404) }
         if (!hit && !spec.private) { remember(name, picture) }
 
-        res.set({
-            'Content-Type': picture.type,
-            'Content-Length': picture.bytes.length,
-            'Cache-Control': spec.private ? 'private, no-store' : 'private, max-age=31536000, immutable',
-            'X-Content-Type-Options': 'nosniff',
-            'Content-Security-Policy': "default-src 'none'; sandbox"
-        })
-        res.end(picture.bytes)
+        send(res, picture, spec.private)
     } catch (err) {
         console.error(err.message)
         res.sendStatus(500)

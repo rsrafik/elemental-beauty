@@ -66,7 +66,13 @@ const tracksFor = (role) => TRACK_KEYS.filter((key) => !hiddenTracks(role).inclu
 // GET /api/events, flattened for the cards. `date` is kept the way the date
 // input wants it ('YYYY-MM-DD') so editing prefills instead of re-parsing what
 // the card prints.
-export function toCard(event) {
+//
+// A live one with edits saved as a draft shows the draft — its card is purple
+// and says "unpublished edits", so it's the draft it's showing: the list's
+// `draftCard` (picture and all), or the whole `draft` a save hands back.
+export function toCard(row) {
+	const parked = row.hasDraft ? row.draftCard ?? row.draft : null
+	const event = parked ? { ...row, ...parked } : row
 	return {
 		id: event.eventId,
 		title: event.title,
@@ -135,7 +141,7 @@ export async function withDraft(card) {
 		published: card.published,
 		hasDraft: Boolean(full.draft),
 		// what members see now, for the pink on boxes the draft changes
-		live: toCard(full),
+		live: toCard({ ...full, hasDraft: false }),
 	}
 }
 
