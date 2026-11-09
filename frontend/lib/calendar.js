@@ -68,6 +68,10 @@ export function buildMonths(labs = [], events = []) {
 			track: LAB_TRACK,
 			time: null,
 			location: lab.location ?? null,
+			// saved as a draft — never published, or a live one with edits
+			// waiting — the same light purple day as an event draft's
+			// (DRAFT_CELL); only the staff calendar is handed these
+			draft: lab.published === false || Boolean(lab.hasDraft),
 			href: `/labs/view?id=${lab.labId}`,
 		})
 	}

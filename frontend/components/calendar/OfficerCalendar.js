@@ -651,9 +651,9 @@ function isToday(view, number) {
 // `onAdd`, for whoever can add events, makes the badge a button: clicking a
 // day's number opens "add event" with that day already filled in.
 //
-// A day holding an event saved as a draft goes light purple the same way —
-// a new one never published, or a live one with edits saved as a draft —
-// the purple of a draft's card on /events. Something due wins the colour.
+// A day holding a lab or event saved as a draft goes light purple the same
+// way — a new one never published, or a live one with edits saved as a
+// draft — the purple of a draft's card. Something due wins the colour.
 const DRAFT_CELL = DUE_CELL.replace('bg-red/10', 'bg-[#E8DEFF]')
 
 function Day({ number, inMonth, entries: dayEntries, dues = [], wave = 0, today = false, onOpen, onAdd, label }) {
@@ -1434,11 +1434,10 @@ export default function OfficerCalendar() {
 	const load = () =>
 		Promise.all([labsApi.list({ summary: true }), eventsApi.list(), eventCategories.list()])
 			.then(([labs, events, tags]) => {
-				// a lab draft stays on /labs until it's published; an event
-				// draft shows here too, on a light purple day (DRAFT_CELL), the
-				// same purple as its card on /events — as does a live event
-				// with edits saved as a draft
-				const built = buildMonths(labs.filter((lab) => lab.published !== false), events)
+				// drafts show here too, labs' and events' alike, on a light
+				// purple day (DRAFT_CELL) — the same purple as their cards —
+				// as does a live one with edits saved as a draft
+				const built = buildMonths(labs, events)
 				setMonths(built)
 				setEventRows(events)
 				setLabRows(new Map(labs.map((lab) => [lab.labId, lab])))
