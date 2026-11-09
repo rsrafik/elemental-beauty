@@ -123,10 +123,18 @@ app.use(express.static(PUBLIC, {
     // never change under the same name: kept a year, never re-checked. The
     // pages themselves are re-checked every load (a 304 when nothing changed)
     // so a deploy shows up at once; the rest (images, fonts) for a day.
+    //
+    // The .txt files are pages too: they're what the router fetches when you
+    // click from one page to another (labs.txt, labs/__next.labs.txt, ...),
+    // and each carries the build it came from. They keep their names across
+    // deploys, so a day's cache left the browser holding the last build's
+    // copy; the router saw a build that didn't match the page it was on and
+    // gave up on the in-app move for a full reload — the whole screen,
+    // menu included, blinking out and back on a click between pages.
     setHeaders(res, file) {
         if (file.includes(`${path.sep}_next${path.sep}static${path.sep}`)) {
             res.setHeader('Cache-Control', 'public, max-age=31536000, immutable')
-        } else if (file.endsWith('.html')) {
+        } else if (file.endsWith('.html') || file.endsWith('.txt')) {
             res.setHeader('Cache-Control', 'no-cache')
         } else {
             res.setHeader('Cache-Control', 'public, max-age=86400')
