@@ -86,6 +86,9 @@ export function buildMonths(labs = [], events = []) {
 			team: event.team ?? null,
 			// where it's held, for the "join" pill (hasMeetingLink)
 			meetingUrl: hasMeetingLink(event.track) ? event.meetingUrl ?? null : null,
+			// saved as a draft and never published — only the staff calendar
+			// is handed these, and draws the day light purple (DRAFT_CELL)
+			draft: event.published === false,
 			href: `/events/view?id=${event.eventId}`,
 		})
 	}

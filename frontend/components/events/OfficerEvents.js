@@ -129,7 +129,13 @@ export function eventBody(values) {
 export async function withDraft(card) {
 	if (!card?.hasDraft) return card
 	const full = await eventsApi.get(card.id)
-	return { ...toCard({ ...full, ...(full.draft ?? {}) }), published: card.published, hasDraft: Boolean(full.draft) }
+	return {
+		...toCard({ ...full, ...(full.draft ?? {}) }),
+		published: card.published,
+		hasDraft: Boolean(full.draft),
+		// what members see now, for the pink on boxes the draft changes
+		live: toCard(full),
+	}
 }
 
 // '2026-08-30' -> 'August 30, 2026'. Split by hand rather than through Date,
@@ -373,6 +379,28 @@ const FIELD = `
 	focus:border-black
 `
 
+// a box whose saved draft differs from what members see — /labs' pink
+const CHANGED_FIELD = FIELD.replace('bg-white', 'bg-[#FFE0EE]')
+
+// The editor's form, from a card (blank for a new event).
+function formOf(event, categories) {
+	return {
+		title: event?.title ?? '',
+		date: event?.date ?? '',
+		time: event?.time ?? '',
+		endTime: event?.endTime ?? '',
+		categoryId: event?.categoryId ?? categories[0]?.categoryId ?? '',
+		track: event?.track ?? 'members',
+		description: event?.description ?? '',
+		spots: event?.capacity == null ? '' : String(event.capacity),
+		price: priceInput(event?.nonmemberPrice),
+		location: event?.location ?? '',
+		hideFromEvents: event?.hideFromEvents ?? false,
+		team: event?.team ?? '',
+		meetingUrl: event?.meetingUrl ?? '',
+	}
+}
+
 function Label({ children }) {
 	return (
 		<span className="
@@ -597,21 +625,7 @@ export function EventDialog({ event, categories, onClose, onSave, onDiscardDraft
 	const { closing, dismiss } = useDismiss()
 	const close = () => dismiss(onClose)
 
-	const [form, setForm] = useState({
-		title: event?.title ?? '',
-		date: event?.date ?? '',
-		time: event?.time ?? '',
-		endTime: event?.endTime ?? '',
-		categoryId: event?.categoryId ?? categories[0]?.categoryId ?? '',
-		track: event?.track ?? 'members',
-		description: event?.description ?? '',
-		spots: event?.capacity == null ? '' : String(event.capacity),
-		price: priceInput(event?.nonmemberPrice),
-		location: event?.location ?? '',
-		hideFromEvents: event?.hideFromEvents ?? false,
-		team: event?.team ?? '',
-		meetingUrl: event?.meetingUrl ?? '',
-	})
+	const [form, setForm] = useState(() => formOf(event, categories))
 	const [image, setImage] = useState(event?.image ?? null)
 	// { title, url } rows, blank ones included while they're being filled in
 	const [links, setLinks] = useState(event?.links ?? [])
@@ -628,6 +642,13 @@ export function EventDialog({ event, categories, onClose, onSave, onDiscardDraft
 	useUnsavedChanges(dirty)
 
 	const hasDraft = Boolean(event?.hasDraft)
+	// A live event with a draft saved: each box the draft changes from what
+	// members see now is pink inside, as on /labs' editor (fieldClass).
+	const live = event?.published && hasDraft && event.live ? formOf(event.live, categories) : null
+	const saved = live ? formOf(event, categories) : null
+	const box = (key) =>
+		live && String(saved[key] ?? '').trim() !== String(live[key] ?? '').trim() ? CHANGED_FIELD : FIELD
+	const linksChanged = live && JSON.stringify(event.links ?? []) !== JSON.stringify(event.live.links ?? [])
 	const askClose = () => (dirty ? setConfirmingClose(true) : close())
 	const askDiscard = () => (dirty || hasDraft ? setConfirmingDiscard(true) : close())
 
@@ -804,7 +825,7 @@ export function EventDialog({ event, categories, onClose, onSave, onDiscardDraft
 							value={form.title}
 							onChange={set('title')}
 							placeholder="Glow Night"
-							className={FIELD}
+							className={box('title')}
 						/>
 					</label>
 
@@ -822,7 +843,7 @@ export function EventDialog({ event, categories, onClose, onSave, onDiscardDraft
 								roomy
 								value={form.date}
 								onChange={(date) => setForm((prev) => ({ ...prev, date }))}
-								className={FIELD}
+								className={box('date')}
 							/>
 						</label>
 						{/* start and end side by side in the date's neighbour — the end
@@ -838,7 +859,7 @@ export function EventDialog({ event, categories, onClose, onSave, onDiscardDraft
 									roomy
 									value={form.time}
 									onChange={(time) => setForm((prev) => ({ ...prev, time }))}
-									className={FIELD}
+									className={box('time')}
 								/>
 							</label>
 							<label className="block">
@@ -849,7 +870,7 @@ export function EventDialog({ event, categories, onClose, onSave, onDiscardDraft
 									onChange={(endTime) => setForm((prev) => ({ ...prev, endTime }))}
 									disabled={!form.time}
 									title={form.time ? undefined : 'Set a start time first'}
-									className={`${FIELD} ${endOk ? '' : 'border-red focus:border-red'} disabled:opacity-50`}
+									className={`${box('endTime')} ${endOk ? '' : 'border-red focus:border-red'} disabled:opacity-50`}
 								/>
 							</label>
 						</div>
@@ -866,7 +887,7 @@ export function EventDialog({ event, categories, onClose, onSave, onDiscardDraft
 							<select
 								value={form.categoryId}
 								onChange={set('categoryId')}
-								className={`${FIELD} cursor-pointer`}
+								className={`${box('categoryId')} cursor-pointer`}
 							>
 								{categories.map((category) => (
 									<option key={category.categoryId} value={category.categoryId}>
@@ -883,7 +904,7 @@ export function EventDialog({ event, categories, onClose, onSave, onDiscardDraft
 							<select
 								value={form.track}
 								onChange={set('track')}
-								className={`${FIELD} cursor-pointer`}
+								className={`${box('track')} cursor-pointer`}
 							>
 								{tracksFor(role).map((key) => (
 									<option key={key} value={key}>
@@ -908,7 +929,7 @@ export function EventDialog({ event, categories, onClose, onSave, onDiscardDraft
 								value={form.location}
 								onChange={set('location')}
 								placeholder="WTHR 200"
-								className={FIELD}
+								className={box('location')}
 							/>
 						</label>
 
@@ -921,7 +942,7 @@ export function EventDialog({ event, categories, onClose, onSave, onDiscardDraft
 							<TeamField
 								value={form.team}
 								onChange={(team) => setForm((prev) => ({ ...prev, team }))}
-								fieldClass={FIELD}
+								fieldClass={box('team')}
 								Label={Label}
 							/>
 						)}
@@ -936,7 +957,7 @@ export function EventDialog({ event, categories, onClose, onSave, onDiscardDraft
 									value={form.spots}
 									onChange={set('spots')}
 									placeholder="blank = unlimited"
-									className={`${FIELD} ${spotsOk ? '' : 'border-red focus:border-red'}`}
+									className={`${box('spots')} ${spotsOk ? '' : 'border-red focus:border-red'}`}
 								/>
 							</label>
 						)}
@@ -953,7 +974,7 @@ export function EventDialog({ event, categories, onClose, onSave, onDiscardDraft
 									value={form.price}
 									onChange={set('price')}
 									placeholder="$ (blank means free)"
-									className={`${FIELD} ${priceFine ? '' : 'border-red focus:border-red'}`}
+									className={`${box('price')} ${priceFine ? '' : 'border-red focus:border-red'}`}
 								/>
 							</label>
 						)}
@@ -965,7 +986,7 @@ export function EventDialog({ event, categories, onClose, onSave, onDiscardDraft
 						<MeetingLinkField
 							value={form.meetingUrl}
 							onChange={(meetingUrl) => setForm((prev) => ({ ...prev, meetingUrl }))}
-							fieldClass={FIELD}
+							fieldClass={box('meetingUrl')}
 							Label={Label}
 						/>
 					)}
@@ -983,7 +1004,7 @@ export function EventDialog({ event, categories, onClose, onSave, onDiscardDraft
 							onChange={set('description')}
 							rows={3}
 							placeholder="What's happening, where to meet, what to bring."
-							className={`${FIELD} resize-none`}
+							className={`${box('description')} resize-none`}
 						/>
 					</label>
 
@@ -1047,7 +1068,7 @@ export function EventDialog({ event, categories, onClose, onSave, onDiscardDraft
 					</div>
 
 					{/* optional — listed under the picture on the event's page */}
-					<LinksField links={links} onChange={setLinks} fieldClass={FIELD} Label={Label} />
+					<LinksField links={links} onChange={setLinks} fieldClass={linksChanged ? CHANGED_FIELD : FIELD} Label={Label} />
 				</div>
 
 				{/* delete sits apart from the three on the right, so it can't be
@@ -1386,10 +1407,12 @@ export default function OfficerEvents() {
 	// Board and meeting events are calendar-only (see calendarOnly), and so is
 	// anything with "hide from events" switched on. Dropped here rather than on
 	// load, so one saved that way leaves the sheet the moment the form closes.
-	// A draft stays here whatever it is until it's published: the calendar
-	// doesn't show drafts, so this is the only place to find it again.
+	// A draft stays here whatever it is until it's published or discarded —
+	// one never published (the calendar doesn't show those, so this is the
+	// only place to find it again), and edits saved as a draft on a live one,
+	// even a calendar-only one whose draft was saved from the calendar.
 	const listed = events.filter((row) =>
-		!row.published || (!row.hideFromEvents && !calendarOnly(row.track, categoryNameOf(categories, row.categoryId)))
+		!row.published || row.hasDraft || (!row.hideFromEvents && !calendarOnly(row.track, categoryNameOf(categories, row.categoryId)))
 	)
 
 	// coming up (or today) first, then what's already happened, greyed out

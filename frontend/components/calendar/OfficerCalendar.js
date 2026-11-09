@@ -543,6 +543,8 @@ function EntryText({ entry }) {
 				text-black/45
 			">
 				{entry.type}
+				{/* says which one on a day that has a live event beside it */}
+				{entry.draft && ' · draft'}
 			</p>
 			<p className="
 				font-vietnam
@@ -648,8 +650,14 @@ function isToday(view, number) {
 //
 // `onAdd`, for whoever can add events, makes the badge a button: clicking a
 // day's number opens "add event" with that day already filled in.
+//
+// A day holding an event saved as a draft goes light purple the same way —
+// the purple of a draft's card on /events. Something due wins the colour.
+const DRAFT_CELL = DUE_CELL.replace('bg-red/10', 'bg-[#E8DEFF]')
+
 function Day({ number, inMonth, entries: dayEntries, dues = [], wave = 0, today = false, onOpen, onAdd, label }) {
 	const badge = dayBadge(dayEntries, TRACKS)
+	const hasDraft = dayEntries.some((entry) => entry.draft)
 	const Badge = onAdd ? 'button' : 'span'
 	return (
 		<div
@@ -668,7 +676,7 @@ function Day({ number, inMonth, entries: dayEntries, dues = [], wave = 0, today 
 				md:pt-3
 				pr-0
 				md:pr-2
-				${dues.length ? DUE_CELL : ''}
+				${dues.length ? DUE_CELL : hasDraft ? DRAFT_CELL : ''}
 			`}
 		>
 			<Badge
@@ -799,6 +807,7 @@ function Agenda({ days, onOpen }) {
 								min-w-0
 								flex-1
 								${due ? 'rounded-[10px] bg-red/10 px-2 py-1.5' : ''}
+								${entry?.draft ? 'rounded-[10px] bg-[#E8DEFF] px-2 py-1.5' : ''}
 							`}>
 								{entry ? <Entry entry={entry} onOpen={onOpen} /> : <DueLine due={due} />}
 							</div>
@@ -1388,9 +1397,10 @@ export default function OfficerCalendar() {
 	const load = () =>
 		Promise.all([labsApi.list({ summary: true }), eventsApi.list(), eventCategories.list()])
 			.then(([labs, events, tags]) => {
-				// drafts aren't happening yet — they stay on /labs and /events
-				// until published
-				const built = buildMonths(labs.filter((lab) => lab.published !== false), events.filter((event) => event.published !== false))
+				// a lab draft stays on /labs until it's published; an event
+				// draft shows here too, on a light purple day (DRAFT_CELL), the
+				// same purple as its card on /events
+				const built = buildMonths(labs.filter((lab) => lab.published !== false), events)
 				setMonths(built)
 				setEventRows(events)
 				setLabRows(new Map(labs.map((lab) => [lab.labId, lab])))
