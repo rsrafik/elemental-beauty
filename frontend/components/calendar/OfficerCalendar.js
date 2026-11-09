@@ -652,6 +652,7 @@ function isToday(view, number) {
 // day's number opens "add event" with that day already filled in.
 //
 // A day holding an event saved as a draft goes light purple the same way —
+// a new one never published, or a live one with edits saved as a draft —
 // the purple of a draft's card on /events. Something due wins the colour.
 const DRAFT_CELL = DUE_CELL.replace('bg-red/10', 'bg-[#E8DEFF]')
 
@@ -918,8 +919,9 @@ function EventDialog({ categories, date = '', onClose, onSave }) {
 	const priceFine = !hasNonmemberPrice(form.track) || priceOk(form.price)
 	const ready = form.title.trim() !== '' && form.date !== '' && spotsOk && endOk && priceFine
 
-	const submit = (event) => {
-		event.preventDefault()
+	// add it, or with `published` false save it as a draft (the purple
+	// button) — kept off members' pages until it's published from its editor
+	const save = (published) => {
 		if (!ready) return
 		dismiss(() =>
 			onSave({
@@ -928,8 +930,12 @@ function EventDialog({ categories, date = '', onClose, onSave }) {
 				description: form.description.trim(),
 				image,
 				links: cleanLinks(links),
-			})
+			}, published)
 		)
+	}
+	const submit = (event) => {
+		event.preventDefault()
+		save(true)
 	}
 
 	return (
@@ -1309,6 +1315,37 @@ function EventDialog({ categories, date = '', onClose, onSave }) {
 						cancel
 					</button>
 					<button
+						type="button"
+						onClick={() => save(false)}
+						disabled={!ready}
+						title={ready ? undefined : 'A draft needs a name and a date'}
+						className={`
+							rounded-full
+							border
+							border-[#7A5CC8]
+							bg-[#E8DEFF]
+							px-6
+							py-2
+							font-vietnam
+							font-semibold
+							text-sm
+							text-[#5B3FA8]
+							transition-all
+							duration-200
+							ease-out
+							${ready
+								? `cursor-pointer
+								   hover:-translate-y-0.5
+								   hover:shadow-lg
+								   hover:shadow-black/10
+								   active:translate-y-0
+								   active:shadow-none`
+								: 'opacity-40 cursor-not-allowed'}
+						`}
+					>
+						save draft
+					</button>
+					<button
 						type="submit"
 						disabled={!ready}
 						className={`
@@ -1399,7 +1436,8 @@ export default function OfficerCalendar() {
 			.then(([labs, events, tags]) => {
 				// a lab draft stays on /labs until it's published; an event
 				// draft shows here too, on a light purple day (DRAFT_CELL), the
-				// same purple as its card on /events
+				// same purple as its card on /events — as does a live event
+				// with edits saved as a draft
 				const built = buildMonths(labs.filter((lab) => lab.published !== false), events)
 				setMonths(built)
 				setEventRows(events)
@@ -1479,7 +1517,9 @@ export default function OfficerCalendar() {
 	// `type` — official or social, which is what attendance is scored on — isn't
 	// on this form, so a new event takes 'social'. Change it from /events, where
 	// the same event has a full editor.
-	const saveEvent = async ({ title, date, time, endTime, categoryId, track, description, image, spots, price, location, hideFromEvents, links, team, meetingUrl }) => {
+	// `published` false is "save draft": it lands on its day in light purple
+	// (DRAFT_CELL) and stays off members' pages until it's published.
+	const saveEvent = async ({ title, date, time, endTime, categoryId, track, description, image, spots, price, location, hideFromEvents, links, team, meetingUrl }, published = true) => {
 		setError(null)
 		try {
 			await eventsApi.create({
@@ -1502,6 +1542,7 @@ export default function OfficerCalendar() {
 				// and a door price only on a members-only one
 				nonmemberPrice: hasNonmemberPrice(track) ? priceBody(price) : 0,
 				type: 'social',
+				published,
 			})
 			await load()
 			const { year, month } = splitDateInput(date)

@@ -86,9 +86,10 @@ export function buildMonths(labs = [], events = []) {
 			team: event.team ?? null,
 			// where it's held, for the "join" pill (hasMeetingLink)
 			meetingUrl: hasMeetingLink(event.track) ? event.meetingUrl ?? null : null,
-			// saved as a draft and never published — only the staff calendar
-			// is handed these, and draws the day light purple (DRAFT_CELL)
-			draft: event.published === false,
+			// saved as a draft — never published, or a live one with edits
+			// waiting (hasDraft, staff only). The staff calendar draws the day
+			// light purple (DRAFT_CELL); the member one never gets either.
+			draft: event.published === false || Boolean(event.hasDraft),
 			href: `/events/view?id=${event.eventId}`,
 		})
 	}

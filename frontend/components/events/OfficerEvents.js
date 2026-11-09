@@ -91,7 +91,8 @@ export function toCard(event) {
 		taken: event.taken ?? 0,
 		mine: event.mine ?? null,
 		// "save draft", as on /labs: one never published is a purple card
-		// members can't see; a live one can have edits waiting (hasDraft)
+		// members can't see; a live one can have edits waiting (hasDraft),
+		// and goes purple too until they're published or discarded
 		published: event.published !== false,
 		hasDraft: Boolean(event.hasDraft),
 	}
@@ -210,8 +211,8 @@ function CloseIcon({ className = '' }) {
 // The advisor, who edits nothing, gets `onMenu` instead of `onEdit`: the dots
 // open `menu`, which only offers "view content".
 // Drafts — events members can't see yet — are light purple instead of white,
-// the same as /labs' cards; a live one with edits saved as a draft says so
-// across its photo.
+// the same as /labs' cards; a live one with edits saved as a draft is light
+// purple too, and says so across its photo.
 function EventCard({ title, date, time, endTime, location, image, published = true, hasDraft = false, onOpen, onEdit, onMenu, menu = null, action = null, done = false }) {
 	return (
 		<div
@@ -224,7 +225,7 @@ function EventCard({ title, date, time, endTime, location, image, published = tr
 			className={`
 			group
 			relative
-			${published ? 'bg-white' : 'bg-[#E8DEFF]'}
+			${published && !hasDraft ? 'bg-white' : 'bg-[#E8DEFF]'}
 			${done ? COMPLETED_CARD : ''}
 			rounded-[10px]
 			p-3
