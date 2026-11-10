@@ -1,5 +1,11 @@
 @import "tailwindcss";
 
+/* The public landing page's own stylesheet (components/landing). Imported here
+   rather than from the page so Tailwind processes it with the theme below —
+   the colours it reads off the theme are only emitted when something in this
+   stylesheet uses them. */
+@import "./landing.css";
+
 /* The page behind every page: the same cream the dashboards are laid on. On a
    phone it's what shows past the edges of the content — Safari paints it into
    the strip behind the status bar and into the overscroll — so anything else
@@ -59,8 +65,98 @@
   --font-canobis: var(--font-canobis);
   --font-reasons: var(--font-reasons);
   --font-dream: var(--font-dream);
+
+  /* ---- the landing page's additions (components/landing) ----
+     New names only: nothing the dashboards use is renamed or changed. */
+
+  /* ink in place of plain black: text, and the dark stage the bottle sits on */
+  --color-ink: #26120D;
+  --color-ink-soft: #4A2A20;
+  --color-ink-deep: #170A07;
+
+  /* pigments: the shades a formulator reaches for that the dashboards never
+     needed. Lilac and berry sit opposite the oranges; serum is the amber of an
+     oil phase. */
+  --color-lilac-light: #E7DEFF;
+  --color-lilac: #C8B6FF;
+  --color-lilac-dark: #5B3FA8;
+  --color-berry-light: #FFC4D6;
+  --color-berry: #D6336C;
+  --color-berry-dark: #8A1740;
+  --color-serum-light: #FFE0A8;
+  --color-serum: #FFB347;
+  --color-serum-dark: #A8620A;
+
+  /* the landing page's typefaces, loaded by that page alone
+     (components/landing/fonts.js says what each one is for) */
+  --font-bodoni: var(--font-bodoni);
+  --font-pinyon: var(--font-pinyon);
+  --font-museo: var(--font-museo);
+  --font-syne: var(--font-syne);
+  --font-dmmono: var(--font-dmmono);
+  --font-fourhand: var(--font-fourhand);
+  --font-essays: var(--font-essays);
 }
 
+
+/* ---- the landing page's scales (components/landing) -------------------------
+ *
+ * Its type, space, corners, depth and motion, as theme values so the page can
+ * be written in utilities like the rest of the app: text-h1, px-edge,
+ * rounded-quarter, shadow-soft, ease-spring.
+ *
+ * `static`, and a block of its own: these are defined in terms of each other
+ * (every type size is the body size times a power of 1.25), and the stylesheet
+ * in app/landing.css reads several of them as plain variables. `static` emits
+ * all of them whether or not a utility happens to use each one.
+ */
+@theme static {
+  /* type: one ratio, 1.25, generates every size from the body size, so the
+     headings keep their proportions to each other at any width. `mega` is the
+     display size: an eighth of the window, held between a size a phone can
+     fit a five-letter word at and one that stays sensible on a cinema
+     display. */
+  --text-body: clamp(1rem, 0.92rem + 0.35vw, 1.25rem);
+  --text-small: calc(var(--text-body) / 1.25);
+  --text-micro: calc(var(--text-body) / 1.5625);
+  --text-h6: calc(var(--text-body) * 1.25);
+  --text-h5: calc(var(--text-body) * 1.5625);
+  --text-h4: calc(var(--text-body) * 1.9531);
+  --text-h3: calc(var(--text-body) * 2.4414);
+  --text-h2: calc(var(--text-body) * 3.0518);
+  --text-h1: calc(var(--text-body) * 3.8147);
+  --text-h0: calc(var(--text-body) * 4.7684);
+  --text-mega: clamp(4.25rem, 12.5vw, 14rem);
+
+  /* space: the page's side margin, the gutter of its six-column grid, and
+     three sizes of breathing room between sections. All fluid. */
+  --spacing-edge: clamp(1rem, 3.4vw, 3.75rem);
+  --spacing-gutter: clamp(0.75rem, 1.25vw, 1.5rem);
+  --spacing-sec-s: clamp(1.5rem, 3vw, 3rem);
+  --spacing-sec-m: clamp(3rem, 7vw, 7rem);
+  --spacing-sec-l: clamp(5rem, 12vw, 12rem);
+
+  /* corners: `quarter` is the dashboard's signature, one big round corner on
+     an otherwise square block; `gel` is the small radius of a card */
+  --radius-quarter: clamp(3.5rem, 11vw, 11rem);
+  --radius-gel: clamp(0.9rem, 1.4vw, 1.5rem);
+
+  /* depth: soft, and tinted with the dark orange rather than grey. No hard
+     offset shadows on this page. */
+  --shadow-soft: 0 1px 2px rgba(168, 63, 19, 0.08), 0 14px 34px -14px rgba(168, 63, 19, 0.32);
+  --shadow-float: 0 2px 4px rgba(168, 63, 19, 0.08), 0 30px 60px -24px rgba(168, 63, 19, 0.42);
+
+  /* motion. Nothing on the landing page uses the browser's `ease` or
+     `ease-in-out`; every transition names one of these.
+       mech    snappy, mechanical: a slow start and a hard, exact stop
+       spring  overshoots and settles: anything you touch
+       expo    arrives fast and takes its time landing: reveals
+       glide   the dashboards' own curve, for the quiet moves */
+  --ease-mech: cubic-bezier(0.85, 0, 0.15, 1);
+  --ease-spring: cubic-bezier(0.34, 1.56, 0.64, 1);
+  --ease-expo: cubic-bezier(0.16, 1, 0.3, 1);
+  --ease-glide: cubic-bezier(0.22, 1, 0.36, 1);
+}
 
 /* Page entrance.
  *

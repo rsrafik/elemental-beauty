@@ -1,0 +1,569 @@
+/* The public landing page (components/landing).
+ *
+ * The page is written in Tailwind utilities like the rest of the app, on the
+ * scales in globals.css (text-h1, px-edge, rounded-quarter, shadow-soft,
+ * ease-spring). This file holds only what utilities say badly: the type
+ * voices and the glass, as utilities of their own, and the handful of
+ * pieces whose look depends on a value the page script writes (a scroll or
+ * pointer position) or on a state that several elements share.
+ *
+ * Two rules hold across the page:
+ *
+ *   No `ease` and no `ease-in-out`. Every transition names one of the four
+ *   curves from the theme: mech, spring, expo, glide. `linear` appears only
+ *   where something moves at a constant rate on purpose.
+ *
+ *   No hard black shadows. Depth is a soft shadow tinted with the dark
+ *   orange, or the edge light of the glass.
+ */
+
+/* ---- the voices -------------------------------------------------------------
+   Five ways of setting type, one per job (components/landing/fonts.js). A
+   headline is usually two of them: the header face for most of it, and the
+   script or the wide one for the word that matters. */
+
+/* The header face: hairlines against heavy stems, set tight. */
+@utility type-display {
+	font-family: var(--font-bodoni);
+	font-weight: 500;
+	font-optical-sizing: auto;
+	line-height: 0.9;
+	letter-spacing: -0.03em;
+}
+
+/* The calligraphy: the word that is written rather than set. A script's
+   letters are small for its size, so it runs a little larger than the type
+   beside it, and its long strokes need room above and below. */
+@utility type-script {
+	font-family: var(--font-pinyon);
+	font-weight: 400;
+	line-height: 1;
+	letter-spacing: 0;
+}
+
+/* The soft one: round letters whose strokes bend into each other, for a word
+   that should sit beside the script without squaring up to it. */
+@utility type-soft {
+	font-family: var(--font-museo);
+	/* medium, not bold: at this size anything heavier reads as a block again */
+	font-weight: 500;
+	line-height: 0.9;
+	letter-spacing: -0.02em;
+}
+
+/* The wide one: capitals that look stamped on. */
+@utility type-wide {
+	font-family: var(--font-syne);
+	font-weight: 800;
+	line-height: 0.92;
+	letter-spacing: -0.03em;
+	text-transform: uppercase;
+}
+
+/* The same header face at reading sizes, for sentences. */
+@utility type-serif {
+	font-family: var(--font-bodoni);
+	font-weight: 400;
+	font-optical-sizing: auto;
+	line-height: 1.1;
+	letter-spacing: -0.015em;
+
+	& em {
+		font-style: italic;
+	}
+}
+
+/* Everything written like a label: coordinates, phase names, the ingredient
+   list. */
+@utility type-label {
+	font-family: var(--font-dmmono);
+	font-size: var(--text-micro);
+	font-weight: 400;
+	line-height: 1.5;
+	letter-spacing: 0.04em;
+	text-transform: uppercase;
+}
+
+/* ---- liquid glass -----------------------------------------------------------
+   A clear gel sitting on the page: what is behind it is blurred and pushed up
+   in saturation, a bright line runs along the top edge where light enters and
+   a fainter one along the bottom where it leaves, and the shadow it casts is
+   warm rather than grey. --glass-tint is the body colour of the gel, as three
+   numbers, so a block can be amber or lilac glass by setting one variable;
+   --glass-shine turns the edge light down for dark glass.
+
+   The glint is positioned against the element, so whatever carries `glass`
+   also carries a position utility (relative, absolute or fixed). */
+@utility glass {
+	--glass-tint: 255, 251, 235;
+	--glass-shine: 1;
+	background: linear-gradient(
+		160deg,
+		rgba(var(--glass-tint), 0.62),
+		rgba(var(--glass-tint), 0.34) 45%,
+		rgba(var(--glass-tint), 0.5)
+	);
+	-webkit-backdrop-filter: blur(18px) saturate(1.9) brightness(1.05);
+	backdrop-filter: blur(18px) saturate(1.9) brightness(1.05);
+	border: 1px solid rgba(255, 255, 255, 0.55);
+	box-shadow:
+		inset 0 1.5px 0 rgba(255, 255, 255, calc(0.95 * var(--glass-shine))),
+		inset 0 -1px 0 rgba(255, 255, 255, calc(0.35 * var(--glass-shine))),
+		inset 0 -10px 18px -10px rgba(255, 255, 255, calc(0.55 * var(--glass-shine))),
+		var(--shadow-soft);
+
+	/* the glint: a highlight that slides across the gel when it is touched */
+	&::after {
+		content: '';
+		position: absolute;
+		inset: 0;
+		border-radius: inherit;
+		background: linear-gradient(105deg, transparent 30%, rgba(255, 255, 255, 0.7) 48%, transparent 62%);
+		background-size: 260% 100%;
+		background-position: 130% 0;
+		mix-blend-mode: soft-light;
+		pointer-events: none;
+		transition: background-position 0.9s var(--ease-expo);
+	}
+
+	&:hover::after,
+	&:focus-visible::after {
+		background-position: -30% 0;
+	}
+}
+
+.landing ::selection {
+	background: var(--color-yellow);
+	color: var(--color-ink);
+}
+
+.landing :focus-visible {
+	outline: 2px solid var(--color-blue-med);
+	outline-offset: 3px;
+}
+
+/* ---- preloader --------------------------------------------------------------
+   Sits over the page while the fonts arrive and the hero warms up. The page
+   script counts it to 100 and wipes it away; if that script never runs, this
+   animation removes it on its own so the page is never trapped behind it. */
+.lp-preloader {
+	clip-path: inset(0 0 0 0);
+	animation: lp-preloader-fallback 0.8s var(--ease-mech) 6s forwards;
+}
+
+@keyframes lp-preloader-fallback {
+	to {
+		clip-path: inset(0 0 100% 0);
+		visibility: hidden;
+	}
+}
+
+/* the liquid filling the screen from the bottom as the count rises: --fill
+   runs 0 to 1, and the curved lip on top is counter-scaled so it stays the
+   same height however full the screen is */
+.lp-preloader-fill {
+	transform-origin: 50% 100%;
+	transform: scaleY(var(--fill, 0));
+}
+
+.lp-preloader-fill::before {
+	content: '';
+	position: absolute;
+	left: 0;
+	right: 0;
+	bottom: 100%;
+	height: 3vw;
+	background: inherit;
+	border-radius: 100% 100% 0 0 / 100% 100% 0 0;
+	transform-origin: 50% 100%;
+	transform: scaleY(calc(1 / max(var(--fill, 0.01), 0.01)));
+}
+
+/* ---- navigation -------------------------------------------------------------
+   A bead of glass at the top of the page (components/landing/Nav.js).
+
+   It arrives as a single droplet, falls into place, and stretches open into a
+   pill. Inside, a lens sits under whichever link you are on and slides to the
+   next one on a spring, overshooting like something wet. Scroll down and the
+   pill draws back into the droplet and the sign-in bead; scroll up, or reach
+   for it, and it opens again.
+
+   These states are here and not in utilities because they are shared: one
+   attribute on the page (data-ready) and one class on the bar (is-compact)
+   move four different elements. */
+.lp-nav {
+	transform: translate(-50%, -160%) scale(0.5);
+	transition: transform 0.9s var(--ease-spring);
+}
+
+.landing[data-ready] .lp-nav {
+	transform: translate(-50%, 0) scale(1);
+}
+
+/* The open and close is `grid-template-columns` between 0fr and 1fr: the
+   links keep their natural width and the track around them does the moving,
+   so nothing inside is ever squashed. */
+.lp-nav-track {
+	grid-template-columns: 0fr;
+	transition: grid-template-columns 0.75s var(--ease-mech) 0.35s;
+}
+
+.landing[data-ready] .lp-nav-track {
+	grid-template-columns: 1fr;
+}
+
+.landing[data-ready] .lp-nav.is-compact:not(:hover):not(:focus-within) .lp-nav-track {
+	grid-template-columns: 0fr;
+	transition-delay: 0s;
+}
+
+/* the lens: Nav.js writes where it should be, the spring does the rest */
+.lp-nav-lens {
+	left: var(--lens-x, 0px);
+	width: var(--lens-w, 0px);
+	opacity: var(--lens-on, 0);
+	box-shadow:
+		inset 0 1.5px 0 rgba(255, 255, 255, 0.8),
+		inset 0 -6px 10px -6px rgba(168, 63, 19, 0.35);
+	transition:
+		left 0.6s var(--ease-spring),
+		width 0.6s var(--ease-spring),
+		opacity 0.3s var(--ease-expo);
+}
+
+/* the phone's menu button: two beads that run together into a cross */
+.lp-nav-menu span {
+	transition:
+		width 0.5s var(--ease-mech),
+		transform 0.5s var(--ease-mech);
+}
+
+.lp-nav-menu[aria-expanded='true'] span {
+	width: 1.3rem;
+}
+
+.lp-nav-menu[aria-expanded='true'] span:first-child {
+	transform: translateY(0.33rem) rotate(45deg);
+}
+
+.lp-nav-menu[aria-expanded='true'] span:last-child {
+	transform: translateY(-0.33rem) rotate(-45deg);
+}
+
+/* the phone's menu: a sheet that opens out of the bead as a growing circle,
+   its links landing one after another */
+.lp-sheet {
+	clip-path: circle(0 at 50% 2.4rem);
+	visibility: hidden;
+	transition:
+		clip-path 0.8s var(--ease-mech),
+		visibility 0s linear 0.8s;
+}
+
+.lp-sheet.is-open {
+	clip-path: circle(150% at 50% 2.4rem);
+	visibility: visible;
+	transition-delay: 0s;
+}
+
+.lp-sheet a {
+	opacity: 0;
+	transform: translateY(1.2em) rotate(3deg);
+	transition:
+		transform 0.7s var(--ease-spring),
+		opacity 0.4s var(--ease-expo);
+}
+
+.lp-sheet.is-open a {
+	opacity: 1;
+	transform: none;
+	transition-delay: calc(0.25s + var(--i) * 0.06s);
+}
+
+/* ---- hero ------------------------------------------------------------------- */
+
+/* a point with no size that sits on a line's baseline, for the canvas to read
+   where to draw the name (components/landing/Emulsion.js) */
+.lp-baseline {
+	display: inline-block;
+	width: 0;
+	height: 0;
+}
+
+/* the canvas is drawing the name now; the real letters stay in the page for
+   selection, search and screen readers */
+.lp-wordmark.is-liquid .lp-ch {
+	color: transparent;
+}
+
+/* the scroll hint: a drop that falls, over and over */
+.lp-drip {
+	border-radius: 50% 50% 50% 50% / 60% 60% 40% 40%;
+	animation: lp-drip 1.8s var(--ease-mech) infinite;
+}
+
+@keyframes lp-drip {
+	0% {
+		transform: translateY(-0.9rem) scale(0.4);
+		opacity: 0;
+	}
+	35% {
+		transform: translateY(-0.9rem) scale(1);
+		opacity: 1;
+	}
+	100% {
+		transform: translateY(0.9rem) scale(0.7, 1.3);
+		opacity: 0;
+	}
+}
+
+/* ---- the pointer ------------------------------------------------------------
+   A bead of glass that trails the mouse and, over anything marked
+   data-cursor, opens up to say what a click will do. Never shown on touch. */
+.lp-cursor {
+	display: none;
+	scale: 0;
+	transition: scale 0.5s var(--ease-spring);
+}
+
+.lp-cursor.is-on {
+	scale: 1;
+}
+
+@media (hover: hover) and (pointer: fine) {
+	.lp-cursor {
+		display: grid;
+	}
+}
+
+/* ---- what: the swatches -----------------------------------------------------
+   Each row's smear is swiped in from the left when the row is on: Motion.js
+   adds `is-on` while the row is in the middle of the window, and the pointer
+   does the same. The name leans into the swipe and the note beside it inks
+   in. Only hidden once the page script is running, so without it every smear
+   is simply there. */
+.lp-smear {
+	transition: clip-path 0.95s var(--ease-mech);
+}
+
+.lp-swatch-name {
+	transition: transform 0.9s var(--ease-spring);
+}
+
+.lp-swatch-note {
+	transition: opacity 0.6s var(--ease-expo);
+}
+
+.lp-swatch-icon {
+	transition: transform 0.8s var(--ease-spring);
+}
+
+.landing[data-motion] .lp-swatch-row:not(.is-on):not(:hover) {
+	& .lp-smear {
+		clip-path: inset(0 100% 0 0);
+	}
+
+	& .lp-swatch-note {
+		opacity: 0.35;
+	}
+}
+
+.landing[data-motion] .lp-swatch-row:is(.is-on, :hover) {
+	& .lp-smear {
+		clip-path: inset(0 0 0 0);
+	}
+
+	& .lp-swatch-name {
+		transform: translateX(0.14em);
+	}
+
+	& .lp-swatch-icon {
+		transform: rotate(-12deg) scale(1.2);
+	}
+}
+
+/* ---- album ------------------------------------------------------------------
+   The fan (components/landing/Album.js). Every card sits in the same place,
+   hinged on a point far below the deck, and is turned by its position in the
+   line times --spread: 0 is a closed stack, 7 is open. Motion.js holds it at 0
+   until the deck is reached; letting go is what opens it.
+
+     --offset  the card's place, counted from the middle one (set inline)
+     --spread  degrees between neighbours
+     --push    -1, 0 or 1: which way a hovered neighbour is leaning it
+     --lean    how many degrees that lean is worth
+     --lift    how far the card under the pointer rises, along its own axis
+     --open    how wide a card is once it has been pulled out: as wide as the
+               phone allows, never wider than a comfortable close-up, and
+               never so wide that its height would not fit in the window */
+.lp-deck {
+	--spread: 5;
+	--lean: 2;
+	--open: min(84vw, 26rem, calc((100svh - 7rem) * 0.714));
+}
+
+@media (min-width: 64rem) {
+	.lp-deck {
+		--spread: 7;
+		--lean: 3;
+	}
+}
+
+.lp-card {
+	/* a corner that is a fixed share of the card, so it is the same corner on
+	   the small card and on the close-up (the second number is the first one
+	   times 5/7, the card's proportion, which keeps the corner round) */
+	border-radius: 9% / 6.43%;
+	transform-origin: 50% 250%;
+	transform: translateX(-50%)
+		rotate(calc((var(--offset) * var(--spread) + var(--push, 0) * var(--lean)) * 1deg))
+		translateY(var(--lift, 0%));
+	/* each card a beat after the one before it, so the fan opens like a hand
+	   of cards rather than a door; no wait when it is a hover doing the moving */
+	transition:
+		transform 0.9s var(--ease-spring) calc((var(--offset) + 4) * 45ms),
+		opacity 0.6s var(--ease-expo),
+		filter 0.6s var(--ease-expo);
+}
+
+.lp-deck:hover .lp-card {
+	transition-delay: 0s;
+}
+
+.lp-card:hover,
+.lp-card:focus-within {
+	--lift: -12%;
+	z-index: 5;
+}
+
+/* Pulled out: the same card at its close-up size, standing over the middle of
+   the deck, upright. Album.js flies it here and back with a script, so the
+   fan's own transform and transition are switched off while it is out — a
+   transition and a script moving the same thing is what lag looks like. */
+.lp-card.is-open {
+	top: calc(50% - var(--open) * 0.7);
+	bottom: auto;
+	left: calc(50% - var(--open) / 2);
+	width: var(--open);
+	z-index: 30;
+	transform: none;
+	transform-origin: 50% 50%;
+	transition: none;
+}
+
+/* just given back to the fan: already in its place, so nothing to animate */
+.lp-card.is-landing {
+	transition: none;
+}
+
+/* the rest of the deck steps back while a card is out */
+.lp-deck[data-open] .lp-card:not(.is-open) {
+	opacity: 0.32;
+	filter: saturate(0.55);
+	pointer-events: none;
+}
+
+/* once a card is out it is not a button any more; its panel has the controls */
+.lp-card.is-open .lp-card-pull {
+	display: none;
+}
+
+/* The panel inside the card: below its foot until the card is out, then up
+   over the lower part of the photograph once the card has nearly arrived.
+   On the way home it drops first, and quickly. */
+.lp-card-panel {
+	transform: translateY(101%);
+	visibility: hidden;
+	transition:
+		transform 0.35s var(--ease-mech),
+		visibility 0s linear 0.35s;
+}
+
+/* Visible at once, though it has not slid into view yet: its "close" button
+   takes the focus the moment the card is pulled, and a hidden thing cannot. */
+.lp-card.is-open:not(.is-leaving) .lp-card-panel {
+	transform: none;
+	visibility: visible;
+	transition:
+		transform 0.8s var(--ease-expo) 0.6s,
+		visibility 0s;
+}
+
+/* ---- sponsors ---------------------------------------------------------------
+   Each band is its list twice. Both copies slide left by one list's width and
+   start over, which is why there is no seam. `linear` on purpose: a band moves
+   at a constant rate. It holds still while the pointer is on it. */
+.lp-band-run {
+	animation: lp-band 42s linear infinite;
+}
+
+.lp-band-back {
+	animation-direction: reverse;
+}
+
+.lp-band:hover .lp-band-run {
+	animation-play-state: paused;
+}
+
+@keyframes lp-band {
+	to {
+		transform: translateX(-100%);
+	}
+}
+
+/* ---- footer ----------------------------------------------------------------- */
+
+/* a link's underline, drawn in from the left when it is pointed at */
+.lp-underline {
+	background: linear-gradient(currentColor, currentColor) 0 100% / 0 1px no-repeat;
+	transition: background-size 0.5s var(--ease-mech);
+}
+
+.lp-underline:hover,
+.lp-underline:focus-visible {
+	background-size: 100% 1px;
+}
+
+/* ---- coming into view -------------------------------------------------------
+   Anything marked data-rise comes up into place as it enters the window.
+
+   Below the hero this is CSS alone: the animation's clock is the element's
+   own position in the window (a view timeline), so it needs no script, cannot
+   be left half-done, and an element can never be stuck invisible waiting for
+   a cue that does not come. The curve shapes how the rise is spread across
+   the scroll. A browser without view timelines simply shows the element.
+
+   In the hero the same elements are part of the opening, which Motion.js
+   plays; they are hidden only for the moment between the script starting and
+   the opening marking the page ready. */
+@keyframes lp-rise {
+	from {
+		opacity: 0;
+		transform: translateY(2.5rem);
+	}
+}
+
+@supports (animation-timeline: view()) {
+	@media (prefers-reduced-motion: no-preference) {
+		.landing [data-rise]:not(#top [data-rise]) {
+			animation: lp-rise var(--ease-expo) both;
+			animation-timeline: view();
+			animation-range: entry 0% cover 24%;
+		}
+	}
+}
+
+.landing[data-motion]:not([data-ready]) #top [data-rise] {
+	opacity: 0;
+}
+
+@media (prefers-reduced-motion: reduce) {
+	.lp-preloader {
+		animation-delay: 0.6s;
+	}
+
+	.lp-drip,
+	.lp-band-run {
+		animation: none;
+	}
+}
