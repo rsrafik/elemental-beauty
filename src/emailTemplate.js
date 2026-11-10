@@ -50,8 +50,10 @@ export function actionEmail({ heading, callout, lines = [], button, after = [], 
         reason
     ].join('\n')
 
+    // HTML folds a bare newline into a space, so a single line break the
+    // writer typed inside a paragraph has to become a <br> to show up
     const paragraph = (line) =>
-        `<p style="margin:0 0 16px;font-family:${FONT};font-size:15px;line-height:1.55;color:${INK};">${escape(line)}</p>`
+        `<p style="margin:0 0 16px;font-family:${FONT};font-size:15px;line-height:1.55;color:${INK};">${escape(line).replace(/\r?\n/g, '<br>')}</p>`
 
     const html = `<!doctype html>
 <html>
