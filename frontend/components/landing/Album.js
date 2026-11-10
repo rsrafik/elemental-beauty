@@ -13,9 +13,10 @@ import { ALBUM } from './content'
 //
 // How the fan is built. Every card sits in the same spot, hinged on a point
 // well below the deck, and is turned by its place in the line times
-// `--spread`. So the whole fan is one number: 0 is a closed stack and 7 is
-// open. `--push` is the lean a hovered neighbour gives it. Both are read by
-// the card's one transform in app/landing.css.
+// `--spread`. `--push` is the lean a hovered neighbour gives it. The deck
+// arrives as a stack on the leftmost card's place and opens out as the
+// section is scrolled into (Motion.js); all of it is the card's one
+// transform in app/landing.css.
 //
 // Pulling a card. There is no viewer and nothing covers the page: the card
 // itself comes out of the fan. It lifts, straightens and grows into a
@@ -310,6 +311,9 @@ export default function Album() {
 				data-deck
 				data-open={out === null ? undefined : ''}
 				onPointerLeave={() => lean(null)}
+				// the leftmost card's place in the line: the deck arrives stacked
+				// on it (app/landing.css)
+				style={{ '--first': -middle }}
 				className="
 					lp-deck
 					relative

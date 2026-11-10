@@ -385,11 +385,21 @@
 /* ---- album ------------------------------------------------------------------
    The fan (components/landing/Album.js). Every card sits in the same place,
    hinged on a point far below the deck, and is turned by its position in the
-   line times --spread: 0 is a closed stack, 7 is open. Motion.js holds it at 0
-   until the deck is reached; letting go is what opens it.
+   line times --spread.
+
+   The deck arrives as a neat stack lying on the leftmost card's place, at
+   that card's tilt, lower down along that tilt. Scrolling into the section
+   slides the whole stack up along it while the cards open out clockwise from
+   the hinge into the fan. Motion.js ties two numbers to the scroll to do
+   that, --fan and --drop; with no script they are at rest and the fan is
+   simply open.
 
      --offset  the card's place, counted from the middle one (set inline)
+     --first   the leftmost card's --offset (set inline on the deck)
      --spread  degrees between neighbours
+     --fan     0 every card on the leftmost card's tilt, 1 each on its own
+     --drop    how far down the leftmost card's tilt the whole deck sits, as
+               a percentage of a card's height
      --push    -1, 0 or 1: which way a hovered neighbour is leaning it
      --lean    how many degrees that lean is worth
      --lift    how far the card under the pointer rises, along its own axis
@@ -399,6 +409,8 @@
 .lp-deck {
 	--spread: 5;
 	--lean: 2;
+	--fan: 1;
+	--drop: 0;
 	--open: min(84vw, 26rem, calc((100svh - 7rem) * 0.714));
 }
 
@@ -415,23 +427,41 @@
 	   times 5/7, the card's proportion, which keeps the corner round) */
 	border-radius: 9% / 6.43%;
 	transform-origin: 50% 250%;
+	/* Read right to left, as the browser applies it: the card rises along its
+	   own length if it is the one being pointed at; it is turned from the
+	   leftmost card's tilt towards its own, by however far the fan is open;
+	   the whole deck is moved down the leftmost card's tilt; and that tilt is
+	   applied. Every turn is about the same hinge, so the two add up to the
+	   card's own angle once the fan is open and the drop is nothing. */
 	transform: translateX(-50%)
-		rotate(calc((var(--offset) * var(--spread) + var(--push, 0) * var(--lean)) * 1deg))
+		rotate(calc(var(--first, 0) * var(--spread) * 1deg))
+		translateY(calc(var(--drop) * 1%))
+		rotate(
+			calc(
+				((var(--offset) - var(--first, 0)) * var(--fan) * var(--spread) + var(--push, 0) * var(--lean)) * 1deg
+			)
+		)
 		translateY(var(--lift, 0%));
-	/* each card a beat after the one before it, so the fan opens like a hand
-	   of cards rather than a door; no wait when it is a hover doing the moving */
 	transition:
-		transform 0.9s var(--ease-spring) calc((var(--offset) + 4) * 45ms),
+		transform 0.9s var(--ease-spring),
 		opacity 0.6s var(--ease-expo),
 		filter 0.6s var(--ease-expo);
 }
 
-.lp-deck:hover .lp-card {
-	transition-delay: 0s;
+/* While the scroll is still bringing the deck in, the scroll is the only thing
+   moving the cards: a transition on top of it would chase a target that
+   changes every frame, and a card half-way to its place is not yet one to
+   pull. */
+.lp-deck[data-entering] .lp-card {
+	transition: none;
+	pointer-events: none;
 }
 
+/* Lifted under the pointer, and when the keyboard is on it. Not on any focus:
+   a card that has just been put back gets the focus again, and after a mouse
+   click that would leave it standing proud of the fan for no visible reason. */
 .lp-card:hover,
-.lp-card:focus-within {
+.lp-card:has(:focus-visible) {
 	--lift: -12%;
 	z-index: 5;
 }

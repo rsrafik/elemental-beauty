@@ -17,7 +17,7 @@ import { SplitText } from 'gsap/SplitText'
 //   data-words   a sentence that inks in a word at a time as it is scrolled
 //
 // and the scenes that belong to one section each: the hero's opening, the
-// swatches being swiped in (What.js) and the album's fan opening (Album.js).
+// swatches being swiped in (What.js) and the album's deck arriving (Album.js).
 //
 // When the name has landed it announces `lp:hero-settled`, which is the hero
 // canvas's cue to start drawing the letters itself (Emulsion.js).
@@ -176,27 +176,39 @@ export default function Motion() {
 				ScrollTrigger.create({ trigger: row, start: 'top 66%', end: 'bottom 34%', toggleClass: 'is-on' })
 			})
 
-			// ---- the album's fan ----
-			// Held shut until it is reached, then let go. The opening itself is
-			// the cards' own CSS transition: taking the override away changes
-			// every card's angle at once and each one springs to its place. (It
-			// is not tweened from here, because a tween would be changing a
-			// value the cards are already transitioning, every frame.)
+			// ---- the album's deck arriving ----
+			// It starts as a stack on the leftmost card's place and tilt, a
+			// card's height down that tilt, where the next section hides most
+			// of it. Scrolling into the section slides the stack up along the
+			// tilt and, a beat behind, opens it out clockwise into the fan. Both
+			// are numbers the stylesheet turns into each card's transform
+			// (--drop and --fan, app/landing.css), and both follow the scroll,
+			// so scrolling back up folds the deck away again.
+			//
+			// `data-entering` stays on the deck until the fan is fully open: it
+			// turns the cards' own transitions off, so nothing else is trying
+			// to move them while the scroll is.
 			const deck = root.querySelector('[data-deck]')
 			if (deck) {
-				deck.style.setProperty('--spread', '0')
-				ScrollTrigger.create({
-					trigger: deck,
-					start: 'top 72%',
-					once: true,
-					onEnter: () => deck.style.removeProperty('--spread'),
-				})
+				deck.setAttribute('data-entering', '')
+				gsap
+					.timeline({
+						scrollTrigger: { trigger: deck, start: 'top 96%', end: 'top 36%', scrub: 0.7 },
+						onUpdate() {
+							deck.toggleAttribute('data-entering', this.progress() < 1)
+						},
+					})
+					.fromTo(deck, { '--drop': 96 }, { '--drop': 0, duration: 0.85, ease: 'power2.out' }, 0)
+					.fromTo(deck, { '--fan': 0 }, { '--fan': 1, duration: 0.85, ease: 'sine.inOut' }, 0.15)
 			}
 		}, root)
 
 		return () => {
 			context.revert()
-			root.querySelector('[data-deck]')?.style.removeProperty('--spread')
+			const arrived = root.querySelector('[data-deck]')
+			arrived?.removeAttribute('data-entering')
+			arrived?.style.removeProperty('--fan')
+			arrived?.style.removeProperty('--drop')
 			root.removeEventListener('click', onClick)
 			root.removeAttribute('data-motion')
 			root.removeAttribute('data-ready')
