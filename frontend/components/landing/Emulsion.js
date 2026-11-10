@@ -381,9 +381,12 @@ export default function Emulsion() {
 		const resize = () => {
 			dpr = Math.min(window.devicePixelRatio || 1, 2)
 			width = canvas.clientWidth
-			height = canvas.clientHeight
+			// The bubbles are placed against the hero, but the canvas hangs
+			// below it (see the markup), so one that sits on the hero's foot is
+			// drawn whole instead of being cut along it.
+			height = hero.clientHeight
 			canvas.width = Math.round(width * dpr)
-			canvas.height = Math.round(height * dpr)
+			canvas.height = Math.round(canvas.clientHeight * dpr)
 			gl.viewport(0, 0, canvas.width, canvas.height)
 			gl.uniform2f(uRes, canvas.width, canvas.height)
 			gl.uniform1f(uPx, dpr)
@@ -555,9 +558,11 @@ export default function Emulsion() {
 			aria-hidden="true"
 			className="
 				absolute
-				inset-0
+				inset-x-0
+				top-0
 				-z-10
-				size-full
+				h-[145%]
+				w-full
 			"
 		/>
 	)

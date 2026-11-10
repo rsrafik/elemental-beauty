@@ -42,7 +42,7 @@ export default function Hero() {
 				isolate
 				grid
 				min-h-svh
-				overflow-hidden
+				overflow-x-clip
 			"
 		>
 			<Emulsion />

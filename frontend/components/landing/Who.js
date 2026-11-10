@@ -1,4 +1,5 @@
 import { WHO } from './content'
+import Team from './Team'
 
 // Phase A: who we are.
 //
@@ -6,6 +7,9 @@ import { WHO } from './content'
 // in the serif, that inks itself in a word at a
 // time as it is scrolled through (Motion.js fades each `data-word` up from a
 // ghost of itself).
+//
+// Under the sentence, the people themselves: two rails of names and portraits
+// (Team.js).
 //
 // The statement comes from content.js with *stars* around the words that take
 // the italic and a pigment.
@@ -39,7 +43,8 @@ export default function Who() {
 			id="who"
 			className="
 				relative
-				py-sec-l
+				pt-[calc(var(--spacing-sec-l)*1.75)]
+				pb-sec-l
 			"
 		>
 			<div className="
@@ -67,6 +72,8 @@ export default function Who() {
 					{words(WHO.statement)}
 				</p>
 			</div>
+
+			<Team />
 		</section>
 	)
 }

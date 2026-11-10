@@ -21,42 +21,41 @@ export function Sponsors() {
 				pb-[calc(var(--spacing-sec-l)+var(--radius-quarter))]
 			"
 		>
+			{/* the heading and the line under it, both set in the middle of the
+			    page */}
 			<div className="
-				grid
-				grid-cols-4
-				gap-x-gutter
-				gap-y-sec-s
 				px-edge
-				lg:grid-cols-6
 			">
-				<h2
-					data-title
-					className="
-						type-serif
-						col-span-full
-						text-h0
-						italic
-						lg:col-span-5
-						lg:col-start-2
-						lg:text-[length:clamp(3.5rem,7.6vw,8.5rem)]
-					"
-				>
-					{/* three words, and the middle one is the solid one */}
-					kept <span className="type-wide not-italic">stable</span> by
-				</h2>
-				<p
-					data-rise
-					className="
-						type-serif
-						col-span-full
-						max-w-[22ch]
-						text-h4
-						lg:col-span-3
-						lg:col-start-2
-					"
-				>
-					{SPONSORS.intro}
-				</p>
+				<div className="
+					flex
+					flex-col
+					items-center
+					gap-sec-s
+					text-center
+				">
+					<h2
+						data-title
+						className="
+							type-serif
+							text-h0
+							italic
+							lg:text-[length:clamp(3.5rem,7.6vw,8.5rem)]
+						"
+					>
+						{/* three words, and the middle one is the solid one */}
+						kept <span className="type-wide not-italic">stable</span> by
+					</h2>
+					<p
+						data-rise
+						className="
+							type-serif
+							max-w-[22ch]
+							text-h4
+						"
+					>
+						{SPONSORS.intro}
+					</p>
+				</div>
 			</div>
 
 			<div className="

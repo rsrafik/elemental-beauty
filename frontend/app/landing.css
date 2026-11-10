@@ -336,6 +336,156 @@
 	}
 }
 
+/* ---- who: the people ---------------------------------------------------------
+   The rails (components/landing/Team.js). The script slides each rail and
+   writes --sway, the degrees every portrait on it is rocked by; here is only
+   what a name does under the pointer. */
+.lp-rail-sway {
+	rotate: calc(var(--sway, 0) * 1deg);
+}
+
+/* A typeface cannot be eased from upright to italic, and the italic is a
+   different width, so the name is set twice on the same spot and the two are
+   faded across each other: nothing is re-set and nothing moves. `glide` both
+   ways, so it fades out as gently as it fades in. */
+.lp-rail-roman,
+.lp-rail-italic {
+	transition: opacity 0.55s var(--ease-glide);
+}
+
+.lp-rail-italic {
+	opacity: 0;
+}
+
+.lp-rail-item:is(:hover, :focus-visible) .lp-rail-roman {
+	opacity: 0;
+}
+
+.lp-rail-item:is(:hover, :focus-visible) .lp-rail-italic {
+	opacity: 1;
+}
+
+/* The takeover. One attribute on it, data-state, moves everything:
+
+     closed   nothing is there
+     open     the panels have wiped across and the person is on them
+     closing  the person is carried on upwards and the panels follow
+
+   Each panel grows from one edge and leaves by the other, so opening and
+   closing are one movement in the same direction: the first panel always
+   travels up, the second always down. That is the transform-origin changing
+   sides between the two states. */
+.lp-team {
+	visibility: hidden;
+}
+
+.lp-team:is([data-state='open'], [data-state='closing']) {
+	visibility: visible;
+}
+
+.lp-team-wipe {
+	transform: scaleY(0);
+	transition: transform 1s var(--ease-mech);
+}
+
+.lp-team-wipe-a {
+	transform-origin: 50% 0;
+}
+
+.lp-team-wipe-b {
+	transform-origin: 50% 100%;
+}
+
+.lp-team[data-state='open'] .lp-team-wipe {
+	transform: scaleY(1.002);
+}
+
+.lp-team[data-state='open'] .lp-team-wipe-a {
+	transform-origin: 50% 100%;
+}
+
+.lp-team[data-state='open'] .lp-team-wipe-b {
+	transform-origin: 50% 0;
+}
+
+/* the panels wait a moment for the person to get out of the way */
+.lp-team[data-state='closing'] .lp-team-wipe {
+	transition-delay: 0.2s;
+}
+
+/* the portrait and the lines: up into place once the panels are nearly
+   across, one a beat behind the other (--i), and on upwards when it closes */
+.lp-team-rise {
+	opacity: 0;
+	transform: translateY(20%);
+}
+
+.lp-team[data-state='open'] .lp-team-rise {
+	opacity: 1;
+	transform: none;
+	transition:
+		opacity 0.6s var(--ease-expo) calc(0.6s + var(--i) * 0.1s),
+		transform 0.6s var(--ease-expo) calc(0.6s + var(--i) * 0.1s);
+}
+
+.lp-team[data-state='closing'] .lp-team-rise {
+	opacity: 0;
+	transform: translateY(-20%);
+	transition:
+		opacity 0.5s var(--ease-mech),
+		transform 0.6s var(--ease-mech);
+}
+
+/* previous and next come up from under the foot of the screen, last */
+.lp-team-foot {
+	opacity: 0;
+	transform: translateY(100%);
+	transition:
+		opacity 0.6s var(--ease-expo),
+		transform 0.6s var(--ease-expo);
+}
+
+.lp-team[data-state='open'] .lp-team-foot {
+	opacity: 1;
+	transform: none;
+	transition-delay: 0.8s;
+}
+
+.lp-team-close {
+	opacity: 0;
+	transition: opacity 0.3s var(--ease-expo);
+}
+
+.lp-team[data-state='open'] .lp-team-close {
+	opacity: 1;
+	transition-delay: 0.8s;
+}
+
+.lp-team-arrow {
+	transition: transform 0.3s var(--ease-expo);
+}
+
+.lp-team-step:is(:hover, :focus-visible) .lp-team-arrow {
+	transform: translateX(0.4em);
+}
+
+.lp-team-step:is(:hover, :focus-visible) .lp-team-arrow-back {
+	transform: translateX(-0.4em);
+}
+
+/* a neighbour's name is a new element each time the person changes, so it
+   simply arrives */
+.lp-team-name {
+	animation: lp-team-name 0.6s var(--ease-expo) 0.2s both;
+}
+
+@keyframes lp-team-name {
+	from {
+		opacity: 0;
+		transform: translateY(50%);
+	}
+}
+
 /* ---- what: the swatches -----------------------------------------------------
    Each row's smear is swiped in from the left when the row is on: Motion.js
    adds `is-on` while the row is in the middle of the window, and the pointer
@@ -593,7 +743,16 @@
 	}
 
 	.lp-drip,
-	.lp-band-run {
+	.lp-band-run,
+	.lp-team-name {
 		animation: none;
+	}
+
+	.lp-team-wipe,
+	.lp-team-rise,
+	.lp-team-foot,
+	.lp-team-close {
+		transition-duration: 0s !important;
+		transition-delay: 0s !important;
 	}
 }

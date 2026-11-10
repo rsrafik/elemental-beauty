@@ -9,7 +9,7 @@
 // What is a draft: the sentences. They were written from the above and nobody
 // at the club has signed them off yet.
 //
-// What is a placeholder: every sponsor and every album photo. Search for
+// What is a placeholder: every person, sponsor and album photo. Search for
 // PLACEHOLDER to find them.
 
 export const CLUB = {
@@ -42,6 +42,23 @@ export const WHO = {
 	title: 'who we are',
 	statement:
 		'We are students who would rather *make* the moisturiser than just buy it. Chemists, engineers, artists and the simply *curious*, at one bench, turning oil and water into something that *holds*.',
+}
+
+// PLACEHOLDER: stand-in people, and the roles are guesses. Give each one a
+// `name` (it replaces the role on the rail, and the role moves to the label on
+// their portrait), a `src` (a file in public/, e.g. '/team/president.jpg',
+// taller than wide) and a line or two of `text`. `shade` is the colour of the
+// stand-in swatch; `tilt` is how many degrees their
+// portrait leans.
+export const TEAM = {
+	title: 'the people',
+	people: [
+		{ role: 'President', shade: 'salmon', tilt: 5, text: 'A line or two about this person goes here: what they study, and the thing they most like to make.' },
+		{ role: 'Lab lead', shade: 'lilac', tilt: -6, text: 'A line or two about this person goes here: what they study, and the thing they most like to make.' },
+		{ role: 'Treasurer', shade: 'green', tilt: 6, text: 'A line or two about this person goes here: what they study, and the thing they most like to make.' },
+		{ role: 'Events', shade: 'yellow', tilt: -4, text: 'A line or two about this person goes here: what they study, and the thing they most like to make.' },
+		{ role: 'Outreach', shade: 'serum', tilt: 4, text: 'A line or two about this person goes here: what they study, and the thing they most like to make.' },
+	],
 }
 
 export const WHAT = {
