@@ -2,13 +2,16 @@
 // automatically at the moment a member transitions to 'attended' (check-in or
 // waitlist admission); sitting on the waitlist earns nothing. The social-media
 // actions are awarded manually by officers via POST /members/:id/points.
+// vip_dues is automatic too: given the moment someone becomes VIP by paying a
+// school year's dues, once for that year (see awardVipPoints in dues.js).
 export const POINTS = {
     instagram_repost: 1,
     instagram_follow: 2,
     discord_join: 2,
     social_event: 3,
     official_event: 5,
-    lab: 8
+    lab: 8,
+    vip_dues: 4
 }
 
 // The only actions officers may award by hand — attendance points are

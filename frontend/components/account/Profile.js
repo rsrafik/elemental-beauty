@@ -766,6 +766,7 @@ const AWARD_REASON = {
 	instagram_repost: 'instagram repost',
 	instagram_follow: 'followed on instagram',
 	discord_join: 'joined the discord',
+	vip_dues: 'became VIP',
 	manual: 'points adjusted',
 }
 
