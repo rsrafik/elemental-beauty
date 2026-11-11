@@ -14,7 +14,10 @@
 
 export const CLUB = {
 	name: 'Elemental Beauty',
+	// general questions
 	email: 'elementalbeauty26@gmail.com',
+	// sponsor and guest speaker enquiries
+	sponsorEmail: 'ebpurdue@purdue.edu',
 	instagram: 'https://instagram.com/elementist_',
 	discord: 'https://discord.gg/G4Nmc9fsh3',
 	coordinates: '40.4237° N — 86.9212° W',
@@ -94,7 +97,7 @@ export const WHAT = {
 // only the colour of the stand-in swatch.
 export const ALBUM = {
 	title: 'the album',
-	intro: 'Every event is a shade. Fan the deck, pull a card.',
+	intro: 'Photos from our past labs and events. Click a card to see more about it.',
 	photos: [
 		{ shade: 'salmon', title: 'Your event here', date: 'date', text: 'A line or two about the event goes here: what was made, and who came.' },
 		{ shade: 'yellow', title: 'Your event here', date: 'date', text: 'A line or two about the event goes here: what was made, and who came.' },

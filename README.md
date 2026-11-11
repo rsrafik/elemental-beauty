@@ -239,7 +239,7 @@ This creates a verified admin account with the username `jane7` and prints a one
 ## Contact
 
 - **Website:** [elementalbeauty.org](https://elementalbeauty.org)
-- **Email:** elementalbeauty26@gmail.com
+- **Email:** elementalbeauty26@gmail.com (general questions); ebpurdue@purdue.edu (sponsors and guest speakers)
 - **Instagram:** [@elementist_](https://instagram.com/elementist_)
 - **Discord:** [Join the server](https://discord.gg/G4Nmc9fsh3)
 - **BoilerLink:** [Elemental Beauty](https://boilerlink.purdue.edu/organization/httpsboilerlink_purdue_eduorganization_https)

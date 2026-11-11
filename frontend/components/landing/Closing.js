@@ -148,7 +148,7 @@ export function Sponsors() {
 				"
 			>
 				<a
-					href={`mailto:${CLUB.email}?subject=Sponsoring%20Elemental%20Beauty`}
+					href={`mailto:${CLUB.sponsorEmail}?subject=Sponsoring%20Elemental%20Beauty`}
 					data-cursor="email"
 					className="
 						group
@@ -180,7 +180,7 @@ export function Sponsors() {
 					type-label
 					opacity-60
 				">
-					{CLUB.email}
+					{CLUB.sponsorEmail}
 				</p>
 			</div>
 		</section>
@@ -221,7 +221,7 @@ export function Footer() {
 					text-h4
 					lg:col-span-3
 				">
-					Made by students, at one bench, in <em className="text-salmon">West Lafayette</em>.
+					Run by Purdue students in <em className="text-salmon">West Lafayette</em>.
 				</p>
 
 				<ul className="

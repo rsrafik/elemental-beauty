@@ -4,7 +4,7 @@ import Landing from '@/components/landing/Landing'
 // to sign-in (app/page.js, and src/server.js before that); this is where the
 // page lives until it is approved to take over `/`.
 export const metadata = {
-	title: 'Elemental Beauty · Purdue’s cosmetic science club',
+	title: 'Elemental Beauty',
 }
 
 export default function LandingPreview() {
