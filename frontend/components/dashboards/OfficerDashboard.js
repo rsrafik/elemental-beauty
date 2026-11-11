@@ -15,6 +15,7 @@ import { calendarOnly, hasMeetingLink } from '@/lib/calendar'
 import { isoDate, prettyTimeRange, shortDate, today } from '@/lib/dates'
 import { canAddEvents, canChange, canManageLabs, onLeaderboard } from '@/lib/roles'
 import { Pending } from '@/components/Skeleton'
+import { useDismiss } from '@/lib/dismiss'
 
 // Shown to officer / treasurer / admin.
 // Sidebar + a 2x2 grid (quick actions / upcoming / announcement / leaderboard)
@@ -246,6 +247,102 @@ function LeaderRow({ place, name }) {
 
 // ---- page ------------------------------------------------------------------
 
+// The announcement members see on their dashboard, shown the way they see it —
+// the latest one and nothing else (GET /announcements?limit=1, as in
+// MemberDashboard.js), in the same orange-bordered card. Read when it opens, so
+// it's what's live now rather than what the page loaded with. `undefined` is
+// still loading, `null` is loaded and there is none.
+function CurrentAnnouncement({ onClose }) {
+	const { closing, dismiss } = useDismiss()
+	const close = () => dismiss(onClose)
+	const [announcement, setAnnouncement] = useState(undefined)
+	const [failed, setFailed] = useState(false)
+
+	useEffect(() => {
+		let live = true
+		announcementsApi
+			.list(1)
+			.then((rows) => live && setAnnouncement(rows[0] ?? null))
+			.catch(() => live && setFailed(true))
+		return () => { live = false }
+	}, [])
+
+	useEffect(() => {
+		const onKey = (event) => { if (event.key === 'Escape') close() }
+		window.addEventListener('keydown', onKey)
+		return () => window.removeEventListener('keydown', onKey)
+	})
+
+	return (
+		<div
+			onClick={close}
+			className={`
+				fixed
+				inset-0
+				z-[60]
+				flex
+				items-center
+				justify-center
+				bg-black/20
+				p-4
+				${closing ? 'dialog-leaving' : 'dialog-open'}
+			`}
+		>
+			<div
+				onClick={(event) => event.stopPropagation()}
+				role="dialog"
+				aria-modal="true"
+				aria-label="Current announcement"
+				className="w-[560px] max-w-full"
+			>
+				<p className="mb-3 text-center">
+					<span className="font-vietnam inline-block rounded-full bg-white px-4 py-1 text-[13px] text-black/70">
+						this is what members see on their dashboard
+					</span>
+				</p>
+				<div className="
+					relative
+					bg-white
+					border-[5px]
+					border-orange
+					rounded-tl-[30px]
+					sm:rounded-tl-[50px]
+					rounded-br-[30px]
+					sm:rounded-br-[50px]
+					px-5
+					sm:px-8
+					py-4
+					sm:py-5
+					max-h-[70vh]
+					overflow-y-auto
+				">
+					<p className="font-vietnam text-[16px] sm:text-[18px] font-semibold text-black">
+						announcements
+					</p>
+					<p className="font-handrawn text-2xl sm:text-4xl text-black mt-2">
+						{failed
+							? 'Couldn’t load it.'
+							: announcement === null
+								? 'Nothing new right now.'
+								: announcement === undefined
+									? <span aria-hidden="true" className="skeleton inline-block align-middle h-6 sm:h-8 w-3/4 rounded-full bg-black/15" />
+									: announcement.body}
+					</p>
+				</div>
+				<div className="mt-4 flex justify-center">
+					<button
+						type="button"
+						onClick={close}
+						className="font-vietnam cursor-pointer rounded-full bg-white px-6 py-2 text-[14px] text-black shadow-[-3px_3px_2px_rgba(0,0,0,0.4)]"
+					>
+						close
+					</button>
+				</div>
+			</div>
+		</div>
+	)
+}
+
 export default function OfficerDashboard() {
 	const role = useRole()
 	const teams = useJboardTeams()
@@ -313,6 +410,8 @@ export default function OfficerDashboard() {
 	const [posting, setPosting] = useState(false)
 	const [posted, setPosted] = useState(false)
 	const [error, setError] = useState(null)
+	// the "current announcement" popup: what members see on their dashboard
+	const [showCurrent, setShowCurrent] = useState(false)
 
 	useEffect(() => {
 		let live = true
@@ -829,6 +928,28 @@ export default function OfficerDashboard() {
                             shadow-[-5px_5px_2px_rgba(0,0,0,0.5)]
 						"
 					/>
+					{/* what members are looking at right now — bottom left, across
+					    from the POST button */}
+					<button
+						type="button"
+						onClick={() => setShowCurrent(true)}
+						className="
+							absolute
+							bottom-5
+							left-10
+							sm:left-14
+							xl:left-20
+							cursor-pointer
+							font-vietnam
+							text-[14px]
+							text-black/70
+							underline
+							underline-offset-2
+							hover:text-black
+						"
+					>
+						see current announcement
+					</button>
 					<button
 						type="button"
 						onClick={post}
@@ -992,6 +1113,7 @@ export default function OfficerDashboard() {
 				/>
 			)}
 			{eventDialogs}
+			{showCurrent && <CurrentAnnouncement onClose={() => setShowCurrent(false)} />}
 		</main>
 	)
 }
