@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useLayoutEffect, useRef, useState } from 'react'
 import DashboardShell from '@/components/dashboards/DashboardShell'
 import StoredImage from '@/components/StoredImage'
 import { Card, CardNote, CardTitle, ConfirmDialog, Dialog, DialogActions, FIELD, Label, PlusIcon, TrashIcon } from '@/components/analytics/parts'
@@ -14,13 +14,15 @@ import { canChange } from '@/lib/roles'
 // to keep. Three cards, one per section that has placeholders today:
 //
 //   the people   under "who we are": title (required — the rail shows it
-//                before they're clicked), name, description, picture; in the
-//                order they're listed here, which the arrows change
+//                before they're clicked), name, description, picture
 //   the album    the deck of cards: title and photo (required), date,
 //                description; one card on the page per card here
 //   sponsors     the pills: a picture behind a title (one of the two
 //                required) and a website the pill opens in a new tab. Or
 //                connect a sponsor the sponsors page already has.
+//
+// Each section runs in the order its cards are in here: drag a card by the
+// dots in its corner (or focus them and use the arrow keys) — useReorder.
 //
 // A section with nothing here keeps its placeholders on the page; anything
 // optional left empty is left off. The server holds the same rules
@@ -301,17 +303,174 @@ function SmallButton({ onClick, label, disabled, danger = false, children }) {
 	)
 }
 
+// ---- dragging the cards into order -----------------------------------------
+//
+// A card is picked up by its grip (the six dots) and follows the pointer; the
+// others move out of its way as it passes over them, and letting go saves the
+// new order. It's pointer events rather than HTML drag and drop, so a finger
+// on a phone drags the same as a mouse. With the grip focused, the arrow keys
+// move a card one place.
+//
+// `items` is the section as the API last sent it; `save(ids)` stores an order
+// (and reloads). While a card is being dragged, and until the save has come
+// back, the cards are shown in the order being made rather than `items`'.
+function useReorder(items, idOf, save, onError) {
+	const [order, setOrder] = useState(null)
+	const [dragging, setDragging] = useState(null)
+	const listRef = useRef(null)
+	// { id, grabX, grabY, x, y }: where on the card it was picked up, and where
+	// the pointer is now
+	const held = useRef(null)
+
+	const shown = order
+		? order.map((id) => items.find((item) => idOf(item) === id)).filter(Boolean)
+		: items
+
+	// The held card sits wherever the pointer is: its slot in the list, moved
+	// by however far the pointer is from where it would hold the card there.
+	const follow = () => {
+		const now = held.current
+		const list = listRef.current
+		const card = list?.querySelector(`[data-tile-id="${now?.id}"]`)
+		if (!now || !card) return
+		const box = list.getBoundingClientRect()
+		const x = now.x - box.left - now.grabX - card.offsetLeft
+		const y = now.y - box.top - now.grabY - card.offsetTop
+		card.style.transform = `translate(${x}px, ${y}px)`
+	}
+	// after the list re-orders, the held card's slot has moved under it
+	useLayoutEffect(follow, [order])
+
+	const commit = async (ids) => {
+		if (ids.join() === items.map(idOf).join()) {
+			setOrder(null)
+			return
+		}
+		setOrder(ids)
+		try {
+			await save(ids)
+		} catch (err) {
+			onError(err.message)
+		} finally {
+			setOrder(null)
+		}
+	}
+
+	const grab = (event, id) => {
+		if (event.button !== 0) return
+		event.preventDefault()
+		const card = event.currentTarget.closest('[data-tile-id]')
+		const box = card.getBoundingClientRect()
+		held.current = { id, grabX: event.clientX - box.left, grabY: event.clientY - box.top, x: event.clientX, y: event.clientY }
+		let ids = items.map(idOf)
+		setOrder(ids)
+		setDragging(id)
+
+		const move = (moved) => {
+			held.current.x = moved.clientX
+			held.current.y = moved.clientY
+			// the held card lets the pointer through, so this is what's under it
+			const over = document.elementFromPoint(moved.clientX, moved.clientY)?.closest('[data-tile-id]')
+			const target = over && listRef.current?.contains(over) ? Number(over.dataset.tileId) : null
+			if (target !== null && target !== id) {
+				// into the place the card under it had: it moves along one
+				const to = ids.indexOf(target)
+				ids = ids.filter((other) => other !== id)
+				ids.splice(to, 0, id)
+				setOrder(ids)
+			} else {
+				follow()
+			}
+		}
+		const drop = () => {
+			window.removeEventListener('pointermove', move)
+			window.removeEventListener('pointerup', drop)
+			window.removeEventListener('pointercancel', drop)
+			const card = listRef.current?.querySelector(`[data-tile-id="${id}"]`)
+			if (card) card.style.transform = ''
+			held.current = null
+			setDragging(null)
+			commit(ids)
+		}
+		window.addEventListener('pointermove', move)
+		window.addEventListener('pointerup', drop)
+		window.addEventListener('pointercancel', drop)
+	}
+
+	// the arrow keys, on a focused grip: one place earlier or later
+	const nudge = (event, id) => {
+		const by = { ArrowLeft: -1, ArrowUp: -1, ArrowRight: 1, ArrowDown: 1 }[event.key]
+		if (!by) return
+		event.preventDefault()
+		const ids = items.map(idOf)
+		const at = ids.indexOf(id)
+		if (at + by < 0 || at + by >= ids.length) return
+		;[ids[at], ids[at + by]] = [ids[at + by], ids[at]]
+		commit(ids)
+	}
+
+	return { shown, listRef, dragProps: (id) => ({ id, dragging: dragging === id, onGrab: (event) => grab(event, id), onNudge: (event) => nudge(event, id) }) }
+}
+
+function GripIcon({ className = '' }) {
+	return (
+		<svg viewBox="0 0 10 16" fill="currentColor" aria-hidden="true" className={className}>
+			<circle cx="2.5" cy="3" r="1.5" />
+			<circle cx="7.5" cy="3" r="1.5" />
+			<circle cx="2.5" cy="8" r="1.5" />
+			<circle cx="7.5" cy="8" r="1.5" />
+			<circle cx="2.5" cy="13" r="1.5" />
+			<circle cx="7.5" cy="13" r="1.5" />
+		</svg>
+	)
+}
+
 // One item: its picture, its lines, and the buttons along the foot. The tile
 // itself opens it for editing.
-function Tile({ image, tall = false, lines, badge, onEdit, onRemove, editable, label, children }) {
+// `drag` (from useReorder's dragProps) puts the grip in its top right corner.
+function Tile({ image, tall = false, lines, badge, onEdit, onRemove, editable, label, drag, children }) {
 	return (
-		<li className="
-			relative
-			w-[176px]
-			rounded-[12px]
-			bg-cream
-			p-3
-		">
+		<li
+			data-tile-id={drag?.id}
+			className={`
+				relative
+				w-[176px]
+				rounded-[12px]
+				bg-cream
+				p-3
+				${drag?.dragging
+					? 'z-20 pointer-events-none shadow-[0_12px_30px_rgba(0,0,0,0.25)] scale-[1.03]'
+					: 'transition-shadow duration-200'}
+			`}
+		>
+			{editable && drag && (
+				<button
+					type="button"
+					onPointerDown={drag.onGrab}
+					onKeyDown={drag.onNudge}
+					aria-label={`Drag ${label} to reorder (or use the arrow keys)`}
+					title="Drag to reorder"
+					className={`
+						absolute
+						top-1.5
+						right-1.5
+						z-10
+						w-7
+						h-7
+						inline-flex
+						items-center
+						justify-center
+						rounded-full
+						bg-white/90
+						text-black/55
+						shadow-sm
+						touch-none
+						${drag.dragging ? 'cursor-grabbing' : 'cursor-grab hover:text-black'}
+					`}
+				>
+					<GripIcon className="w-2.5 h-4" />
+				</button>
+			)}
 			<button
 				type="button"
 				onClick={onEdit}
@@ -389,13 +548,19 @@ function Tile({ image, tall = false, lines, badge, onEdit, onRemove, editable, l
 	)
 }
 
-const Tiles = ({ children }) => (
-	<ul className="
-		mt-6
-		flex
-		flex-wrap
-		gap-4
-	">
+// `listRef` is useReorder's: the list the cards are dragged within
+const Tiles = ({ listRef, children }) => (
+	<ul
+		ref={listRef}
+		className="
+			relative
+			mt-6
+			flex
+			flex-wrap
+			gap-4
+			select-none
+		"
+	>
 		{children}
 	</ul>
 )
@@ -421,27 +586,16 @@ const PERSON_FIELDS = [
 function PeopleCard({ people, editable, onChange, onError }) {
 	const [editing, setEditing] = useState(null) // { person } — null person is adding
 	const [removing, setRemoving] = useState(null)
-	const [busy, setBusy] = useState(false)
+	const { shown, listRef, dragProps } = useReorder(people, (person) => person.personId, async (ids) => {
+		await landingApi.orderPeople(ids)
+		await onChange()
+	}, onError)
 
 	const save = async (values) => {
 		const body = { title: clean(values.title), name: clean(values.name), description: clean(values.description), image: values.image ?? null }
 		if (editing.person) await landingApi.updatePerson(editing.person.personId, body)
 		else await landingApi.addPerson(body)
 		await onChange()
-	}
-
-	const move = async (at, by) => {
-		const ids = people.map((person) => person.personId)
-		;[ids[at], ids[at + by]] = [ids[at + by], ids[at]]
-		setBusy(true)
-		try {
-			await landingApi.orderPeople(ids)
-			await onChange()
-		} catch (err) {
-			onError(err.message)
-		} finally {
-			setBusy(false)
-		}
 	}
 
 	const remove = async (person) => {
@@ -457,7 +611,7 @@ function PeopleCard({ people, editable, onChange, onError }) {
 		<Card>
 			<CardHead
 				title="about us · the people"
-				note="The names on the two rails under “who we are”. The rail shows each one’s title; clicking it opens their portrait, name and description. They run in this order."
+				note="The names on the two rails under “who we are”. The rail shows each one’s title; clicking it opens their portrait, name and description. They run in this order: drag a card by its dots to move it."
 			>
 				{editable && <AddButton onClick={() => setEditing({ person: null })}>add a person</AddButton>}
 			</CardHead>
@@ -465,10 +619,11 @@ function PeopleCard({ people, editable, onChange, onError }) {
 			{people.length === 0 ? (
 				<Empty>Nobody yet, so the page shows its five stand-ins. Add the first person and only the real ones show.</Empty>
 			) : (
-				<Tiles>
-					{people.map((person, at) => (
+				<Tiles listRef={listRef}>
+					{shown.map((person) => (
 						<Tile
 							key={person.personId}
+							drag={dragProps(person.personId)}
 							tall
 							image={person.image}
 							lines={[person.title, person.name, person.description]}
@@ -476,10 +631,7 @@ function PeopleCard({ people, editable, onChange, onError }) {
 							editable={editable}
 							onEdit={() => setEditing({ person })}
 							onRemove={() => setRemoving(person)}
-						>
-							<SmallButton onClick={() => move(at, -1)} disabled={busy || at === 0} label={`Move ${person.title} earlier`}>←</SmallButton>
-							<SmallButton onClick={() => move(at, 1)} disabled={busy || at === people.length - 1} label={`Move ${person.title} later`}>→</SmallButton>
-						</Tile>
+						/>
 					))}
 				</Tiles>
 			)}
@@ -521,6 +673,10 @@ const CARD_FIELDS = [
 function AlbumCardsCard({ album, editable, onChange, onError }) {
 	const [editing, setEditing] = useState(null)
 	const [removing, setRemoving] = useState(null)
+	const { shown, listRef, dragProps } = useReorder(album, (card) => card.cardId, async (ids) => {
+		await landingApi.orderCards(ids)
+		await onChange()
+	}, onError)
 
 	const save = async (values) => {
 		const body = { title: clean(values.title), date: values.date || null, description: clean(values.description), image: values.image }
@@ -542,7 +698,7 @@ function AlbumCardsCard({ album, editable, onChange, onError }) {
 		<Card>
 			<CardHead
 				title="album"
-				note="The deck of cards: one per card here, newest date first. Each needs a title and a photo."
+				note="The deck of cards: one per card here, left to right in this order (a new one goes first; drag a card by its dots to move it). Each needs a title and a photo."
 			>
 				{editable && <AddButton onClick={() => setEditing({ card: null })}>add a card</AddButton>}
 			</CardHead>
@@ -550,10 +706,11 @@ function AlbumCardsCard({ album, editable, onChange, onError }) {
 			{album.length === 0 ? (
 				<Empty>No cards yet, so the page shows its nine stand-ins. Add one and the deck becomes just yours.</Empty>
 			) : (
-				<Tiles>
-					{album.map((card) => (
+				<Tiles listRef={listRef}>
+					{shown.map((card) => (
 						<Tile
 							key={card.cardId}
+							drag={dragProps(card.cardId)}
 							image={card.image}
 							lines={[card.title, prettyDate(card.date), card.description]}
 							label={card.title}
@@ -699,6 +856,10 @@ function ConnectSponsor({ onConnected, onError }) {
 function SponsorsCard({ sponsors, editable, onChange, onError }) {
 	const [editing, setEditing] = useState(null)
 	const [removing, setRemoving] = useState(null)
+	const { shown, listRef, dragProps } = useReorder(sponsors, (pill) => pill.sponsorId, async (ids) => {
+		await landingApi.orderPills(ids)
+		await onChange()
+	}, onError)
 
 	const save = async (values) => {
 		const body = { title: clean(values.title), website: clean(values.website), image: values.image ?? null }
@@ -722,7 +883,7 @@ function SponsorsCard({ sponsors, editable, onChange, onError }) {
 		<Card>
 			<CardHead
 				title="sponsors"
-				note="The pills under “kept stable by”: a picture behind a title (one of the two is enough). One with a website opens it in a new tab. Connecting a sponsor from the sponsors page makes it active there."
+				note="The pills under “kept stable by”: a picture behind a title (one of the two is enough). One with a website opens it in a new tab. They run in this order: drag a card by its dots to move it. Connecting a sponsor from the sponsors page makes it active there."
 			>
 				{editable && <ConnectSponsor onConnected={onChange} onError={onError} />}
 				{editable && <AddButton onClick={() => setEditing({ pill: null })}>add a pill</AddButton>}
@@ -731,10 +892,11 @@ function SponsorsCard({ sponsors, editable, onChange, onError }) {
 			{sponsors.length === 0 ? (
 				<Empty>No pills yet, so the page shows its stand-in sponsors. Add or connect one and only the real ones show.</Empty>
 			) : (
-				<Tiles>
-					{sponsors.map((pill) => (
+				<Tiles listRef={listRef}>
+					{shown.map((pill) => (
 						<Tile
 							key={pill.sponsorId}
+							drag={dragProps(pill.sponsorId)}
 							image={pill.image}
 							lines={[pill.title || '(picture only)', pill.website?.replace(/^https?:\/\//, '').replace(/\/$/, '')]}
 							badge={pill.shown ? null : `not shown: ${STATUS_LABELS[pill.status] ?? pill.status} on the sponsors page`}

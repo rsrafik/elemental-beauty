@@ -17,6 +17,9 @@ import { onLandingPage, publicPill, readWebsite, sponsorName } from '../sponsors
 //
 // The people:  title (required, what the rail shows), name, description, image
 // The album:   title and image (required), date, description
+//
+// Each section is in the order the editor's cards are dragged into
+// (PUT /people/order, /album/order, /sponsors/order).
 // A pill:      title, image (one of them required), website — on a Sponsor
 //              row (src/sponsors.js), the same one the sponsors page keeps
 
@@ -71,7 +74,7 @@ const pillOut = (row) => ({
 })
 
 const PEOPLE = { orderBy: [{ position: 'asc' }, { personId: 'asc' }] }
-const ALBUM = { orderBy: [{ date: { sort: 'desc', nulls: 'last' } }, { cardId: 'desc' }] }
+const ALBUM = { orderBy: [{ position: 'asc' }, { cardId: 'desc' }] }
 const PILLS = { orderBy: [{ landingOrder: 'asc' }, { sponsorId: 'asc' }] }
 
 function fail(res, err) {
@@ -145,23 +148,28 @@ router.post('/people', async (req, res) => {
     }
 })
 
-// the rail's order: { ids } — every person, first to last
-router.put('/people/order', async (req, res) => {
-    const ids = req.body?.ids
-    if (!Array.isArray(ids) || !ids.every(Number.isInteger) || new Set(ids).size !== ids.length) {
-        return res.status(400).json({ message: 'Send the order as a list of ids' })
-    }
-    try {
-        const all = await prisma.landingPerson.findMany({ select: { personId: true } })
-        if (all.length !== ids.length || !all.every((row) => ids.includes(row.personId))) {
-            return res.status(400).json({ message: 'The order has to list every person once' })
+// A section's order, as the editor's cards were dragged: { ids } — every one
+// of them, first to last. Answers with the section in its new order.
+function reorder({ model, id, field, where = {}, list, out, what }) {
+    return async (req, res) => {
+        const ids = req.body?.ids
+        if (!Array.isArray(ids) || !ids.every(Number.isInteger) || new Set(ids).size !== ids.length) {
+            return res.status(400).json({ message: 'Send the order as a list of ids' })
         }
-        await prisma.$transaction(ids.map((personId, position) => prisma.landingPerson.update({ where: { personId }, data: { position } })))
-        res.json((await prisma.landingPerson.findMany(PEOPLE)).map(personOut))
-    } catch (err) {
-        fail(res, err)
+        try {
+            const all = await prisma[model].findMany({ where, select: { [id]: true } })
+            if (all.length !== ids.length || !all.every((row) => ids.includes(row[id]))) {
+                return res.status(400).json({ message: `The order has to list every ${what} once` })
+            }
+            await prisma.$transaction(ids.map((key, at) => prisma[model].update({ where: { [id]: key }, data: { [field]: at } })))
+            res.json((await prisma[model].findMany({ where, ...list })).map(out))
+        } catch (err) {
+            fail(res, err)
+        }
     }
-})
+}
+
+router.put('/people/order', reorder({ model: 'landingPerson', id: 'personId', field: 'position', list: PEOPLE, out: personOut, what: 'person' }))
 
 router.put('/people/:id', async (req, res) => {
     const personId = parseInt(req.params.id)
@@ -212,15 +220,19 @@ function readCard(body, { editing = false } = {}) {
     }
 }
 
+// a new card goes on the front of the deck
 router.post('/album', async (req, res) => {
     const { fields, error } = readCard(req.body ?? {})
     if (error) { return res.status(400).json({ message: error }) }
     try {
-        res.status(201).json(cardOut(await prisma.albumCard.create({ data: fields })))
+        const first = await prisma.albumCard.aggregate({ _min: { position: true } })
+        res.status(201).json(cardOut(await prisma.albumCard.create({ data: { ...fields, position: (first._min.position ?? 1) - 1 } })))
     } catch (err) {
         fail(res, err)
     }
 })
+
+router.put('/album/order', reorder({ model: 'albumCard', id: 'cardId', field: 'position', list: ALBUM, out: cardOut, what: 'card' }))
 
 router.put('/album/:id', async (req, res) => {
     const cardId = parseInt(req.params.id)
@@ -324,6 +336,9 @@ router.post('/sponsors/:id/connect', async (req, res) => {
         fail(res, err)
     }
 })
+
+// the pills on the page (every onLanding one, shown or not)
+router.put('/sponsors/order', reorder({ model: 'sponsor', id: 'sponsorId', field: 'landingOrder', where: { onLanding: true }, list: PILLS, out: pillOut, what: 'pill' }))
 
 router.put('/sponsors/:id', async (req, res) => {
     const sponsorId = parseInt(req.params.id)

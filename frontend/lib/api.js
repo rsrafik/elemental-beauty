@@ -540,10 +540,14 @@ export const landing = {
 	addCard: (card) => api('/landing/album', { method: 'POST', body: card }),
 	updateCard: (id, card) => api(`/landing/album/${id}`, { method: 'PUT', body: card }),
 	removeCard: (id) => api(`/landing/album/${id}`, { method: 'DELETE' }),
+	// every card's id, front of the deck to back
+	orderCards: (ids) => api('/landing/album/order', { method: 'PUT', body: { ids } }),
 	// { title?, image?, website? } — a title or a picture
 	addPill: (pill) => api('/landing/sponsors', { method: 'POST', body: pill }),
 	updatePill: (id, pill) => api(`/landing/sponsors/${id}`, { method: 'PUT', body: pill }),
 	removePill: (id) => api(`/landing/sponsors/${id}`, { method: 'DELETE' }),
+	// every pill's id, first to last
+	orderPills: (ids) => api('/landing/sponsors/order', { method: 'PUT', body: { ids } }),
 	// sponsors not on the page yet, from any section of the sponsors page
 	connectable: () => api('/landing/sponsors/connectable'),
 	connect: (id) => api(`/landing/sponsors/${id}/connect`, { method: 'POST' }),
