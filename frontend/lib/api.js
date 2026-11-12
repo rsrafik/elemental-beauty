@@ -552,3 +552,19 @@ export const landing = {
 	connectable: () => api('/landing/sponsors/connectable'),
 	connect: (id) => api(`/landing/sponsors/${id}/connect`, { method: 'POST' }),
 }
+
+// The sponsors page (/sponsors) and the landing page's "sponsor a batch" form —
+// see src/routes/sponsorRoutes.js. Anyone sends `request()`; the rest is an
+// admin's. A sponsor's request is { companyName, contactName?, contactInfo?,
+// offers: ['products' | 'money' | 'other'], offerOther?, details? }.
+export const sponsors = {
+	// the form, signed in or not: everything but `details` is needed
+	request: (sponsor) => api('/sponsors/request', { method: 'POST', body: sponsor, auth: false }),
+	// every sponsor, newest first, with where its pill stands (onLanding, shown)
+	list: () => api('/sponsors'),
+	// added by hand: only the company is needed; `status` defaults to pending
+	add: (sponsor) => api('/sponsors', { method: 'POST', body: sponsor }),
+	update: (id, sponsor) => api(`/sponsors/${id}`, { method: 'PUT', body: sponsor }),
+	move: (id, status) => api(`/sponsors/${id}/status`, { method: 'PUT', body: { status } }),
+	remove: (id) => api(`/sponsors/${id}`, { method: 'DELETE' }),
+}

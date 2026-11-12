@@ -5,6 +5,7 @@ import Link from 'next/link'
 import { Arrow } from './Hero'
 import { CLUB, SPONSORS } from './content'
 import { useLandingContent } from './live'
+import SponsorForm from './SponsorForm'
 
 // The last two parts of the page: who backs the club, and the footer.
 
@@ -139,9 +140,8 @@ export function Sponsors() {
 					px-edge
 				"
 			>
-				<a
-					href={`mailto:${CLUB.sponsorEmail}?subject=Sponsoring%20Elemental%20Beauty`}
-					data-cursor="email"
+				<SponsorForm
+					data-cursor="write"
 					className="
 						group
 						inline-flex
@@ -156,6 +156,7 @@ export function Sponsors() {
 						leading-none
 						font-semibold
 						text-cream
+						cursor-pointer
 						shadow-soft
 						transition-transform
 						duration-500
@@ -167,13 +168,18 @@ export function Sponsors() {
 				>
 					{SPONSORS.cta}
 					<Arrow />
-				</a>
-				<p className="
-					type-label
-					opacity-60
-				">
+				</SponsorForm>
+				{/* for anyone who'd rather write than fill in the form */}
+				<a
+					href={`mailto:${CLUB.sponsorEmail}?subject=Sponsoring%20Elemental%20Beauty`}
+					className="
+						lp-underline
+						type-label
+						opacity-60
+					"
+				>
 					{CLUB.sponsorEmail}
-				</p>
+				</a>
 			</div>
 		</section>
 	)

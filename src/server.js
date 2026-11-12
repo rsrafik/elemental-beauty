@@ -18,6 +18,7 @@ import paymentMethodRoutes from './routes/paymentMethodRoutes.js'
 import paymentRoutes from './routes/paymentRoutes.js'
 import imageRoutes, { imageAuth } from './routes/imageRoutes.js'
 import landingRoutes, { publicRouter as landingPublicRoutes } from './routes/landingRoutes.js'
+import sponsorRoutes, { publicRouter as sponsorPublicRoutes, FORM_LIMIT } from './routes/sponsorRoutes.js'
 import calendarRoutes, { feedRouter as calendarFeedRoutes } from './routes/calendarRoutes.js'
 import authMiddleware from './middleware/authMiddleware.js'
 import requireRole, { booksAccess } from './middleware/requireRole.js'
@@ -85,6 +86,10 @@ const authLimiter = rateLimit({
     // an attempt at anything, and counting it would lock people out
     skip: (req) => req.method === 'GET'
 })
+
+// The landing page's "sponsor a batch" form is open to anyone, signed in or
+// not — capped the same way, so it can't be used to fill the sponsors page.
+const sponsorFormLimiter = rateLimit(FORM_LIMIT)
 
 // Get file path from URL of current module
 const __filename = fileURLToPath(import.meta.url)
@@ -168,6 +173,11 @@ app.use('/api/img', imageAuth, imageRoutes)
 // is public), an admin keeps them on /landing-editor
 app.use('/api/landing', landingPublicRoutes)
 app.use('/api/landing', authMiddleware, requireRole('admin'), landingRoutes)
+// sponsors: anyone sends the landing page's form (POST /request), an admin
+// keeps the rest on /sponsors
+app.use('/api/sponsors/request', sponsorFormLimiter)
+app.use('/api/sponsors', sponsorPublicRoutes)
+app.use('/api/sponsors', authMiddleware, requireRole('admin'), sponsorRoutes)
 app.use('/api/members', authMiddleware, requireRole('member'), memberRoutes)
 app.use('/api/labs', authMiddleware, requireRole('member'), labRoutes)
 app.use('/api/events', authMiddleware, requireRole('member'), eventRoutes)

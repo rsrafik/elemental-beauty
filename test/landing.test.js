@@ -22,7 +22,7 @@ const skip = !/test/i.test(url.split('/').pop() ?? '')
 // a 1×1 PNG, the smallest picture there is
 const PNG = 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNkYAAAAAYAAjCB0C8AAAAASUVORK5CYII='
 
-let prisma, landing, imageRoutes, imageAuth, requireRole
+let prisma, landing, sponsors, imageRoutes, imageAuth, requireRole
 const tag = `l${Date.now().toString(36)}`
 const made = { users: [] }
 
@@ -30,6 +30,7 @@ before(async () => {
     if (skip) { return }
     prisma = (await import('../src/prismaClient.js')).default
     landing = await import('../src/routes/landingRoutes.js')
+    sponsors = await import('../src/routes/sponsorRoutes.js')
     const images = await import('../src/routes/imageRoutes.js')
     imageRoutes = images.default
     imageAuth = images.imageAuth
@@ -67,13 +68,18 @@ async function person(role) {
 
 // the routes as server.js mounts them: the public read on its own, the rest
 // behind requireRole('admin') (with a stand-in for authMiddleware), and the
-// pictures behind the real imageAuth
+// pictures behind the real imageAuth. The sponsors page's routes
+// (sponsorRoutes.js, tested in sponsors.test.js) are beside them, for how a
+// sponsor sent in on the form becomes a pill.
 async function serve(role, run) {
     const app = express()
     app.use(express.json({ limit: '15mb' }))
     app.use('/api/img', imageAuth, imageRoutes)
     app.use('/api/landing', landing.publicRouter)
-    app.use('/api/landing', (req, res, next) => { req.userId = 0; req.role = role; next() }, requireRole('admin'), landing.default)
+    app.use('/api/sponsors', sponsors.publicRouter)
+    const signedIn = (req, res, next) => { req.userId = 0; req.role = role; next() }
+    app.use('/api/landing', signedIn, requireRole('admin'), landing.default)
+    app.use('/api/sponsors', signedIn, requireRole('admin'), sponsors.default)
     const server = app.listen(0)
     try {
         return await run(`http://localhost:${server.address().port}`)
@@ -287,6 +293,54 @@ test('connecting an existing sponsor puts it on the page and makes it active; ta
         const kept = await prisma.sponsor.findUnique({ where: { sponsorId: request.sponsorId } })
         assert.equal(kept.onLanding, false)
         assert.equal(kept.contactInfo, 'sam@glow.example')
+    })
+})
+
+test('a sent-in sponsor can be connected on the landing editor; archiving it takes the pill off the page, deleting it takes it away', { skip }, async () => {
+    await serve(undefined, async (base) => {
+        const sent = await send(`${base}/api/sponsors/request`, 'POST', {
+            companyName: `${tag} Pill Co`,
+            contactName: 'Jo Park',
+            contactInfo: 'jo@pill.example.com',
+            offers: ['money']
+        })
+        assert.equal(sent.status, 201)
+    })
+    const { sponsorId } = await prisma.sponsor.findFirst({ where: { companyName: `${tag} Pill Co` } })
+
+    await admin(async (base) => {
+        const page = async () => (await publicPage(base)).sponsors.map((pill) => pill.sponsorId)
+        const listed = async () => (await (await fetch(`${base}/api/sponsors`)).json()).filter((row) => row.companyName?.startsWith(tag))
+
+        const connectable = await (await fetch(`${base}/api/landing/sponsors/connectable`)).json()
+        assert.ok(connectable.some((row) => row.sponsorId === sponsorId))
+        assert.equal((await send(`${base}/api/landing/sponsors/${sponsorId}/connect`, 'POST')).status, 200)
+        assert.ok((await page()).includes(sponsorId))
+
+        const connected = (await listed()).find((row) => row.sponsorId === sponsorId)
+        assert.equal(connected.status, 'active')
+        assert.equal(connected.onLanding, true)
+        assert.equal(connected.shown, true)
+        assert.equal(connected.landingTitle, `${tag} Pill Co`)
+
+        const archived = await (await send(`${base}/api/sponsors/${sponsorId}/status`, 'PUT', { status: 'archive' })).json()
+        assert.equal(archived.onLanding, true)
+        assert.equal(archived.shown, false)
+        assert.ok(!(await page()).includes(sponsorId))
+
+        // back to active, back on the page — the pill was never touched
+        await send(`${base}/api/sponsors/${sponsorId}/status`, 'PUT', { status: 'active' })
+        assert.ok((await page()).includes(sponsorId))
+
+        // editing its details leaves the pill as it is
+        const edited = await (await send(`${base}/api/sponsors/${sponsorId}`, 'PUT', { companyName: `${tag} Pill Co Renamed` })).json()
+        assert.equal(edited.landingTitle, `${tag} Pill Co`)
+        assert.equal(edited.onLanding, true)
+
+        assert.equal((await send(`${base}/api/sponsors/${sponsorId}`, 'DELETE')).status, 200)
+        assert.equal(await prisma.sponsor.findUnique({ where: { sponsorId } }), null)
+        assert.ok(!(await page()).includes(sponsorId))
+        assert.equal((await send(`${base}/api/sponsors/${sponsorId}`, 'DELETE')).status, 404)
     })
 })
 
