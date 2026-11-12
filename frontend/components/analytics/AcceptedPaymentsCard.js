@@ -4,7 +4,8 @@ import { useEffect, useRef, useState } from 'react'
 import { Card, CardNote, CardTitle, Dialog, DialogActions, FIELD, Label, PlusIcon, TrashIcon } from '@/components/analytics/parts'
 import { paymentMethods as methodsApi } from '@/lib/api'
 import { useDismiss } from '@/lib/dismiss'
-import { shrinkImage } from '@/lib/images'
+import { useImageCrop } from '@/components/ImageCropper'
+import { FRAMES } from '@/lib/images'
 import StoredImage from '@/components/StoredImage'
 
 // How members pay the club, for the treasurer (and admin) to keep: each one is
@@ -24,9 +25,6 @@ import StoredImage from '@/components/StoredImage'
 // page offers a pair at that price, up to 24 hours before it starts, and an
 // approved rental is filed under the 'goggle rental' income. 0 turns it off.
 
-// big enough to scan off a phone, small enough to ride along on every read
-const QR_MAX = 800
-
 // `method` null is adding one; otherwise it's the one being changed, and the
 // form opens on what it says now.
 function MethodDialog({ method, onClose, onSaved }) {
@@ -38,13 +36,17 @@ function MethodDialog({ method, onClose, onSaved }) {
 	const [image, setImage] = useState(method?.image ?? null)
 	const [busy, setBusy] = useState(false)
 	const [error, setError] = useState(null)
+	const [crop, cropper] = useImageCrop()
 
 	const pick = async (event) => {
 		const file = event.target.files?.[0]
 		event.target.value = ''
 		if (!file) return
 		try {
-			setImage(await shrinkImage(file, QR_MAX, { quality: 0.92 }))
+			// cropped to the square tile it's shown in, big enough to scan off
+			// a phone (lib/images.js FRAMES.qr)
+			const url = await crop(file, FRAMES.qr)
+			if (url) setImage(url)
 		} catch (err) {
 			setError(err.message)
 		}
@@ -143,6 +145,7 @@ function MethodDialog({ method, onClose, onSaved }) {
 							)}
 						</div>
 						<input ref={picker} type="file" accept="image/*" onChange={pick} className="hidden" />
+						{cropper}
 					</div>
 				</div>
 

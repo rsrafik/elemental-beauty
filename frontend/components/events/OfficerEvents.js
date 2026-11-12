@@ -22,7 +22,8 @@ import { splitByDate, CompletedDivider, COMPLETED_CARD } from '@/components/Card
 import { RsvpButton } from '@/components/events/MemberEvents'
 import { CardMenu } from '@/components/labs/OfficerLabs'
 import { QrPopup } from '@/components/labs/MemberLabQuiz'
-import { COVER_MAX, shrinkImage } from '@/lib/images'
+import { useImageCrop } from '@/components/ImageCropper'
+import { FRAMES } from '@/lib/images'
 import StoredImage from '@/components/StoredImage'
 import { SkeletonGrid } from '@/components/Skeleton'
 import { DateField, TimeField } from '@/components/labs/DateTimeField'
@@ -678,11 +679,12 @@ export function EventDialog({ event, categories, onClose, onSave, onDiscardDraft
 	//
 	// It's a stopgap: a photo inlined into a TEXT column is a big row and a big
 	// response. It becomes a path the moment there's somewhere to upload to.
+	const [cropImage, cropper] = useImageCrop()
 	const pickImage = (changed) => {
 		const file = changed.target.files?.[0]
 		if (!file) return
-		// shrunk first — a phone photo is megabytes (see lib/images.js)
-		shrinkImage(file, COVER_MAX).then(setImage).catch(() => {})
+		// cropped to the event card's cover, and shrunk (see lib/images.js)
+		cropImage(file, FRAMES.cover).then((url) => url && setImage(url)).catch(() => {})
 		// so picking the same file twice still fires a change
 		changed.target.value = ''
 	}
@@ -1071,6 +1073,7 @@ export function EventDialog({ event, categories, onClose, onSave, onDiscardDraft
 									className="hidden"
 								/>
 							</label>
+							{cropper}
 						</div>
 					</div>
 
