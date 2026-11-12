@@ -28,7 +28,10 @@ const OMIT = {
     user: { profilePicture: true },
     paymentMethod: { image: true },
     memberPayment: { screenshot: true },
-    reimbursement: { receipt: true }
+    reimbursement: { receipt: true },
+    landingPerson: { image: true },
+    albumCard: { image: true },
+    sponsor: { image: true }
 }
 
 const base = new PrismaClient({ adapter, omit: OMIT })

@@ -3,11 +3,13 @@ import prisma from '../prismaClient.js'
 import { IMAGES, decodeDataUrl, imageKey } from '../images.js'
 import { onTreasuryTeam } from '../middleware/treasury.js'
 import { runsDoor } from '../payments.js'
+import authMiddleware from '../middleware/authMiddleware.js'
+import { onLandingPage } from '../sponsors.js'
 
 // GET /api/img/:kind/:id/:key — one picture, as the picture itself (see
-// src/images.js). Mounted behind authMiddleware in server.js: everything here
-// needs someone signed in, and each kind is held to who can see the row it
-// belongs to.
+// src/images.js). Mounted behind imageAuth (below) in server.js: everything
+// here needs someone signed in except the landing page's pictures, and each
+// kind is held to who can see the row it belongs to.
 //
 // The key is the picture's fingerprint, so an address only ever means one
 // picture. That's what lets a cover or an avatar be cached for good — by the
@@ -51,11 +53,30 @@ const ACCESS = {
         select: { memberId: true },
         allowed: (req, row) => row.memberId === req.userId || runsDoor(req) || BOOKS.includes(req.role) || onTreasuryTeam(req)
     },
+    // the landing page's people and album cards are public, like the page
+    person: { select: {}, allowed: () => true },
+    album: { select: {}, allowed: () => true },
+    // a sponsor's while its pill is on the landing page; otherwise staff's,
+    // like the rest of what the club knows about them
+    sponsor: {
+        select: { onLanding: true, status: true },
+        allowed: (req, row) => onLandingPage(row) || STAFF.includes(req.role)
+    },
     // whoever handed it in, and the books
     receipt: {
         select: { memberId: true },
         allowed: (req, row) => (row.memberId === req.userId && STAFF.includes(req.role)) || BOOKS.includes(req.role) || onTreasuryTeam(req)
     }
+}
+
+// The sign-in check, except for a landing page picture asked for by someone
+// who isn't signed in (no Authorization header) — a visitor to the public
+// page, or its plain <img> tags. Signed in, it's checked as ever, so staff
+// still see a sponsor's picture that isn't on the page.
+export function imageAuth(req, res, next) {
+    const kind = req.path.split('/')[1]
+    if (IMAGES[kind]?.public && !req.headers['authorization']) { return next() }
+    return authMiddleware(req, res, next)
 }
 
 // Decoded pictures, newest use last, up to ~32MB. Keyed by kind/id/key, so a
