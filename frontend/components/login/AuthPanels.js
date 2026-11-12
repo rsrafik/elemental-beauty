@@ -804,8 +804,7 @@ function SignUp({ front, onCome, onSubmit, onHelp, onDone }) {
 				</div>
 			</div>
 
-			{/* what the two optional handles are for — the circle is the same
-			    shape as the dialog's close button, filled in the field colour */}
+			{/* what the two optional handles are for — an outlined circle with a question mark */}
 			<div className="
 				mt-[10px]
 				flex
@@ -817,26 +816,30 @@ function SignUp({ front, onCome, onSubmit, onHelp, onDone }) {
 					onClick={onHelp}
 					aria-label="Why we recommend inputting your Instagram and Discord"
 					className="
-						font-beachday
 						flex
-						h-[20px]
-						w-[20px]
+						h-[22px]
+						w-[22px]
 						shrink-0
 						cursor-pointer
 						items-center
 						justify-center
 						rounded-full
-						bg-[#FFCC6E]
-						text-[14px]
-						leading-none
-						text-[#137A1B]
-						transition-colors
+						text-black
+						transition-opacity
 						duration-150
-						hover:bg-[#137A1B]
-						hover:text-[#FFE9BF]
+						hover:opacity-60
 					"
 				>
-					?
+					<svg viewBox="0 0 24 24" fill="none" aria-hidden="true" className="h-full w-full">
+						<circle cx="12" cy="12" r="10.5" stroke="currentColor" strokeWidth="1.6" />
+						<path
+							d="M9.2 9.3c0-1.7 1.2-2.8 2.9-2.8s2.8 1 2.8 2.5c0 1.1-.6 1.7-1.5 2.4-.8.6-1.2 1.1-1.2 2.1v.3"
+							stroke="currentColor"
+							strokeWidth="2.2"
+							strokeLinecap="round"
+						/>
+						<circle cx="12.2" cy="17.4" r="1.3" fill="currentColor" />
+					</svg>
 				</button>
 				<span className={HINT}>Why we recommend inputting it</span>
 			</div>
