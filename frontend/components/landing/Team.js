@@ -15,12 +15,15 @@ import { useLandingContent } from './live'
 // the section travels up the window. A rail is its list several times over,
 // moved by one list's width and started again, which is why it has no seam.
 //
-// Clicking a name takes over the screen. Two dark panels wipe across it, one
-// upwards and one downwards; the portrait comes up on one, a few lines about
-// the person on the other, and the neighbours' names wait at the foot as
-// "previous" and "next". Stepping slides the portrait out sideways, turning
-// as it goes, while its label travels further than it does. Closing carries
-// everything on upwards and the panels follow through the way they came.
+// Clicking a name takes over the screen. Two panels wipe across it, one
+// upwards and one downwards: the first is a wash of the person's pigment and
+// carries the portrait, with their number half hidden behind it; the second
+// is paper, set like a page of an old book, with their name large, a few
+// lines about them, and the neighbours' names at the foot as "before" and
+// "after". Stepping slides the portrait out sideways, turning as it goes,
+// while the number travels further than it does, and the wash changes to the
+// next person's pigment. Closing carries everything on upwards and the panels
+// follow through the way they came.
 //
 // The rails are only moved by the script: without it, or with reduced motion,
 // they are two still rows and every name can still be opened.
@@ -39,6 +42,30 @@ const SWATCHES = {
 	serum: 'bg-serum',
 	blue: 'bg-blue-light',
 }
+
+// the same pigments as colours, for the takeover: a person's number is set in
+// theirs, and the panel behind their portrait is a wash of it over the paper.
+// Written out because the theme's colours are inlined into the utilities and
+// are not there as variables: keep them in step with globals.css.
+const PIGMENTS = {
+	salmon: '#FF8A78',
+	yellow: '#FFDF2B',
+	green: '#A7CC70',
+	lilac: '#C8B6FF',
+	orange: '#FF7D45',
+	berry: '#FFC4D6',
+	serum: '#FFB347',
+	blue: '#B5CFFF',
+}
+const PAPER = '#FFFBEB'
+
+const pigment = (person) => PIGMENTS[person?.shade] || PIGMENTS.salmon
+
+const tint = (person) => `color-mix(in srgb, ${pigment(person)} 38%, ${PAPER})`
+
+// SWITCHED OFF FOR NOW: clicking a name to open the takeover. Set this back to
+// true to bring it back; nothing else needs to change.
+const TAKEOVER = false
 
 // how many times a rail's list is laid end to end: enough that one list can
 // slide out of the window and the rest still cover the widest screen
@@ -99,7 +126,8 @@ const slide = (overlay, from, to, by) => {
 	)
 }
 
-function Portrait({ person, index }) {
+// `bare` leaves the number off the stand-in swatch.
+function Portrait({ person, index, bare }) {
 	if (person.src) {
 		return (
 			// eslint-disable-next-line @next/next/no-img-element
@@ -121,15 +149,35 @@ function Portrait({ person, index }) {
 			place-items-center
 			${SWATCHES[person.shade] || SWATCHES.salmon}
 		`}>
-			<span className="
+			{!bare && <span className="
 				type-display
 				text-[42cqw]
 				text-ink/85
 				italic
 			">
 				{code(index)}
-			</span>
+			</span>}
 		</span>
+	)
+}
+
+// a thin arrow, drawn so that it does not depend on the book face having one
+function Arrow({ back }) {
+	return (
+		<svg
+			viewBox="0 0 28 10"
+			aria-hidden="true"
+			className={`
+				lp-team-arrow
+				${back ? 'lp-team-arrow-back -scale-x-100' : ''}
+				h-[0.7em]
+				w-[2em]
+				fill-none
+				stroke-current
+			`}
+		>
+			<path d="M0 5h27M22 1l5 4-5 4" />
+		</svg>
 	)
 }
 
@@ -168,22 +216,23 @@ function Rail({ way, order, people, onOpen }) {
 								<button
 									type="button"
 									data-person={index}
-									data-cursor="meet"
+									disabled={!TAKEOVER}
+									data-cursor={TAKEOVER ? 'meet' : undefined}
 									tabIndex={copy > 0 ? -1 : undefined}
-									aria-haspopup="dialog"
+									aria-haspopup={TAKEOVER ? 'dialog' : undefined}
 									onClick={(event) => onOpen(index, event.currentTarget)}
-									className="
+									className={`
 										lp-rail-item
 										type-serif
 										mr-[0.7em]
 										flex
-										cursor-pointer
+										${TAKEOVER ? 'cursor-pointer' : ''}
 										items-center
 										gap-[0.28em]
 										py-[0.35em]
 										text-[clamp(2.6rem,7vw,6.5rem)]
 										whitespace-nowrap
-									"
+									`}
 								>
 									{/* the name twice in one place, upright and in the
 									    italic: the pointer fades one into the other, and
@@ -412,22 +461,23 @@ export default function Team() {
 				<Rail way={-1} order={backward} people={people} onOpen={open} />
 			</div>
 
-			<div
+			{TAKEOVER && <div
 				ref={overlayRef}
 				role="dialog"
 				aria-modal="true"
 				aria-label={`${TEAM.title}: ${called(people[current])}`}
 				data-state={state}
 				inert={state !== 'open'}
+				style={{ '--tint': tint(people[current]) }}
 				className="
 					lp-team
 					fixed
 					inset-0
 					z-70
-					text-cream
+					text-ink
 				"
 			>
-				{/* the two panels */}
+				{/* the two panels: a wash of the person's pigment, and paper */}
 				<div
 					aria-hidden="true"
 					className="
@@ -438,8 +488,8 @@ export default function Team() {
 						left-0
 						h-full
 						w-1/2
-						bg-ink
-						portrait:h-1/2
+						bg-(--tint)
+						portrait:h-[42%]
 						portrait:w-full
 					"
 				/>
@@ -453,8 +503,8 @@ export default function Team() {
 						bottom-0
 						h-full
 						w-1/2
-						bg-ink-deep
-						portrait:h-1/2
+						bg-cream
+						portrait:h-[58%]
 						portrait:w-full
 					"
 				/>
@@ -470,7 +520,7 @@ export default function Team() {
 						h-full
 						w-1/2
 						overflow-hidden
-						portrait:h-1/2
+						portrait:h-[42%]
 						portrait:w-full
 					"
 				>
@@ -490,64 +540,45 @@ export default function Team() {
 								data-turn
 								className="
 									relative
-									w-[min(25vw,44svh)]
-									portrait:w-[min(44vw,26svh)]
+									w-[min(29vw,54svh)]
+									portrait:w-[min(46vw,25svh)]
 								"
 							>
-								<div
-									style={{ rotate: `${person.tilt}deg` }}
-									className="
-										@container
-										aspect-[3/4]
-										overflow-hidden
-									"
-								>
-									<Portrait person={person} index={index} />
-								</div>
-								{/* the label stuck to the portrait: what they do */}
-								{person.role && <p
-									data-tag
-									className="
-										absolute
-										top-[64%]
-										left-[74%]
-									"
-								>
-									<span
-										style={{ rotate: `${-person.tilt * 1.6}deg` }}
-										className={`
-											type-wide
-											block
-											px-[0.7em]
-											py-[0.5em]
-											text-[clamp(0.8rem,1.5vw,1.4rem)]
-											whitespace-nowrap
-											bg-cream
-											text-ink
-										`}
-									>
-										{person.role}
-									</span>
-								</p>}
+								{/* their number, in their pigment, most of it behind
+								    the portrait */}
 								<p
 									data-tag
+									aria-hidden="true"
+									style={{ color: pigment(person) }}
 									className="
-										type-script
 										absolute
-										-top-[0.5em]
-										-left-[0.7em]
-										text-[clamp(2rem,4.4vw,4.2rem)]
-										text-salmon-light
+										-bottom-[0.3em]
+										-left-[0.6em]
+										font-essays
+										text-[clamp(5.5rem,17vw,17rem)]
+										leading-none
+										italic
 									"
 								>
-									no. {code(index)}
+									{code(index)}
 								</p>
+								<div
+									style={{ rotate: `${person.tilt / 2}deg` }}
+									className="
+										relative
+										aspect-[3/4]
+										overflow-hidden
+										shadow-soft
+									"
+								>
+									<Portrait person={person} index={index} bare />
+								</div>
 							</div>
 						</div>
 					))}
 				</div>
 
-				{/* the lines about them */}
+				{/* the page about them */}
 				<div
 					style={{ '--i': 1 }}
 					className="
@@ -557,7 +588,7 @@ export default function Team() {
 						bottom-0
 						h-full
 						w-1/2
-						portrait:h-1/2
+						portrait:h-[58%]
 						portrait:w-full
 					"
 				>
@@ -573,22 +604,54 @@ export default function Team() {
 								flex
 								flex-col
 								justify-center
-								gap-[1.4em]
-								px-[clamp(1.5rem,6vw,6.5rem)]
-								pb-16
+								overflow-y-auto
+								px-[clamp(1.5rem,5.5vw,6rem)]
+								pt-20
+								pb-[clamp(6rem,14svh,9rem)]
+								font-essays
+								portrait:justify-start
+								portrait:pt-8
 							"
 						>
 							<p className="
-								type-label
-								opacity-60
+								flex
+								items-center
+								gap-[1em]
+								text-small
+								tracking-[0.2em]
+								uppercase
+								italic
+								opacity-70
 							">
-								{code(index)} / {code(count - 1)} &nbsp;—&nbsp; {person.name && person.role ? person.role : TEAM.title}
+								<span aria-hidden="true" className="h-px w-[3em] bg-current" />
+								{TEAM.title}, no. {code(index)} of {code(count - 1)}
 							</p>
+							<h4 className="
+								mt-[0.35em]
+								text-[clamp(2.6rem,6.4vw,7rem)]
+								leading-[0.95]
+								tracking-[-0.02em]
+								text-balance
+							">
+								{called(person)}
+							</h4>
+							{person.name && person.role && <p className="
+								mt-[0.5em]
+								text-h4
+								leading-[1.1]
+								text-salmon-dark
+								italic
+							">
+								{person.role}
+							</p>}
 							{person.text && <p className="
-								type-serif
-								indent-[clamp(2rem,6vw,6rem)]
+								mt-[1.6em]
+								max-w-[34ch]
+								border-t
+								border-ink/25
+								pt-[1.4em]
 								text-h6
-								leading-[1.3]
+								leading-[1.4]
 								lg:text-h5
 							">
 								{person.text}
@@ -597,15 +660,19 @@ export default function Team() {
 					))}
 				</div>
 
-				{/* previous and next, by name */}
-				<div className="
+				{/* previous and next, by name: only when there is someone else */}
+				{count > 1 && <div className="
 					lp-team-foot
-					type-label
 					absolute
-					inset-x-0
+					right-0
 					bottom-0
 					flex
-					justify-center
+					w-1/2
+					justify-between
+					gap-4
+					px-[clamp(1.5rem,5.5vw,6rem)]
+					font-essays
+					portrait:w-full
 				">
 					<button
 						type="button"
@@ -614,14 +681,31 @@ export default function Team() {
 						className="
 							lp-team-step
 							flex
+							min-w-0
 							cursor-pointer
-							items-center
-							gap-[1.2em]
-							p-[clamp(1rem,2vw,1.9rem)]
+							flex-col
+							items-start
+							border-t
+							border-ink/25
+							py-[clamp(0.9rem,2.4svh,1.6rem)]
+							pr-6
+							text-left
 						"
 					>
-						<span key={current} className="lp-team-name">{called(before)}</span>
-						<span className="lp-team-arrow lp-team-arrow-back" aria-hidden="true">←</span>
+						<span className="
+							flex
+							items-center
+							gap-[0.8em]
+							text-small
+							tracking-[0.2em]
+							uppercase
+							italic
+							opacity-70
+						">
+							<Arrow back />
+							before
+						</span>
+						<span key={current} className="lp-team-name text-h6">{called(before)}</span>
 					</button>
 					<button
 						type="button"
@@ -630,16 +714,33 @@ export default function Team() {
 						className="
 							lp-team-step
 							flex
+							min-w-0
 							cursor-pointer
-							items-center
-							gap-[1.2em]
-							p-[clamp(1rem,2vw,1.9rem)]
+							flex-col
+							items-end
+							border-t
+							border-ink/25
+							py-[clamp(0.9rem,2.4svh,1.6rem)]
+							pl-6
+							text-right
 						"
 					>
-						<span className="lp-team-arrow" aria-hidden="true">→</span>
-						<span key={current} className="lp-team-name">{called(after)}</span>
+						<span className="
+							flex
+							items-center
+							gap-[0.8em]
+							text-small
+							tracking-[0.2em]
+							uppercase
+							italic
+							opacity-70
+						">
+							after
+							<Arrow />
+						</span>
+						<span key={current} className="lp-team-name text-h6">{called(after)}</span>
 					</button>
-				</div>
+				</div>}
 
 				<button
 					type="button"
@@ -648,17 +749,19 @@ export default function Team() {
 					className="
 						lp-team-close
 						lp-underline
-						type-label
 						absolute
 						top-0
 						right-0
 						m-[clamp(1rem,3vw,3rem)]
 						cursor-pointer
+						font-essays
+						text-h6
+						italic
 					"
 				>
-					close [ esc ]
+					close
 				</button>
-			</div>
+			</div>}
 		</>
 	)
 }

@@ -385,7 +385,10 @@
 
 .lp-team-wipe {
 	transform: scaleY(0);
-	transition: transform 1s var(--ease-mech);
+	/* the colour too: the wash changes with the person */
+	transition:
+		transform 1s var(--ease-mech),
+		background-color 1s var(--ease-mech);
 }
 
 .lp-team-wipe-a {
@@ -462,15 +465,15 @@
 }
 
 .lp-team-arrow {
-	transition: transform 0.3s var(--ease-expo);
+	transition: translate 0.3s var(--ease-expo);
 }
 
 .lp-team-step:is(:hover, :focus-visible) .lp-team-arrow {
-	transform: translateX(0.4em);
+	translate: 0.4em 0;
 }
 
 .lp-team-step:is(:hover, :focus-visible) .lp-team-arrow-back {
-	transform: translateX(-0.4em);
+	translate: -0.4em 0;
 }
 
 /* a neighbour's name is a new element each time the person changes, so it
