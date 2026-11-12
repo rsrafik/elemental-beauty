@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import gsap from 'gsap'
 import { TEAM } from './content'
+import { useLandingContent } from './live'
 
 // The people, under "who we are": two rails of names, each name followed by a
 // small tilted portrait.
@@ -24,8 +25,9 @@ import { TEAM } from './content'
 // The rails are only moved by the script: without it, or with reduced motion,
 // they are two still rows and every name can still be opened.
 //
-// PLACEHOLDER people: see TEAM in content.js. A person with no `src` shows a
-// flat swatch with their number instead of a photograph.
+// PLACEHOLDER people: see TEAM in content.js, until an admin adds the real
+// ones on /landing-editor (live.js). A person with no `src` shows a flat
+// swatch with their number instead of a photograph.
 
 const SWATCHES = {
 	salmon: 'bg-salmon',
@@ -134,7 +136,7 @@ function Portrait({ person, index }) {
 // One rail. `way` is 1 or -1: which way it runs. Only the first copy of the
 // list is offered to the keyboard and to screen readers; the rest are the
 // same people again.
-function Rail({ way, order, onOpen }) {
+function Rail({ way, order, people, onOpen }) {
 	return (
 		<div
 			data-rail={way}
@@ -157,7 +159,7 @@ function Rail({ way, order, onOpen }) {
 					"
 				>
 					{order.map((index) => {
-						const person = TEAM.people[index]
+						const person = people[index]
 						return (
 							<li
 								key={index}
@@ -243,7 +245,7 @@ function Rail({ way, order, onOpen }) {
 }
 
 export default function Team() {
-	const people = TEAM.people
+	const { people } = useLandingContent()
 	const count = people.length
 	const rootRef = useRef(null)
 	const overlayRef = useRef(null)
@@ -333,7 +335,7 @@ export default function Team() {
 				rail.element.style.removeProperty('--sway')
 			})
 		}
-	}, [])
+	}, [people])
 
 	// ---- the takeover ----
 	const open = useCallback((index, opener) => {
@@ -406,8 +408,8 @@ export default function Team() {
 				"
 			>
 				<h3 className="sr-only">{TEAM.title}</h3>
-				<Rail way={1} order={forward} onOpen={open} />
-				<Rail way={-1} order={backward} onOpen={open} />
+				<Rail way={1} order={forward} people={people} onOpen={open} />
+				<Rail way={-1} order={backward} people={people} onOpen={open} />
 			</div>
 
 			<div
@@ -503,7 +505,7 @@ export default function Team() {
 									<Portrait person={person} index={index} />
 								</div>
 								{/* the label stuck to the portrait: what they do */}
-								<p
+								{person.role && <p
 									data-tag
 									className="
 										absolute
@@ -526,7 +528,7 @@ export default function Team() {
 									>
 										{person.role}
 									</span>
-								</p>
+								</p>}
 								<p
 									data-tag
 									className="
@@ -580,9 +582,9 @@ export default function Team() {
 								type-label
 								opacity-60
 							">
-								{code(index)} / {code(count - 1)} &nbsp;—&nbsp; {person.name ? person.role : TEAM.title}
+								{code(index)} / {code(count - 1)} &nbsp;—&nbsp; {person.name && person.role ? person.role : TEAM.title}
 							</p>
-							<p className="
+							{person.text && <p className="
 								type-serif
 								indent-[clamp(2rem,6vw,6rem)]
 								text-h6
@@ -590,7 +592,7 @@ export default function Team() {
 								lg:text-h5
 							">
 								{person.text}
-							</p>
+							</p>}
 						</div>
 					))}
 				</div>

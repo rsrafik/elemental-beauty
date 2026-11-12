@@ -4,6 +4,7 @@ import { useCallback, useEffect, useRef, useState } from 'react'
 import gsap from 'gsap'
 import { ScrollToPlugin } from 'gsap/ScrollToPlugin'
 import { ALBUM } from './content'
+import { useLandingContent } from './live'
 
 // The album: a deck of cards, one per event.
 //
@@ -184,7 +185,7 @@ function Face({ photo, index }) {
 }
 
 export default function Album() {
-	const photos = ALBUM.photos
+	const { photos } = useLandingContent()
 	const middle = (photos.length - 1) / 2
 	// which card is out: as state for what the page says, and as a ref for the
 	// flights, which must not wait for a render
@@ -417,13 +418,13 @@ export default function Album() {
 							bg-cream
 							p-[clamp(1rem,6cqw,1.75rem)]
 						">
-							<p className="
+							{item.date && <p className="
 								font-essays
 								text-small
 								opacity-60
 							">
 								{item.date}
-							</p>
+							</p>}
 							<h3 className="
 								font-fourhand
 								text-h4
@@ -431,13 +432,13 @@ export default function Album() {
 							">
 								{item.title}
 							</h3>
-							<p className="
+							{item.text && <p className="
 								font-essays
 								text-body
 								leading-[1.35]
 							">
 								{item.text}
-							</p>
+							</p>}
 							<div className="
 								mt-[0.5em]
 								flex

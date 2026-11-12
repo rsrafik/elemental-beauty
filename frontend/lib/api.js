@@ -520,3 +520,31 @@ export const dues = {
 	// money they paid stays in the ledger
 	clear: (schoolYear) => api(`/dues?schoolYear=${encodeURIComponent(schoolYear)}`, { method: 'DELETE' }),
 }
+
+// The public landing page's people, album and sponsor pills — see
+// src/routes/landingRoutes.js. Anyone reads `page()`; the rest is the admin's,
+// on /landing-editor. A picture (`image`) left as the address it came with
+// stays as it is; null takes it off.
+export const landing = {
+	// { people, album, sponsors } — what /landing shows, signed in or not
+	page: () => api('/landing', { auth: false }),
+	// the same, for the editor: every pill on the page, with its sponsor's status
+	admin: () => api('/landing/admin'),
+	// { title, name?, description?, image? }
+	addPerson: (person) => api('/landing/people', { method: 'POST', body: person }),
+	updatePerson: (id, person) => api(`/landing/people/${id}`, { method: 'PUT', body: person }),
+	removePerson: (id) => api(`/landing/people/${id}`, { method: 'DELETE' }),
+	// every person's id, first to last
+	orderPeople: (ids) => api('/landing/people/order', { method: 'PUT', body: { ids } }),
+	// { title, image, date?: 'YYYY-MM-DD', description? }
+	addCard: (card) => api('/landing/album', { method: 'POST', body: card }),
+	updateCard: (id, card) => api(`/landing/album/${id}`, { method: 'PUT', body: card }),
+	removeCard: (id) => api(`/landing/album/${id}`, { method: 'DELETE' }),
+	// { title?, image?, website? } — a title or a picture
+	addPill: (pill) => api('/landing/sponsors', { method: 'POST', body: pill }),
+	updatePill: (id, pill) => api(`/landing/sponsors/${id}`, { method: 'PUT', body: pill }),
+	removePill: (id) => api(`/landing/sponsors/${id}`, { method: 'DELETE' }),
+	// sponsors not on the page yet, from any section of the sponsors page
+	connectable: () => api('/landing/sponsors/connectable'),
+	connect: (id) => api(`/landing/sponsors/${id}/connect`, { method: 'POST' }),
+}

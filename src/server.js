@@ -16,7 +16,8 @@ import transactionRoutes from './routes/transactionRoutes.js'
 import financeCategoryRoutes from './routes/financeCategoryRoutes.js'
 import paymentMethodRoutes from './routes/paymentMethodRoutes.js'
 import paymentRoutes from './routes/paymentRoutes.js'
-import imageRoutes from './routes/imageRoutes.js'
+import imageRoutes, { imageAuth } from './routes/imageRoutes.js'
+import landingRoutes, { publicRouter as landingPublicRoutes } from './routes/landingRoutes.js'
 import calendarRoutes, { feedRouter as calendarFeedRoutes } from './routes/calendarRoutes.js'
 import authMiddleware from './middleware/authMiddleware.js'
 import requireRole, { booksAccess } from './middleware/requireRole.js'
@@ -160,8 +161,13 @@ app.use('/api/auth', authLimiter, authRoutes)
 // the same limit as the other token-in-hand routes
 app.use('/api/offers', authLimiter, offerRoutes)
 // pictures, one at a time and cached (see the router) — each kind is held to
-// who can see the row it's on
-app.use('/api/img', authMiddleware, imageRoutes)
+// who can see the row it's on. The landing page's are open to anyone
+// (imageAuth).
+app.use('/api/img', imageAuth, imageRoutes)
+// the landing page's people, album and sponsors: anyone reads them (the page
+// is public), an admin keeps them on /landing-editor
+app.use('/api/landing', landingPublicRoutes)
+app.use('/api/landing', authMiddleware, requireRole('admin'), landingRoutes)
 app.use('/api/members', authMiddleware, requireRole('member'), memberRoutes)
 app.use('/api/labs', authMiddleware, requireRole('member'), labRoutes)
 app.use('/api/events', authMiddleware, requireRole('member'), eventRoutes)
