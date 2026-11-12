@@ -118,10 +118,11 @@ app.use(compression())
 // link that opened one directly (the emailed "view the lab" and "view the
 // event" buttons, a refresh) landed on a 404.
 const PUBLIC = path.join(__dirname, '../public')
-// Members-only for now: the address opens on the sign-in page (which sends
-// anyone signed in on to /dashboard), and the landing and about-us pages are
-// off. See frontend/app/page.js.
-app.get(['/', '/about-us'], (req, res) => { res.redirect(302, '/login') })
+// The home address is the public landing page (frontend/app/page.js, served
+// from public/index.html below). /landing was its preview address, so it
+// sends people there; the about-us page is still off.
+app.get('/landing', (req, res) => { res.redirect(302, '/') })
+app.get('/about-us', (req, res) => { res.redirect(302, '/login') })
 app.use(express.static(PUBLIC, {
     extensions: ['html'],
     redirect: false,

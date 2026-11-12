@@ -1,12 +1,7 @@
-import Landing from '@/components/landing/Landing'
+import { redirect } from 'next/navigation'
 
-// The landing page's preview address. The home address still sends everyone
-// to sign-in (app/page.js, and src/server.js before that); this is where the
-// page lives until it is approved to take over `/`.
-export const metadata = {
-	title: 'Elemental Beauty',
-}
-
+// The landing page's old preview address. The page lives at `/` now
+// (app/page.js), so anything still linking here lands there.
 export default function LandingPreview() {
-	return <Landing />
+	redirect('/')
 }
