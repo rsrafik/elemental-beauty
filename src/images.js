@@ -13,6 +13,11 @@ export const IMAGES = {
     event: { model: 'event', id: 'eventId', field: 'image', key: 'imageKey', url: 'imageUrl' },
     user: { model: 'user', id: 'userId', field: 'profilePicture', key: 'pictureKey', url: 'pictureUrl' },
     method: { model: 'paymentMethod', id: 'methodId', field: 'image', key: 'imageKey', url: 'imageUrl' },
+    // the landing page's: open to anyone, signed in or not (`public` — see
+    // imageAuth in src/routes/imageRoutes.js)
+    person: { model: 'landingPerson', id: 'personId', field: 'image', key: 'imageKey', url: 'imageUrl', public: true },
+    album: { model: 'albumCard', id: 'cardId', field: 'image', key: 'imageKey', url: 'imageUrl', public: true },
+    sponsor: { model: 'sponsor', id: 'sponsorId', field: 'image', key: 'imageKey', url: 'imageUrl', public: true },
     // the two below are someone's own paperwork: always behind the same checks
     // as the rows they belong to, and never kept by the browser
     payment: { model: 'memberPayment', id: 'paymentId', field: 'screenshot', key: 'screenshotKey', url: 'screenshotUrl', private: true },

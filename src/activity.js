@@ -9,6 +9,8 @@ import prisma from './prismaClient.js'
 //                    onto teams (or off them)             teams; older entries hold one team
 //                                                        or null
 //   points_awarded   an officer gave points by hand       details { reason }
+//                    — or dues made someone VIP, and      reason 'vip_dues', with schoolYear
+//                    undone: true when the payment was taken back (no actor: 'system')
 //   checked_in       a check-in earned points             details { kind, id, title, by: 'qr' | 'hand' }
 //   checkin_undone   a check-in was taken back            details { kind, id, title }
 //   member_added     an officer added a student           details { role }

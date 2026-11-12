@@ -1,6 +1,7 @@
 import { memo } from './memo.js'
 import { log, fullName } from './activity.js'
 import { clubToday, dateColumn } from './clubTime.js'
+import { POINTS } from './points.js'
 
 // Dues, shared by the treasurer's dues card (routes/duesRoutes.js), the lab
 // and event lists (which show what someone unpaid will be charged), and the
@@ -70,15 +71,64 @@ export async function recordDues(tx, { memberId, user, schoolYear, amount, day, 
 // without a payment behind it, or paid and still a plain member.
 export async function syncVipRoles(db, day) {
     const schoolYear = schoolYearOf(day ?? clubToday())
-    const promoted = await db.member.updateMany({
+    const becoming = await db.member.findMany({
         where: { role: 'member', dues: { some: { schoolYear } } },
-        data: { role: 'vip' }
+        select: { userId: true }
     })
-    const lapsed = await db.member.updateMany({
+    const ids = becoming.map((member) => member.userId)
+    if (ids.length) {
+        await db.member.updateMany({ where: { userId: { in: ids } }, data: { role: 'vip' } })
+        for (const memberId of ids) { await awardVipPoints(db, memberId, schoolYear) }
+    }
+    // A VIP with no payment for this year either lost it (the payment was
+    // taken back, so the points for it go too) or is last year's VIP, whose
+    // points were for last year and stay.
+    const losing = await db.member.findMany({
         where: { role: 'vip', dues: { none: { schoolYear } } },
-        data: { role: 'member' }
+        select: { userId: true }
     })
-    return { promoted: promoted.count, lapsed: lapsed.count }
+    const lapsedIds = losing.map((member) => member.userId)
+    if (lapsedIds.length) {
+        await db.member.updateMany({ where: { userId: { in: lapsedIds } }, data: { role: 'member' } })
+        for (const memberId of lapsedIds) { await takeBackVipPoints(db, memberId, schoolYear) }
+    }
+    return { promoted: ids.length, lapsed: lapsedIds.length }
+}
+
+// The points for becoming VIP (POINTS.vip_dues): given when someone's dues for
+// a school year make them VIP, once for that year, and written to the activity
+// log as a points_awarded line with reason 'vip_dues' — which is also how
+// "once" is known: a year is held when its awards outnumber its takebacks.
+// Points are one running total (members.points) that nothing resets, so this
+// is a plain increment. Only people who are VIP when it runs get it, so a
+// j-board member's dues earn nothing.
+async function vipAwardsFor(db, memberId, schoolYear) {
+    const rows = await db.activityLog.findMany({
+        where: { targetId: memberId, action: 'points_awarded', details: { path: ['reason'], equals: 'vip_dues' } },
+        select: { details: true }
+    })
+    return rows.filter((row) => row.details.schoolYear === schoolYear)
+        .reduce((held, row) => held + (row.details.undone ? -1 : 1), 0)
+}
+
+export async function awardVipPoints(db, memberId, schoolYear) {
+    const member = await db.member.findUnique({ where: { userId: memberId }, select: { role: true } })
+    if (member?.role !== 'vip' || await vipAwardsFor(db, memberId, schoolYear) > 0) return false
+    await db.member.update({ where: { userId: memberId }, data: { points: { increment: POINTS.vip_dues } } })
+    await log({ action: 'points_awarded', targetId: memberId, points: POINTS.vip_dues, details: { reason: 'vip_dues', schoolYear } }, db)
+    return true
+}
+
+// Their payment for `schoolYear` was reversed and VIP went with it: take the
+// points back (never below 0, if they've since been set lower by hand), as a
+// negative line in the log. Nothing if they never had them for that year.
+async function takeBackVipPoints(db, memberId, schoolYear) {
+    if (await vipAwardsFor(db, memberId, schoolYear) <= 0) return false
+    const before = await db.member.findUnique({ where: { userId: memberId }, select: { points: true } })
+    const take = Math.min(POINTS.vip_dues, before?.points ?? 0)
+    await db.member.update({ where: { userId: memberId }, data: { points: { decrement: take } } })
+    await log({ action: 'points_awarded', targetId: memberId, points: -take, details: { reason: 'vip_dues', schoolYear, undone: true } }, db)
+    return true
 }
 
 // Picking VIP for someone on /students is the dues card's "mark paid": this
@@ -97,7 +147,11 @@ export async function payForVip(tx, { memberId, actorId }) {
         throw Object.assign(new Error(`Set the ${schoolYear} dues amount on analytics first, because making someone VIP marks their dues paid`), { code: 'NO_DUES_AMOUNT' })
     }
     const user = await tx.user.findUnique({ where: { userId: memberId }, select: { firstName: true, lastName: true, username: true } })
-    return recordDues(tx, { memberId, user, schoolYear, amount, day: dateColumn(clubToday()), actorId })
+    const created = await recordDues(tx, { memberId, user, schoolYear, amount, day: dateColumn(clubToday()), actorId })
+    // their role was set to VIP before this, so the sync in recordDues saw no
+    // change to make and awarded nothing
+    await awardVipPoints(tx, memberId, schoolYear)
+    return created
 }
 
 // Checking someone into a lab or a members-only event asks after their dues

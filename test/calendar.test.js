@@ -320,6 +320,25 @@ test('each title says where the person stands, and each description the sign-up 
     })
 })
 
+test('e-board, treasurer and admin feeds carry plain titles, with no RSVP tag, even when they are signed up', { skip }, async () => {
+    const p = scope()
+    const staff = [await person('officer'), await person('treasurer'), await person('admin')]
+    const member = await person('member')
+    const eventId = await event(p, 'open', { title: 'mixer' })
+    await prisma.memberEvent.createMany({ data: [...staff, member].map((memberId) => ({ memberId, eventId })) })
+    await serve(async (base) => {
+        for (const userId of staff) {
+            await call(base, userId, 'PUT', { tracks: ['open'] })
+            const lines = unfold((await feed(base, userId)).text)
+            assert.ok(lines.includes(`SUMMARY:${p} mixer`))
+            assert.ok(!lines.some((line) => TAG.test(line)))
+        }
+        // members still get theirs
+        await call(base, member, 'PUT', { tracks: ['open'] })
+        assert.equal(entry((await feed(base, member)).text, `${p} mixer`).summary, `[RSVP’D] ${p} mixer`)
+    })
+})
+
 test('a feed link can’t be used to sign in', { skip }, async () => {
     const p = scope()
     const member = await person('member')

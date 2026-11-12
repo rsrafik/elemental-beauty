@@ -5,7 +5,7 @@ import { PrismaClient } from './generated/prisma/client.ts'
 import { PrismaPg } from '@prisma/adapter-pg'
 import { IMAGES, imageKey, imagePath } from './images.js'
 import { bump } from './changes.js'
-import { bust } from './memo.js'
+import { bustSoon } from './memo.js'
 
 const adapter = new PrismaPg({ connectionString: process.env.DATABASE_URL })
 
@@ -28,7 +28,10 @@ const OMIT = {
     user: { profilePicture: true },
     paymentMethod: { image: true },
     memberPayment: { screenshot: true },
-    reimbursement: { receipt: true }
+    reimbursement: { receipt: true },
+    landingPerson: { image: true },
+    albumCard: { image: true },
+    sponsor: { image: true }
 }
 
 const base = new PrismaClient({ adapter, omit: OMIT })
@@ -64,13 +67,41 @@ const ROSTER = {
 }
 
 // what src/memo.js keeps off each, cleared by any write to it
+//
+// The longer-kept ones (SHARED_MS) are what many people read and few change:
+//   landing        GET /api/landing, whole (src/routes/landingRoutes.js)
+//   events:rows    the events list's rows — they carry who added each, so an
+//                  account or membership changing clears them too
+//   labs:rows      the labs list's rows
+//   *:counts       seats taken and waiting on each, off the sign-up rows
+//   lab:           one lab's text, lessons and quiz (GET /api/labs/:id)
+//   feed:          the calendar feed's rows (src/routes/calendarRoutes.js)
+//   img:<model>:   who may see a picture (src/routes/imageRoutes.js) — added
+//                  below for every model with one
 const KEPT = {
-    user: ['auth:'],
-    member: ['auth:'],
+    // (an account or membership deleted takes its sign-up rows with it, in
+    // the database, so the counts go too)
+    user: ['auth:', 'events:rows', 'events:counts', 'labs:counts'],
+    member: ['auth:', 'events:rows', 'events:counts', 'labs:counts'],
     yearTarget: ['years'],
+    // GET /api/auth/me says whether this year's dues are paid
+    duesPayment: ['auth:me:'],
     clubSettings: ['goggles'],
     paymentMethod: ['methods'],
-    eventCategory: ['categories']
+    eventCategory: ['categories', 'events:rows'],
+    landingPerson: ['landing'],
+    albumCard: ['landing'],
+    sponsor: ['landing'],
+    event: ['events:', 'feed:events'],
+    memberEvent: ['events:counts'],
+    lab: ['labs:', 'lab:', 'feed:labs'],
+    memberLab: ['labs:counts'],
+    labLesson: ['lab:'],
+    labQuizQuestion: ['lab:'],
+    quizAnswerOption: ['lab:']
+}
+for (const spec of Object.values(IMAGES)) {
+    KEPT[spec.model] = [...(KEPT[spec.model] ?? []), `img:${spec.model}:`]
 }
 
 const WRITES = ['create', 'createMany', 'createManyAndReturn', 'update', 'updateMany', 'updateManyAndReturn', 'upsert', 'delete', 'deleteMany']
@@ -102,7 +133,7 @@ for (const model of new Set([...Object.keys(PICTURES), ...Object.keys(ROSTER), .
                 if (operation === 'upsert') { stampKeys(args.create, spec); stampKeys(args.update, spec) } else { stampKeys(args.data, spec) }
             }
             const result = await query(args)
-            for (const prefix of KEPT[modelOf(name)] ?? []) { bust(prefix) }
+            for (const prefix of KEPT[modelOf(name)] ?? []) { bustSoon(prefix) }
             const keys = ROSTER[modelOf(name)]
             if (keys) {
                 const parents = keys.length ? parentsOf(keys, args, result) : []

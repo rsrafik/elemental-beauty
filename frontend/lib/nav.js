@@ -34,6 +34,13 @@ const ANALYTICS = [
 	{ label: 'analytics', href: '/analytics' },
 ]
 
+// admin's (and the advisor's, to read): what the public landing page shows,
+// and the sponsors — from the landing page's form to the pills on it
+const ADMIN_ONLY = [
+	{ label: 'landing page', href: '/landing-editor' },
+	{ label: 'sponsors', href: '/sponsors' },
+]
+
 // `teams` is the session's jboardTeams (no longer read here: every j-board
 // member gets analytics) and
 // `duesPaid` its duesPaid (this year's dues in)
@@ -46,6 +53,7 @@ export function navFor(role, teams, duesPaid = false) {
 		...OFFICER_ONLY,
 		...(canSeeAnalytics(role) ? ANALYTICS : []),
 		...(role === 'jboard' && !duesPaid ? BECOME_VIP : []),
+		...(hasRole('admin', role) ? ADMIN_ONLY : []),
 	]
 }
 

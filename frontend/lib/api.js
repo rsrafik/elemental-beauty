@@ -520,3 +520,51 @@ export const dues = {
 	// money they paid stays in the ledger
 	clear: (schoolYear) => api(`/dues?schoolYear=${encodeURIComponent(schoolYear)}`, { method: 'DELETE' }),
 }
+
+// The public landing page's people, album and sponsor pills — see
+// src/routes/landingRoutes.js. Anyone reads `page()`; the rest is the admin's,
+// on /landing-editor. A picture (`image`) left as the address it came with
+// stays as it is; null takes it off.
+export const landing = {
+	// { people, album, sponsors } — what /landing shows, signed in or not
+	page: () => api('/landing', { auth: false }),
+	// the same, for the editor: every pill on the page, with its sponsor's status
+	admin: () => api('/landing/admin'),
+	// { title, name?, description?, image? }
+	addPerson: (person) => api('/landing/people', { method: 'POST', body: person }),
+	updatePerson: (id, person) => api(`/landing/people/${id}`, { method: 'PUT', body: person }),
+	removePerson: (id) => api(`/landing/people/${id}`, { method: 'DELETE' }),
+	// every person's id, first to last
+	orderPeople: (ids) => api('/landing/people/order', { method: 'PUT', body: { ids } }),
+	// { title, image, date?: 'YYYY-MM-DD', description? }
+	addCard: (card) => api('/landing/album', { method: 'POST', body: card }),
+	updateCard: (id, card) => api(`/landing/album/${id}`, { method: 'PUT', body: card }),
+	removeCard: (id) => api(`/landing/album/${id}`, { method: 'DELETE' }),
+	// every card's id, front of the deck to back
+	orderCards: (ids) => api('/landing/album/order', { method: 'PUT', body: { ids } }),
+	// { title?, image?, website? } — a title or a picture
+	addPill: (pill) => api('/landing/sponsors', { method: 'POST', body: pill }),
+	updatePill: (id, pill) => api(`/landing/sponsors/${id}`, { method: 'PUT', body: pill }),
+	removePill: (id) => api(`/landing/sponsors/${id}`, { method: 'DELETE' }),
+	// every pill's id, first to last
+	orderPills: (ids) => api('/landing/sponsors/order', { method: 'PUT', body: { ids } }),
+	// sponsors not on the page yet, from any section of the sponsors page
+	connectable: () => api('/landing/sponsors/connectable'),
+	connect: (id) => api(`/landing/sponsors/${id}/connect`, { method: 'POST' }),
+}
+
+// The sponsors page (/sponsors) and the landing page's "sponsor a batch" form —
+// see src/routes/sponsorRoutes.js. Anyone sends `request()`; the rest is an
+// admin's. A sponsor's request is { companyName, contactName?, contactInfo?,
+// offers: ['products' | 'money' | 'other'], offerOther?, details? }.
+export const sponsors = {
+	// the form, signed in or not: everything but `details` is needed
+	request: (sponsor) => api('/sponsors/request', { method: 'POST', body: sponsor, auth: false }),
+	// every sponsor, newest first, with where its pill stands (onLanding, shown)
+	list: () => api('/sponsors'),
+	// added by hand: only the company is needed; `status` defaults to pending
+	add: (sponsor) => api('/sponsors', { method: 'POST', body: sponsor }),
+	update: (id, sponsor) => api(`/sponsors/${id}`, { method: 'PUT', body: sponsor }),
+	move: (id, status) => api(`/sponsors/${id}/status`, { method: 'PUT', body: { status } }),
+	remove: (id) => api(`/sponsors/${id}`, { method: 'DELETE' }),
+}

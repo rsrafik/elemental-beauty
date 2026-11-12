@@ -16,7 +16,9 @@ import transactionRoutes from './routes/transactionRoutes.js'
 import financeCategoryRoutes from './routes/financeCategoryRoutes.js'
 import paymentMethodRoutes from './routes/paymentMethodRoutes.js'
 import paymentRoutes from './routes/paymentRoutes.js'
-import imageRoutes from './routes/imageRoutes.js'
+import imageRoutes, { imageAuth } from './routes/imageRoutes.js'
+import landingRoutes, { publicRouter as landingPublicRoutes } from './routes/landingRoutes.js'
+import sponsorRoutes, { publicRouter as sponsorPublicRoutes, FORM_LIMIT } from './routes/sponsorRoutes.js'
 import calendarRoutes, { feedRouter as calendarFeedRoutes } from './routes/calendarRoutes.js'
 import authMiddleware from './middleware/authMiddleware.js'
 import requireRole, { booksAccess } from './middleware/requireRole.js'
@@ -85,6 +87,10 @@ const authLimiter = rateLimit({
     skip: (req) => req.method === 'GET'
 })
 
+// The landing page's "sponsor a batch" form is open to anyone, signed in or
+// not — capped the same way, so it can't be used to fill the sponsors page.
+const sponsorFormLimiter = rateLimit(FORM_LIMIT)
+
 // Get file path from URL of current module
 const __filename = fileURLToPath(import.meta.url)
 const __dirname = dirname(__filename)
@@ -112,10 +118,11 @@ app.use(compression())
 // link that opened one directly (the emailed "view the lab" and "view the
 // event" buttons, a refresh) landed on a 404.
 const PUBLIC = path.join(__dirname, '../public')
-// Members-only for now: the address opens on the sign-in page (which sends
-// anyone signed in on to /dashboard), and the landing and about-us pages are
-// off. See frontend/app/page.js.
-app.get(['/', '/about-us'], (req, res) => { res.redirect(302, '/login') })
+// The home address is the public landing page (frontend/app/page.js, served
+// from public/index.html below). /landing was its preview address, so it
+// sends people there; the about-us page is still off.
+app.get('/landing', (req, res) => { res.redirect(302, '/') })
+app.get('/about-us', (req, res) => { res.redirect(302, '/login') })
 app.use(express.static(PUBLIC, {
     extensions: ['html'],
     redirect: false,
@@ -160,8 +167,18 @@ app.use('/api/auth', authLimiter, authRoutes)
 // the same limit as the other token-in-hand routes
 app.use('/api/offers', authLimiter, offerRoutes)
 // pictures, one at a time and cached (see the router) — each kind is held to
-// who can see the row it's on
-app.use('/api/img', authMiddleware, imageRoutes)
+// who can see the row it's on. The landing page's are open to anyone
+// (imageAuth).
+app.use('/api/img', imageAuth, imageRoutes)
+// the landing page's people, album and sponsors: anyone reads them (the page
+// is public), an admin keeps them on /landing-editor
+app.use('/api/landing', landingPublicRoutes)
+app.use('/api/landing', authMiddleware, requireRole('admin'), landingRoutes)
+// sponsors: anyone sends the landing page's form (POST /request), an admin
+// keeps the rest on /sponsors
+app.use('/api/sponsors/request', sponsorFormLimiter)
+app.use('/api/sponsors', sponsorPublicRoutes)
+app.use('/api/sponsors', authMiddleware, requireRole('admin'), sponsorRoutes)
 app.use('/api/members', authMiddleware, requireRole('member'), memberRoutes)
 app.use('/api/labs', authMiddleware, requireRole('member'), labRoutes)
 app.use('/api/events', authMiddleware, requireRole('member'), eventRoutes)

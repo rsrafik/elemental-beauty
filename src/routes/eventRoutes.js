@@ -3,6 +3,8 @@ import jwt from 'jsonwebtoken'
 import prisma from '../prismaClient.js'
 import { Prisma } from '../generated/prisma/client.ts'
 import { draftImagePath, imageFrom, readImage } from '../images.js'
+import { memo, SHARED_MS } from '../memo.js'
+import { seatCounts, standings } from '../seats.js'
 import requireRole from '../middleware/requireRole.js'
 import { onTreasuryTeam } from '../middleware/treasury.js'
 import { eventPoints } from '../points.js'
@@ -221,50 +223,48 @@ router.get('/', async (req, res) => {
         // a draft never published is only there for whoever can edit it
         const drafts = seesDrafts(req.role)
         if (!drafts) { where.published = true }
-        // the events and their waitlist counts together, the counts asked
-        // by the same filter rather than by the ids the first one finds
-        const [events, queues, drafted] = await Promise.all([prisma.event.findMany({
+        // The rows are the same for everyone who sees the same tracks, and so
+        // are the seat counts — both are kept (src/memo.js, src/seats.js)
+        // until an event or a sign-up is written, so a page load reads only
+        // this person's own rows. ?when= moves with the clock, so it's asked
+        // fresh.
+        const shape = JSON.stringify([type ?? null, viewer.role, viewer.teams, drafts])
+        const keep = (name, read) => when ? read() : memo(`events:rows:${name}:${shape}`, SHARED_MS, read)
+        const [events, seats, mine, previews] = await Promise.all([keep('list', () => prisma.event.findMany({
             where,
             include: {
                 category: { select: { name: true } },
-                createdBy: CREATOR,
-                // at most one row — the pair is the primary key
-                members: {
-                    where: { memberId: req.userId },
-                    select: { attendanceStatus: true }
-                },
-                _count: { select: { members: { where: TAKEN } } }
+                createdBy: CREATOR
             },
             orderBy: [{ date: when === 'past' ? 'desc' : 'asc' }, { startTime: 'asc' }]
-        }), prisma.memberEvent.groupBy({
-            by: ['eventId'],
-            where: { ...WAITING, event: where },
-            _count: true
-        }),
-        // which have unpublished edits parked — asked as a filter, so the
-        // drafts themselves stay put. A cleared draft is a database NULL
-        // (Prisma.DbNull — a plain null in `data` stores JSON's null instead,
-        // which still counts as a value), and AnyNull matches either.
-        drafts
-            ? prisma.event.findMany({ where: { ...where, NOT: { draft: { equals: Prisma.AnyNull } } }, select: { eventId: true } })
-            : []
-        ])
-        const waiting = new Map(queues.map((queue) => [queue.eventId, queue._count]))
-        const parked = new Set(drafted.map((event) => event.eventId))
+        })),
+        seatCounts('event'),
+        standings('event', req.userId, ['attendanceStatus']),
         // What staff's cards show for one with edits parked: the draft — its
         // fields as saved, less the picture, which is a data URL and goes as
         // an address like every other (draftImagePath). Its fingerprint is
         // worked out in the database (the same left(md5(x), 12) as imageKey)
         // so the picture itself never leaves it here. A draft with no `image`
         // didn't touch the picture; one with `image` null cleared it.
-        const previews = parked.size
-            ? await prisma.$queryRaw`
-                SELECT event_id AS "eventId",
-                       draft - 'image' AS fields,
-                       draft ? 'image' AS "touchesImage",
-                       left(md5(draft->>'image'), 12) AS "imageKey"
-                FROM events WHERE event_id = ANY(${[...parked]}::int[])`
+        //
+        // Which have one is asked as a filter first, so the drafts of the
+        // rest stay put. A cleared draft is a database NULL (Prisma.DbNull —
+        // a plain null in `data` stores JSON's null instead, which still
+        // counts as a value), and AnyNull matches either.
+        drafts
+            ? keep('drafts', async () => {
+                const drafted = await prisma.event.findMany({ where: { ...where, NOT: { draft: { equals: Prisma.AnyNull } } }, select: { eventId: true } })
+                if (!drafted.length) { return [] }
+                return prisma.$queryRaw`
+                    SELECT event_id AS "eventId",
+                           draft - 'image' AS fields,
+                           draft ? 'image' AS "touchesImage",
+                           left(md5(draft->>'image'), 12) AS "imageKey"
+                    FROM events WHERE event_id = ANY(${drafted.map((event) => event.eventId)}::int[])`
+            })
             : []
+        ])
+        const parked = new Set(previews.map((preview) => preview.eventId))
         const draftCards = new Map(previews.map(({ eventId, fields, touchesImage, imageKey }) => [eventId, {
             fields,
             imageUrl: touchesImage ? draftImagePath(eventId, imageKey) : undefined
@@ -272,7 +272,7 @@ router.get('/', async (req, res) => {
 
         // Same extras the lab list carries: how many seats are gone, how many
         // are waiting behind them, and where the person asking stands on it.
-        res.json(events.map(({ members, _count, ...event }) => ({
+        res.json(events.map((event) => ({
             ...withCreator(event, req.role),
             // staff: whether a live one has edits saved as a draft waiting,
             // and what they'd make the card (see draftCards above)
@@ -283,9 +283,9 @@ router.get('/', async (req, res) => {
                     ? event.imageUrl
                     : draftCards.get(event.eventId).imageUrl
             } } : {}),
-            taken: _count.members,
-            waitlistCount: waiting.get(event.eventId) ?? 0,
-            mine: members[0]?.attendanceStatus ?? null,
+            taken: seats(event.eventId).taken,
+            waitlistCount: seats(event.eventId).waiting,
+            mine: mine.get(event.eventId)?.attendanceStatus ?? null,
             // unpaid dues: { schoolYear, amount, price } — the card shows the
             // price, the page warns about it (see src/dues.js)
             dues: duesFor(event, owe)
@@ -301,13 +301,19 @@ router.get('/:id', async (req, res) => {
     if (isNaN(eventId)) { return res.status(400).json({ message: 'Invalid event id' }) }
 
     try {
+        // A member's page asks again every minute while it's open; the row
+        // is the same for all of them, so it's kept (src/memo.js) until an
+        // event is written. Staff's carries the parked edits, read fresh.
+        const readEvent = (extra = {}) => prisma.event.findUnique({
+            where: { eventId },
+            include: { category: { select: { name: true } }, createdBy: CREATOR },
+            ...extra
+        })
         const [event, viewer] = await Promise.all([
-            prisma.event.findUnique({
-                where: { eventId },
-                include: { category: { select: { name: true } }, createdBy: CREATOR },
+            seesDrafts(req.role)
                 // the editor loads the parked edits too
-                ...(seesDrafts(req.role) ? { omit: { draft: false } } : {})
-            }),
+                ? readEvent({ omit: { draft: false } })
+                : memo(`events:rows:one:${eventId}`, SHARED_MS, readEvent),
             viewerOf(req)
         ])
         // a draft never published doesn't exist for a member
@@ -321,12 +327,13 @@ router.get('/:id', async (req, res) => {
         // Where the person asking stands on it — what /events/view switches
         // on, the same extras a lab's page gets: their status, seats gone,
         // whether they've been asked to confirm, and their place in the queue.
-        const [link, taken, waitlistCount, owe] = await Promise.all([
+        const [link, seats, owe] = await Promise.all([
             prisma.memberEvent.findUnique({ where: { memberId_eventId: { memberId: req.userId, eventId } } }),
-            prisma.memberEvent.count({ where: { eventId, ...TAKEN } }),
-            prisma.memberEvent.count({ where: { eventId, ...WAITING } }),
+            // kept until a sign-up is written (src/seats.js)
+            seatCounts('event'),
             duesLookup(prisma, req.userId)
         ])
+        const { taken, waiting: waitlistCount } = seats(eventId)
         let waitlistPosition = null
         if (link?.attendanceStatus === 'waitlisted') {
             const ahead = await prisma.memberEvent.count({

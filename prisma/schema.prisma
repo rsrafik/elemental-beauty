@@ -891,3 +891,102 @@ model EmailSend {
   @@index([kind, eventId])
   @@map("email_sends")
 }
+
+// ---- the public landing page (/landing) ------------------------------------
+//
+// What the landing page shows in place of its placeholders (frontend/
+// components/landing/content.js), kept on /landing-editor by an admin and read
+// by anyone at GET /api/landing (src/routes/landingRoutes.js). A section with
+// no rows keeps its placeholders.
+
+// "the people", under "who we are": the rail shows `title`; the portrait, the
+// name and the lines open when it's clicked
+model LandingPerson {
+  personId    Int      @id @default(autoincrement()) @map("person_id")
+  title       String
+  name        String?
+  description String?
+  image       String?
+  // fingerprint of image — served at /api/img/person/:id/:key, to anyone
+  imageKey    String?  @map("image_key")
+  // the order on the rail, 0 first
+  position    Int      @default(0)
+  createdAt   DateTime @default(now()) @map("created_at") @db.Timestamptz()
+
+  @@map("landing_people")
+}
+
+// the album's deck: one card each, a photograph and its title required
+model AlbumCard {
+  cardId      Int       @id @default(autoincrement()) @map("card_id")
+  title       String
+  date        DateTime? @db.Date
+  description String?
+  image       String
+  // fingerprint of image — served at /api/img/album/:id/:key, to anyone
+  imageKey    String?   @map("image_key")
+  // the order in the deck, as dragged on /landing-editor; lowest first (a new
+  // card goes in front)
+  position    Int       @default(0)
+  createdAt   DateTime  @default(now()) @map("created_at") @db.Timestamptz()
+
+  @@map("album_cards")
+}
+
+// Where a sponsor is in talks with the club — the sections of the admin
+// sponsors page.
+enum SponsorStatus {
+  pending
+  contacting
+  active
+  archive
+}
+
+// how the club heard from them: the public "sponsor a batch" form, or an
+// admin adding them by hand (the landing editor's pills are this)
+enum SponsorSource {
+  form
+  manual
+}
+
+// what they're offering; `other` comes with offerOther saying what
+enum SponsorOffer {
+  products
+  money
+  other
+}
+
+// One sponsor, from first contact to the pill on the landing page. The
+// request half (company .. details) is what the public form asks; the pill
+// half (landingTitle, website, image, onLanding) is what the landing page
+// shows. A pill is on the page while onLanding is set and the status is
+// active (src/sponsors.js).
+model Sponsor {
+  sponsorId    Int            @id @default(autoincrement()) @map("sponsor_id")
+  companyName  String?        @map("company_name")
+  contactName  String?        @map("contact_name")
+  // an email address or a phone number, as they gave it
+  contactInfo  String?        @map("contact_info")
+  offers       SponsorOffer[] @default([])
+  offerOther   String?        @map("offer_other")
+  details      String?
+  status       SponsorStatus  @default(pending)
+  source       SponsorSource  @default(manual)
+
+  // the pill
+  landingTitle String?        @map("landing_title")
+  website      String?
+  image        String?
+  // fingerprint of image — served at /api/img/sponsor/:id/:key, to anyone
+  // while the pill is on the page, otherwise to staff
+  imageKey     String?        @map("image_key")
+  onLanding    Boolean        @default(false) @map("on_landing")
+  // the order among the pills, 0 first
+  landingOrder Int            @default(0) @map("landing_order")
+
+  createdAt    DateTime       @default(now()) @map("created_at") @db.Timestamptz()
+  updatedAt    DateTime       @updatedAt @map("updated_at") @db.Timestamptz()
+
+  @@index([status])
+  @@map("sponsors")
+}
