@@ -10,7 +10,8 @@ import HideFromEventsToggle from '@/components/events/HideFromEventsToggle'
 import { LinksField, cleanLinks } from '@/components/events/EventLinks'
 import TeamField from '@/components/events/TeamField'
 import { JoinMeetingButton, MeetingLinkField } from '@/components/events/MeetingLink'
-import { COVER_MAX, shrinkImage } from '@/lib/images'
+import { useImageCrop } from '@/components/ImageCropper'
+import { FRAMES } from '@/lib/images'
 import { priceBody, priceOk } from '@/lib/finances'
 import { prettyTimeRange, thisMonth } from '@/lib/dates'
 import { canAddEvents, canChange, canEditLab, defaultOffTracks, hiddenTracks, tracksChangedFrom } from '@/lib/roles'
@@ -901,11 +902,12 @@ function EventDialog({ categories, date = '', onClose, onSave }) {
 		return () => window.removeEventListener('keydown', onKey)
 	})
 
+	const [cropImage, cropper] = useImageCrop()
 	const pickImage = (event) => {
 		const file = event.target.files?.[0]
 		if (!file) return
-		// shrunk first — a phone photo is megabytes (see lib/images.js)
-		shrinkImage(file, COVER_MAX).then(setImage).catch(() => {})
+		// cropped to the event card's cover, and shrunk (see lib/images.js)
+		cropImage(file, FRAMES.cover).then((url) => url && setImage(url)).catch(() => {})
 		// so picking the same file twice still fires a change
 		event.target.value = ''
 	}
@@ -1275,6 +1277,7 @@ function EventDialog({ categories, date = '', onClose, onSave }) {
 									className="hidden"
 								/>
 							</label>
+							{cropper}
 						</div>
 					</div>
 

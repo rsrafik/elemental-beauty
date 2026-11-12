@@ -67,18 +67,20 @@ const tiltOf = (deck, offset) => offset * (parseFloat(getComputedStyle(deck).get
 // Where a card rests in the fan: its middle, its width and its tilt. Worked
 // out rather than measured, because the card being asked about is out of the
 // fan at the time. Every card has the same box before it is turned, so any
-// card still in the fan stands in for it; the hinge is 250% of the way down
-// that box (app/landing.css), which puts a card's middle two card-heights
-// above it.
+// card still in the fan stands in for it; the hinge is HINGE of the way down
+// that box (app/landing.css's transform-origin), which puts a card's middle
+// HINGE - 0.5 card-heights above it.
+const HINGE = 3.5
 const slotOf = (deck, offset) => {
 	const peer = deck.querySelector('[data-card]:not(.is-open)')
 	const frame = deck.getBoundingClientRect()
 	const tilt = tiltOf(deck, offset)
 	const turn = (tilt * Math.PI) / 180
 	const height = peer.offsetHeight
+	const reach = (HINGE - 0.5) * height
 	return {
-		x: frame.left + peer.offsetLeft + 2 * height * Math.sin(turn),
-		y: frame.top + peer.offsetTop + 2.5 * height - 2 * height * Math.cos(turn),
+		x: frame.left + peer.offsetLeft + reach * Math.sin(turn),
+		y: frame.top + peer.offsetTop + HINGE * height - reach * Math.cos(turn),
 		width: peer.offsetWidth,
 		tilt,
 	}
@@ -313,14 +315,14 @@ export default function Album() {
 				data-open={out === null ? undefined : ''}
 				onPointerLeave={() => lean(null)}
 				// the leftmost card's place in the line: the deck arrives stacked
-				// on it (app/landing.css)
-				style={{ '--first': -middle }}
+				// on it, and how many gaps the fan has to share its width between
+				// on wide windows (app/landing.css)
+				style={{ '--first': -middle, '--gaps': photos.length - 1 }}
 				className="
 					lp-deck
 					relative
 					mx-auto
 					mt-sec-s
-					h-[clamp(19rem,37vw,31rem)]
 				"
 			>
 				{/* While a card is out, a click anywhere that is not the card
@@ -350,10 +352,8 @@ export default function Album() {
 							lp-card
 							@container
 							absolute
-							bottom-[17%]
 							left-1/2
 							aspect-[5/7]
-							w-[clamp(8.5rem,17vw,14.5rem)]
 							overflow-hidden
 							bg-cream
 							shadow-float

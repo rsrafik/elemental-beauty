@@ -118,6 +118,7 @@ export function Sponsors() {
 											hover:scale-104
 											hover:bg-yellow
 											${(index + at) % 3 === 0 ? 'bg-salmon-lightest' : 'bg-white/60'}
+											${sponsor.image ? PICTURE_PILL : ''}
 										`}
 									>
 										<Pill sponsor={sponsor} hidden={copy === 1 || sponsor.repeat} />
@@ -207,6 +208,13 @@ function darkBehindTitle(img) {
 	}
 }
 
+// A pill with a picture behind it is always this shape, the shape the picture
+// is cropped to when it's picked (lib/images.js FRAMES.sponsor), so it shows
+// as it was cropped: 22:9, which is 9vw tall by 14vw inside 4vw of padding on
+// each side. A title too long for that widens the pill (min-w-max) rather
+// than being cut off; the picture is then trimmed top and bottom to fit.
+const PICTURE_PILL = 'aspect-[22/9] min-w-max'
+
 // What's inside one pill. A placeholder is a name or a logo, as before; a
 // real one (live.js) is a picture behind the pill and a title over it, and
 // with a website the whole pill is the link. `hidden` is a repeat in the band,
@@ -271,12 +279,11 @@ function Pill({ sponsor, hidden }) {
 		</>
 	)
 
-	// a picture alone still needs the pill's width
+	// a pill with a picture takes its width from its shape (PICTURE_PILL)
 	const size = `
 		flex
 		h-full
 		items-center
-		${sponsor.name ? '' : 'w-[clamp(7rem,14vw,12rem)]'}
 	`
 
 	if (!sponsor.href) return <span className={size}>{inside}</span>

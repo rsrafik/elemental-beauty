@@ -26,7 +26,8 @@ import { priceBody, priceInput, priceOk } from '@/lib/finances'
 import { parseInstructions } from '@/lib/labContent'
 import { pastedSteps } from '@/lib/pasteSteps'
 // cover photos are shrunk before they're sent — see lib/images.js
-import { shrinkImage } from '@/lib/images'
+import { useImageCrop } from '@/components/ImageCropper'
+import { FRAMES } from '@/lib/images'
 import StoredImage from '@/components/StoredImage'
 
 // /labs/edit (a new lab) and /labs/edit?id=N — the officer's lab editor.
@@ -616,12 +617,15 @@ export default function LabEditor({ id }) {
 		? changesFrom(toForm({ ...lab, draft: null }), toForm(lab))
 		: () => false
 
+	const [cropCover, coverCropper] = useImageCrop()
 	const pickCover = async (event) => {
 		const file = event.target.files?.[0]
 		event.target.value = ''
 		if (!file) return
 		try {
-			update({ image: await shrinkImage(file) })
+			// cropped to the lab card's cover (lib/images.js FRAMES)
+			const image = await cropCover(file, FRAMES.cover)
+			if (image) update({ image })
 		} catch (err) {
 			setStatus({ error: true, text: err.message })
 		}
@@ -820,6 +824,7 @@ export default function LabEditor({ id }) {
 								onChange={pickCover}
 								className="hidden"
 							/>
+							{coverCropper}
 						</div>
 
 						<InlineField id="lab-when" label="date" required className="mt-[17.6px]">

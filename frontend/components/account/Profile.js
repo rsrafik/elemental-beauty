@@ -10,7 +10,8 @@ import { useRole, useSession, useSignOut } from '@/lib/session'
 import { members as membersApi, auth, payments as paymentsApi } from '@/lib/api'
 import { longDate, prettyTimeRange } from '@/lib/dates'
 import { useDismiss } from '@/lib/dismiss'
-import { AVATAR_MAX, shrinkImage } from '@/lib/images'
+import { useImageCrop } from '@/components/ImageCropper'
+import { FRAMES } from '@/lib/images'
 import StoredImage from '@/components/StoredImage'
 import ScrollHint from '@/components/ScrollHint'
 
@@ -283,13 +284,15 @@ function MailIcon({ className = '' }) {
 // page, so the circle punches a hole in the salmon rather than sitting on it.
 function PhotoPicker({ photo, name, onPick, onClear, className = '' }) {
 	const input = useRef(null)
+	const [crop, cropper] = useImageCrop()
 
 	const pick = (event) => {
 		const file = event.target.files?.[0]
 		if (!file) return
-		// shrunk to a small square-ish JPEG first: the photo is sent back with
-		// every roster and leaderboard read, so it has to stay tiny (lib/images.js)
-		shrinkImage(file, AVATAR_MAX, { keepUnder: 60_000 }).then(onPick).catch(() => {})
+		// cropped to the circle, as a small square JPEG: the photo is sent back
+		// with every roster and leaderboard read, so it has to stay tiny
+		// (lib/images.js)
+		crop(file, FRAMES.avatar).then((url) => url && onPick(url)).catch(() => {})
 		// so picking the same file twice still fires a change
 		event.target.value = ''
 	}
@@ -415,6 +418,7 @@ function PhotoPicker({ photo, name, onPick, onClear, className = '' }) {
 				onChange={pick}
 				className="hidden"
 			/>
+			{cropper}
 		</div>
 	)
 }
