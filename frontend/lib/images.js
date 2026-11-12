@@ -8,6 +8,61 @@
 export const COVER_MAX = 1000     // lab and event cover photos — a card or a page header
 export const RECEIPT_MAX = 1400   // receipt photos — the numbers have to stay legible
 export const AVATAR_MAX = 256     // profile photos, only ever drawn small
+export const QR_MAX = 800         // payment QR codes — big enough to scan off a phone
+
+// ---- the frames pictures are shown in --------------------------------------
+//
+// Every picker opens the cropper (components/ImageCropper.js) on the shape of
+// the frame its picture is shown in, so what's picked is exactly what shows:
+// the box keeps this width / height however its corners are dragged. Each
+// number is read off the markup that draws the frame; when that changes, this
+// changes.
+//
+//   aspect   width / height of the frame
+//   max      the saved picture's longer side, in pixels (see above)
+//   shape    how the preview beside the cropper is rounded: 'rect', 'circle'
+//            or 'pill'
+export const FRAMES = {
+	// lab and event cards: aspect-[4/3] (MemberLabs, OfficerLabs, MemberEvents,
+	// OfficerEvents). The lab page header and the editor draw the same cover a
+	// little wider or narrower, with object-cover trimming the difference.
+	cover: { aspect: 4 / 3, max: COVER_MAX, shape: 'rect', label: 'the cover on its card' },
+	// the profile circle and the square on the pass
+	avatar: { aspect: 1, max: AVATAR_MAX, shape: 'circle', label: 'the profile picture' },
+	// the square tiles QR codes sit in (AcceptedPaymentsCard, PaySection)
+	qr: { aspect: 1, max: QR_MAX, quality: 0.92, shape: 'rect', label: 'the QR code tile' },
+	// the landing page (components/landing/):
+	// Team.js — the portraits are aspect-[3/4]
+	person: { aspect: 3 / 4, max: COVER_MAX, shape: 'rect', label: 'the portrait on the landing page' },
+	// Album.js — a 5:7 card whose photo is its top 88% (h-[88%]), above the
+	// strip with the title: 5 wide by 7 × 0.88 tall
+	album: { aspect: 5 / (7 * 0.88), max: COVER_MAX, shape: 'rect', label: 'the photo on its card' },
+	// Closing.js — a pill with a picture is 22:9 (its aspect-[22/9]): 9vw tall,
+	// 14vw wide inside 4vw of padding each side, as the sponsor band was drawn
+	sponsor: { aspect: 22 / 9, max: COVER_MAX, shape: 'pill', label: 'the sponsor pill' },
+}
+
+// The part of a loaded <img> inside `area` (in the picture's own pixels) → a
+// JPEG data URL no bigger than frame.max on its longer side, and exactly the
+// frame's shape.
+export function cropToDataUrl(img, area, { aspect, max = COVER_MAX, quality = 0.78 }) {
+	const scale = Math.min(1, max / Math.max(area.width, area.height))
+	const canvas = document.createElement('canvas')
+	if (aspect >= 1) {
+		canvas.width = Math.max(1, Math.round(area.width * scale))
+		canvas.height = Math.max(1, Math.round(canvas.width / aspect))
+	} else {
+		canvas.height = Math.max(1, Math.round(area.height * scale))
+		canvas.width = Math.max(1, Math.round(canvas.height * aspect))
+	}
+	const context = canvas.getContext('2d')
+	// JPEG has no transparency — a PNG's clear bits would turn black
+	context.fillStyle = '#fff'
+	context.fillRect(0, 0, canvas.width, canvas.height)
+	context.imageSmoothingQuality = 'high'
+	context.drawImage(img, area.x, area.y, area.width, area.height, 0, 0, canvas.width, canvas.height)
+	return canvas.toDataURL('image/jpeg', quality)
+}
 
 // File -> a data URL (a string the API can store). A file that's already small
 // enough, and under `keepUnder` bytes, is kept as it is — no point re-encoding
