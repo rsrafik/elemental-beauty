@@ -45,6 +45,10 @@ const PURPOSE = 'calendar'
 // What goes in front of each title: where the person whose feed it is stands
 // on it. An offered spot isn't theirs until they accept it, so it still reads
 // as waitlisted; absent (signed up, didn't come) was on the list all the same.
+// Staff run the sign-ups rather than join them, so their feeds carry the plain
+// title — no tag at all.
+const NO_STANDING_ROLES = ['officer', 'treasurer', 'admin']
+
 function standingTag(status) {
     if (status == null) { return '[NOT RSVP’D]' }
     if (status === 'waitlisted' || status === 'offered') { return '[WAITLISTED]' }
@@ -198,7 +202,7 @@ router.delete('/subscription', async (req, res) => {
 // every Google refresh would otherwise pull it.
 //
 // Each title carries where they stand on it ([RSVP’D], [WAITLISTED],
-// [NOT RSVP’D]) and each description the sign-up count, as of the fetch —
+// [NOT RSVP’D]) — except on an e-board, treasurer or admin feed — and each description the sign-up count, as of the fetch —
 // so it's only as fresh as the calendar app's last refresh.
 async function entriesFor(userId, member, site) {
     if (!member?.calendarSubscribed) { return [] }
@@ -247,7 +251,9 @@ async function entriesFor(userId, member, site) {
     const eventWaiting = new Map(eventQueues.map((queue) => [queue.eventId, queue._count]))
 
     const day = (date) => date.toISOString().slice(0, 10)
-    const titled = (row) => `${standingTag(row.members[0]?.attendanceStatus)} ${row.title}`
+    const titled = (row) => NO_STANDING_ROLES.includes(member.role)
+        ? row.title
+        : `${standingTag(row.members[0]?.attendanceStatus)} ${row.title}`
     const described = (row, waiting, ...rest) =>
         [signedUpLine(row._count.members, waiting, row.capacity), ...rest].filter(Boolean).join('\n\n')
     return [
