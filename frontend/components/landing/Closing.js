@@ -79,7 +79,7 @@ export function Sponsors() {
 						className="
 							lp-band
 							flex
-							overflow-hidden
+							overflow-x-clip
 						"
 					>
 						{[0, 1].map((copy) => (
