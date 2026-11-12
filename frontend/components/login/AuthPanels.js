@@ -159,6 +159,11 @@ export default function AuthPanels() {
 	// straight to the dashboard. This is the only thing the dialog is still for.
 	const [forgot, setForgot] = useState(false)
 
+	// The sign-up card's "why we recommend inputting it" popup. Held here with
+	// the other dialog, outside the cards, because they are transformed and a
+	// fixed overlay inside one would be sized to the card, not the screen.
+	const [socialHelp, setSocialHelp] = useState(false)
+
 	const { login, register, user, loading } = useSession()
 	const router = useRouter()
 
@@ -327,6 +332,7 @@ export default function AuthPanels() {
 								front={front === 'signup'}
 								onCome={() => setFront('signup')}
 								onSubmit={register}
+								onHelp={() => setSocialHelp(true)}
 								onDone={() => router.replace('/dashboard')}
 							/>
 						</section>
@@ -337,6 +343,7 @@ export default function AuthPanels() {
 			<BambooBand edge="bottom" />
 
 			{forgot &&<ForgotPasswordDialog onClose={() => setForgot(false)} />}
+			{socialHelp && <SocialHelpDialog onClose={() => setSocialHelp(false)} />}
 		</main>
 	)
 }
@@ -596,7 +603,7 @@ function LogIn({ front, onCome, onForgot, onSubmit, onDone }) {
 // between them is that card's shadow, not background. Stacked, it's pulled up
 // under the log-in card's bottom edge instead, and the extra padding on top is
 // what that overlap covers.
-function SignUp({ front, onCome, onSubmit, onDone }) {
+function SignUp({ front, onCome, onSubmit, onHelp, onDone }) {
 	const [form, setForm] = useState({
 		first: '',
 		last: '',
@@ -797,8 +804,45 @@ function SignUp({ front, onCome, onSubmit, onDone }) {
 				</div>
 			</div>
 
+			{/* what the two optional handles are for — the circle is the same
+			    shape as the dialog's close button, filled in the field colour */}
 			<div className="
-				mt-[24px]
+				mt-[10px]
+				flex
+				items-center
+				gap-[7px]
+			">
+				<button
+					type="button"
+					onClick={onHelp}
+					aria-label="Why we recommend inputting your Instagram and Discord"
+					className="
+						font-beachday
+						flex
+						h-[20px]
+						w-[20px]
+						shrink-0
+						cursor-pointer
+						items-center
+						justify-center
+						rounded-full
+						bg-[#FFCC6E]
+						text-[14px]
+						leading-none
+						text-[#137A1B]
+						transition-colors
+						duration-150
+						hover:bg-[#137A1B]
+						hover:text-[#FFE9BF]
+					"
+				>
+					?
+				</button>
+				<span className={HINT}>Why we recommend inputting it</span>
+			</div>
+
+			<div className="
+				mt-[16px]
 				flex
 				justify-center
 			">
@@ -811,6 +855,119 @@ function SignUp({ front, onCome, onSubmit, onDone }) {
 		</form>
 	)
 }
+// ---- why the handles ---------------------------------------------------------
+//
+// Opened from the question mark under the Instagram and Discord fields. It says
+// what the handles are used for and where they can be added later. Built like
+// the forgot-password dialog above: same overlay, same exit through useDismiss.
+// The sidebar's Join our Discord and Follow us on Instagram banners
+// (dashboards/Sidebar.js) and /account's optional handle lines
+// (account/Profile.js) are what the last two paragraphs point at.
+
+function SocialHelpDialog({ onClose }) {
+	const { closing, dismiss } = useDismiss()
+	const close = () => dismiss(onClose)
+
+	useEffect(() => {
+		const onKey = event => {
+			if (event.key === 'Escape') close()
+		}
+		window.addEventListener('keydown', onKey)
+		return () => window.removeEventListener('keydown', onKey)
+	})
+
+	const TEXT = 'font-vietnam text-[13px] leading-relaxed text-black/70'
+
+	return (
+		<div
+			onClick={close}
+			className={`
+				fixed
+				inset-0
+				z-[60]
+				flex
+				items-center
+				justify-center
+				bg-black/20
+				p-4
+				${closing ? 'dialog-leaving' : 'dialog-open'}
+			`}
+		>
+			<div
+				onClick={event => event.stopPropagation()}
+				role="dialog"
+				aria-modal="true"
+				aria-label="Why we recommend adding your Instagram and Discord"
+				className="
+					relative
+					max-h-full
+					w-[431px]
+					max-w-full
+					overflow-y-auto
+					rounded-[26px]
+					bg-[#FFF6E3]
+					px-[40px]
+					py-[34px]
+					shadow-[0_10px_40px_rgba(0,0,0,0.35)]
+				"
+			>
+				<button
+					type="button"
+					onClick={close}
+					aria-label="Close"
+					className="
+						absolute
+						top-[14px]
+						right-[16px]
+						flex
+						h-[26px]
+						w-[26px]
+						cursor-pointer
+						items-center
+						justify-center
+						rounded-full
+						text-black/45
+						transition-colors
+						duration-150
+						hover:text-black
+					"
+				>
+					<svg
+						viewBox="0 0 24 24"
+						fill="none"
+						stroke="currentColor"
+						strokeWidth="3"
+						strokeLinecap="round"
+						aria-hidden="true"
+						className="h-[13px] w-[13px]"
+					>
+						<line x1="4" y1="4" x2="20" y2="20" />
+						<line x1="20" y1="4" x2="4" y2="20" />
+					</svg>
+				</button>
+
+				<p className={RESET_LABEL}>WHY WE RECOMMEND IT</p>
+				<p className={`${TEXT} mt-[12px]`}>
+					We use these handles to give members extra points for the
+					semester. An officer checks that you follow the club's
+					Instagram or have joined its Discord, and then adds the points.
+				</p>
+				<p className={`${TEXT} mt-[10px]`}>
+					Both are optional. If you skip them now, you can add them any
+					time in settings, on your account page.
+				</p>
+				<p className={`${TEXT} mt-[10px]`}>
+					Haven't joined yet? The links to our Instagram and Discord are
+					in the sidebar of the website once you're signed in.
+				</p>
+				<div className="mt-[22px] flex justify-center">
+					<Button type="button" onClick={close} className="w-[146px]">GOT IT</Button>
+				</div>
+			</div>
+		</div>
+	)
+}
+
 // ---- forgot password --------------------------------------------------------
 //
 // The button on the log-in card doesn't set a password, it asks for the link

@@ -21,6 +21,7 @@ const AWARD = {
 	instagram_repost: 'an instagram repost',
 	instagram_follow: 'following on instagram',
 	discord_join: 'joining the discord',
+	vip_dues: 'becoming VIP',
 }
 
 const money = (amount) => Number(amount).toLocaleString('en-US', { style: 'currency', currency: 'USD' })

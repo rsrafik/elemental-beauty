@@ -420,6 +420,90 @@ test('paying this year makes a member VIP, and taking it back makes them a membe
     }
 })
 
+const pointsOf = async (userId) => (await prisma.member.findUnique({ where: { userId }, select: { points: true } })).points
+const vipLines = (userId) => prisma.activityLog.findMany({
+    where: { targetId: userId, action: 'points_awarded', details: { path: ['reason'], equals: 'vip_dues' } },
+    orderBy: { activityId: 'asc' }
+})
+
+test('becoming VIP by paying dues gives 4 points once, and the payment being taken back takes them back', { skip }, async () => {
+    const { POINTS } = await import('../src/points.js')
+    const { syncVipRoles } = await import('../src/dues.js')
+    const { schoolYear, restore } = await thisYear(20)
+    try {
+        assert.equal(POINTS.vip_dues, 4)
+        const treasurer = await person('treasurer')
+        const member = await person('member')
+        const jboard = await person('jboard')
+        await as(treasurer, 'treasurer', 'dues', async (base) => {
+            const paid = await (await send(base, 'POST', { memberId: member, schoolYear, amount: 20 })).json()
+            assert.equal(await roleOf(member), 'vip')
+            assert.equal(await pointsOf(member), 4)
+            const [line, ...rest] = await vipLines(member)
+            assert.equal(rest.length, 0)
+            assert.equal(line.points, 4)
+            assert.deepEqual(line.details, { reason: 'vip_dues', schoolYear })
+
+            // the hourly sync, or any other change, doesn't give them again
+            await syncVipRoles(prisma)
+            await syncVipRoles(prisma)
+            assert.equal(await pointsOf(member), 4)
+            assert.equal((await vipLines(member)).length, 1)
+
+            // j-board who pay stay j-board: no VIP, no points
+            await send(base, 'POST', { memberId: jboard, schoolYear, amount: 20 })
+            assert.equal(await pointsOf(jboard), 0)
+
+            // reversed: VIP goes, and so do the points, as a negative line
+            await send(`${base}/${paid.duesId}`, 'DELETE')
+            assert.equal(await roleOf(member), 'member')
+            assert.equal(await pointsOf(member), 0)
+            const after = await vipLines(member)
+            assert.deepEqual(after.map((row) => row.points), [4, -4])
+            assert.equal(after[1].details.undone, true)
+
+            // nothing more to take back the next time
+            await syncVipRoles(prisma)
+            assert.equal(await pointsOf(member), 0)
+            assert.equal((await vipLines(member)).length, 2)
+
+            // paid again: held once more, not twice
+            await send(base, 'POST', { memberId: member, schoolYear, amount: 20 })
+            assert.equal(await pointsOf(member), 4)
+        })
+    } finally {
+        await restore()
+    }
+})
+
+test('VIP points are kept when a new school year lapses VIP, and picking VIP on /students gives them once', { skip }, async () => {
+    const { syncVipRoles } = await import('../src/dues.js')
+    const { schoolYear, restore } = await thisYear(20)
+    try {
+        const admin = await person('admin')
+        const member = await person('member')
+        const picked = await person('member')
+        await prisma.duesPayment.create({ data: { memberId: member, schoolYear, amount: 0 } })
+        await syncVipRoles(prisma)
+        assert.equal(await pointsOf(member), 4)
+        const next = Number(schoolYear.slice(0, 4)) + 1
+        await syncVipRoles(prisma, `${next}-09-01`)
+        assert.equal(await roleOf(member), 'member')
+        // last year's points are theirs, not a reversal
+        assert.equal(await pointsOf(member), 4)
+        assert.equal((await vipLines(member)).length, 1)
+
+        await as(admin, 'admin', 'members', async (base) => {
+            assert.equal((await send(`${base}/${picked}/role`, 'PUT', { role: 'vip' })).status, 200)
+            assert.equal(await pointsOf(picked), 4)
+            await send(`${base}/${picked}/role`, 'PUT', { role: 'vip' })
+            assert.equal(await pointsOf(picked), 4)
+        })
+    } finally {
+        await restore()
+    }
+})
+
 test('picking VIP on /students marks their dues paid; taking VIP back off is refused while they have paid', { skip }, async () => {
     const { schoolYear, restore } = await thisYear(0)
     try {
