@@ -952,7 +952,7 @@ function SocialHelpDialog({ onClose }) {
 				<p className={RESET_LABEL}>WHY WE RECOMMEND IT</p>
 				<p className={`${TEXT} mt-[12px]`}>
 					We use these handles to give members extra points for the
-					semester. An officer checks that you follow the club's
+					semester. An officer checks that you follow the club&apos;s
 					Instagram or have joined its Discord, and then adds the points.
 				</p>
 				<p className={`${TEXT} mt-[10px]`}>
@@ -960,8 +960,8 @@ function SocialHelpDialog({ onClose }) {
 					time in settings, on your account page.
 				</p>
 				<p className={`${TEXT} mt-[10px]`}>
-					Haven't joined yet? The links to our Instagram and Discord are
-					in the sidebar of the website once you're signed in.
+					Haven&apos;t joined yet? The links to our Instagram and Discord are
+					in the sidebar of the website once you&apos;re signed in.
 				</p>
 				<div className="mt-[22px] flex justify-center">
 					<Button type="button" onClick={close} className="w-[146px]">GOT IT</Button>
