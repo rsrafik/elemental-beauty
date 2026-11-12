@@ -841,7 +841,7 @@ function SignUp({ front, onCome, onSubmit, onHelp, onDone }) {
 						<circle cx="12.2" cy="17.4" r="1.3" fill="currentColor" />
 					</svg>
 				</button>
-				<span className={HINT}>Why we recommend inputting it</span>
+				<span className={HINT}>why we recommend inputting it</span>
 			</div>
 
 			<div className="
