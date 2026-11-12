@@ -278,6 +278,7 @@ function SmallButton({ onClick, label, disabled, danger = false, children }) {
 	return (
 		<button
 			type="button"
+			data-no-drag
 			onClick={onClick}
 			disabled={disabled}
 			aria-label={label}
@@ -305,11 +306,13 @@ function SmallButton({ onClick, label, disabled, danger = false, children }) {
 
 // ---- dragging the cards into order -----------------------------------------
 //
-// A card is picked up by its grip (the six dots) and follows the pointer; the
-// others move out of its way as it passes over them, and letting go saves the
-// new order. It's pointer events rather than HTML drag and drop, so a finger
-// on a phone drags the same as a mouse. With the grip focused, the arrow keys
-// move a card one place.
+// A card is picked up anywhere on it and follows the pointer; the others move
+// out of its way as it passes over them, and letting go saves the new order.
+// It only counts as a drag once the pointer has moved a few pixels, so a
+// plain click still opens the card, and the bin never starts one. The six
+// dots in its corner say it can be dragged. On a phone a swipe across a card
+// scrolls the page, so a finger drags by the dots (they don't scroll).
+// With the dots focused, the arrow keys move a card one place.
 //
 // `items` is the section as the API last sent it; `save(ids)` stores an order
 // (and reloads). While a card is being dragged, and until the save has come
@@ -356,17 +359,27 @@ function useReorder(items, idOf, save, onError) {
 		}
 	}
 
-	const grab = (event, id) => {
-		if (event.button !== 0) return
-		event.preventDefault()
-		const card = event.currentTarget.closest('[data-tile-id]')
+	// a pointer pressed on the card: a drag once it has moved this far
+	const SLOP = 5
+
+	const press = (event, id) => {
+		if (event.button !== 0 || event.target.closest('[data-no-drag]')) return
+		// on the dots, nothing else should happen (focus, a touch scroll)
+		if (event.target.closest('[data-grip]')) event.preventDefault()
+		const card = event.currentTarget
 		const box = card.getBoundingClientRect()
-		held.current = { id, grabX: event.clientX - box.left, grabY: event.clientY - box.top, x: event.clientX, y: event.clientY }
+		const start = { x: event.clientX, y: event.clientY }
 		let ids = items.map(idOf)
-		setOrder(ids)
-		setDragging(id)
+		let started = false
 
 		const move = (moved) => {
+			if (!started) {
+				if (Math.hypot(moved.clientX - start.x, moved.clientY - start.y) < SLOP) return
+				started = true
+				held.current = { id, grabX: start.x - box.left, grabY: start.y - box.top, x: moved.clientX, y: moved.clientY }
+				setOrder(ids)
+				setDragging(id)
+			}
 			held.current.x = moved.clientX
 			held.current.y = moved.clientY
 			// the held card lets the pointer through, so this is what's under it
@@ -386,10 +399,15 @@ function useReorder(items, idOf, save, onError) {
 			window.removeEventListener('pointermove', move)
 			window.removeEventListener('pointerup', drop)
 			window.removeEventListener('pointercancel', drop)
-			const card = listRef.current?.querySelector(`[data-tile-id="${id}"]`)
-			if (card) card.style.transform = ''
+			if (!started) return
+			const lifted = listRef.current?.querySelector(`[data-tile-id="${id}"]`)
+			if (lifted) lifted.style.transform = ''
 			held.current = null
 			setDragging(null)
+			// the click that ends a drag isn't one on the card
+			const swallow = (click) => { click.stopPropagation(); click.preventDefault() }
+			window.addEventListener('click', swallow, { capture: true, once: true })
+			setTimeout(() => window.removeEventListener('click', swallow, { capture: true }), 0)
 			commit(ids)
 		}
 		window.addEventListener('pointermove', move)
@@ -409,7 +427,7 @@ function useReorder(items, idOf, save, onError) {
 		commit(ids)
 	}
 
-	return { shown, listRef, dragProps: (id) => ({ id, dragging: dragging === id, onGrab: (event) => grab(event, id), onNudge: (event) => nudge(event, id) }) }
+	return { shown, listRef, dragProps: (id) => ({ id, dragging: dragging === id, onPress: (event) => press(event, id), onNudge: (event) => nudge(event, id) }) }
 }
 
 function GripIcon({ className = '' }) {
@@ -427,11 +445,15 @@ function GripIcon({ className = '' }) {
 
 // One item: its picture, its lines, and the buttons along the foot. The tile
 // itself opens it for editing.
-// `drag` (from useReorder's dragProps) puts the grip in its top right corner.
+// `drag` (from useReorder's dragProps) makes the card draggable, with the
+// dots in its top right corner.
 function Tile({ image, tall = false, lines, badge, onEdit, onRemove, editable, label, drag, children }) {
 	return (
 		<li
 			data-tile-id={drag?.id}
+			onPointerDown={editable ? drag?.onPress : undefined}
+			// a picture's own browser drag would steal the pointer
+			onDragStart={drag ? (event) => event.preventDefault() : undefined}
 			className={`
 				relative
 				w-[176px]
@@ -439,14 +461,14 @@ function Tile({ image, tall = false, lines, badge, onEdit, onRemove, editable, l
 				bg-cream
 				p-3
 				${drag?.dragging
-					? 'z-20 pointer-events-none shadow-[0_12px_30px_rgba(0,0,0,0.25)] scale-[1.03]'
+					? 'z-20 pointer-events-none shadow-[0_12px_30px_rgba(0,0,0,0.25)] scale-[1.03] cursor-grabbing'
 					: 'transition-shadow duration-200'}
 			`}
 		>
 			{editable && drag && (
 				<button
 					type="button"
-					onPointerDown={drag.onGrab}
+					data-grip
 					onKeyDown={drag.onNudge}
 					aria-label={`Drag ${label} to reorder (or use the arrow keys)`}
 					title="Drag to reorder"
