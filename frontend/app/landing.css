@@ -704,6 +704,50 @@
 	background-size: 100% 1px;
 }
 
+/* ---- the "sponsor a batch" form -------------------------------------------
+   Over the page (components/landing/SponsorForm.js), drawn only while it is
+   up: the backdrop fades in and the panel comes up from under the foot of the
+   screen; closing runs it back (450ms, CLOSE_MS there). */
+.lp-ask[data-state='open'] .lp-ask-backdrop {
+	animation: lp-ask-fade 0.45s var(--ease-expo) both;
+}
+
+.lp-ask[data-state='open'] .lp-ask-panel {
+	animation: lp-ask-rise 0.7s var(--ease-expo) both;
+}
+
+.lp-ask[data-state='closing'] .lp-ask-backdrop {
+	animation: lp-ask-unfade 0.45s var(--ease-mech) both;
+}
+
+.lp-ask[data-state='closing'] .lp-ask-panel {
+	animation: lp-ask-sink 0.45s var(--ease-mech) both;
+}
+
+@keyframes lp-ask-fade {
+	from { opacity: 0; }
+}
+
+@keyframes lp-ask-rise {
+	from { opacity: 0; transform: translateY(12%); }
+}
+
+/* the same two, run back: a name of their own, so the change starts them */
+@keyframes lp-ask-unfade {
+	to { opacity: 0; }
+}
+
+@keyframes lp-ask-sink {
+	to { opacity: 0; transform: translateY(12%); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+	.lp-ask .lp-ask-backdrop,
+	.lp-ask .lp-ask-panel {
+		animation: none;
+	}
+}
+
 /* ---- coming into view -------------------------------------------------------
    Anything marked data-rise comes up into place as it enters the window.
 
