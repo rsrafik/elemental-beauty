@@ -7,7 +7,8 @@ import { Card, CardNote, CardTitle, ConfirmDialog, Dialog, DialogActions, FIELD,
 import { DateField } from '@/components/labs/DateTimeField'
 import { landing as landingApi } from '@/lib/api'
 import { useDismiss } from '@/lib/dismiss'
-import { COVER_MAX, shrinkImage } from '@/lib/images'
+import { useImageCrop } from '@/components/ImageCropper'
+import { FRAMES } from '@/lib/images'
 import { canChange } from '@/lib/roles'
 
 // /landing-editor: what the public landing page (/landing) shows, for an admin
@@ -124,15 +125,20 @@ function Field({ field, value, onChange, onError }) {
 	)
 }
 
+// `field.frame` is the frame (lib/images.js FRAMES) the picture is shown in on
+// the landing page: a picked picture is cropped to its shape first, and the
+// thumbnail here has that shape too.
 function PictureField({ field, value, onChange, onError }) {
 	const picker = useRef(null)
+	const [crop, cropper] = useImageCrop()
 
 	const pick = async (event) => {
 		const file = event.target.files?.[0]
 		event.target.value = ''
 		if (!file) return
 		try {
-			onChange(await shrinkImage(file, COVER_MAX))
+			const url = await crop(file, field.frame)
+			if (url) onChange(url)
 		} catch (err) {
 			onError(err.message)
 		}
@@ -150,9 +156,10 @@ function PictureField({ field, value, onChange, onError }) {
 					type="button"
 					onClick={() => picker.current?.click()}
 					aria-label={value ? 'Change the picture' : 'Add a picture'}
+					style={field.frame.aspect >= 1
+						? { width: '9rem', aspectRatio: field.frame.aspect }
+						: { height: '7rem', aspectRatio: field.frame.aspect }}
 					className="
-						w-28
-						h-28
 						shrink-0
 						flex
 						items-center
@@ -197,6 +204,7 @@ function PictureField({ field, value, onChange, onError }) {
 					)}
 				</div>
 				<input ref={picker} type="file" accept="image/*" onChange={pick} className="hidden" />
+				{cropper}
 			</div>
 		</div>
 	)
@@ -599,7 +607,7 @@ const prettyDate = (ymd) => {
 // ---- the people ------------------------------------------------------------
 
 const PERSON_FIELDS = [
-	{ key: 'image', label: 'portrait (optional)', kind: 'image', hint: 'Taller than wide works best. Without one, the page shows a coloured swatch.' },
+	{ key: 'image', label: 'portrait (optional)', kind: 'image', frame: FRAMES.person, hint: 'Cropped to the portrait’s shape (3 by 4). Without one, the page shows a coloured swatch.' },
 	{ key: 'title', label: 'title', kind: 'text', max: 80, placeholder: 'President' },
 	{ key: 'name', label: 'name (optional)', kind: 'text', max: 80, placeholder: 'Ada Lovelace' },
 	{ key: 'description', label: 'description (optional)', kind: 'textarea', max: 600, placeholder: 'What they study, and the thing they most like to make.' },
@@ -686,7 +694,7 @@ function PeopleCard({ people, editable, onChange, onError }) {
 // ---- the album -------------------------------------------------------------
 
 const CARD_FIELDS = [
-	{ key: 'image', label: 'photo', kind: 'image', required: true, hint: 'A little taller than wide (5 by 7) fills the card.' },
+	{ key: 'image', label: 'photo', kind: 'image', frame: FRAMES.album, required: true, hint: 'Cropped to the photo on the card (the 5 by 7 card, above its title strip).' },
 	{ key: 'title', label: 'title', kind: 'text', max: 80, placeholder: 'Fall callout' },
 	{ key: 'date', label: 'date (optional)', kind: 'date' },
 	{ key: 'description', label: 'description (optional)', kind: 'textarea', max: 400, placeholder: 'What was made, and who came.' },
@@ -776,7 +784,7 @@ function AlbumCardsCard({ album, editable, onChange, onError }) {
 // ---- the sponsors ----------------------------------------------------------
 
 const PILL_FIELDS = [
-	{ key: 'image', label: 'background picture', kind: 'image', hint: 'A logo or a photo, behind the title. Wide works best.' },
+	{ key: 'image', label: 'background picture', kind: 'image', frame: FRAMES.sponsor, hint: 'A logo or a photo, behind the title, cropped to the pill’s shape.' },
 	{ key: 'title', label: 'title', kind: 'text', max: 60, placeholder: 'Acme Labs' },
 	{ key: 'website', label: 'website (optional)', kind: 'text', max: 500, placeholder: 'acme.com' },
 ]
