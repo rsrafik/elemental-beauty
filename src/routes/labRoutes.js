@@ -10,6 +10,8 @@ import { PARENT_SELECT, dueOverrideError, payable, paymentDueAt, readDueOverride
 import { enforcePaymentRules, owingLate } from '../payments.js'
 import { log } from '../activity.js'
 import { readImage } from '../images.js'
+import { memo, SHARED_MS } from '../memo.js'
+import { seatCounts, standings } from '../seats.js'
 import { readEndTime } from '../clubTime.js'
 import { DUES_ANSWERS, duesAnswerProblem, duesLookup, doorOwed, duesUnpaid, readPaidBy, readPrice, settleDues } from '../dues.js'
 
@@ -131,55 +133,49 @@ router.get('/', async (req, res) => {
         if (req.role === 'jboard') { where.OR = [{ published: true }, { jboardCanEdit: true }] }
         else if (!staff) { where.published = true }
         const officer = RANK_OFFICER.includes(req.role)
-        // all at once: none of them waits on another. The waitlist counts
-        // and the drafts are asked of the same labs by the same filter
-        // rather than by the ids the first one finds.
-        const [owe, labs, queues, drafted] = await Promise.all([
+        // The rows are the same for everyone of a kind (staff, j-board,
+        // members), and so are the seat counts — both are kept (src/memo.js,
+        // src/seats.js) until a lab or a sign-up is written, so a page load
+        // reads only this person's own rows. ?when= moves with the clock, so
+        // it's asked fresh.
+        const kind = staff ? 'staff' : req.role === 'jboard' ? 'jboard' : 'member'
+        const keep = (name, read) => when ? read() : memo(`labs:rows:${name}:${kind}:${officer}:${summary}`, SHARED_MS, read)
+        const [owe, labs, seats, mine, drafted] = await Promise.all([
             duesLookup(prisma, req.userId),
-            prisma.lab.findMany({
+            keep('list', () => prisma.lab.findMany({
                 where,
                 select: {
                     ...(summary ? SUMMARY_SELECT : PREVIEW_SELECT),
-                    // at most one row — the pair is the primary key
-                    members: {
-                        where: { memberId: req.userId },
-                        select: { attendanceStatus: true, quizPassed: true }
-                    },
-                    _count: { select: { members: { where: TAKEN } } },
                     ...(officer ? { jboardCanEdit: true } : {})
                 },
                 orderBy: { date: when === 'past' ? 'desc' : 'asc' }
-            }),
-            prisma.memberLab.groupBy({
-                by: ['labId'],
-                where: { ...WAITING, lab: where },
-                _count: true
-            }),
+            })),
+            seatCounts('lab'),
+            standings('lab', req.userId, ['attendanceStatus', 'quizPassed']),
             // which have unpublished edits parked — asked as a filter, so
             // the drafts themselves (a whole lab's text each) stay put. A
             // cleared one is Prisma.DbNull (a plain null stores JSON's null,
             // which still counts); AnyNull also catches ones cleared that way
             // before
             officer
-                ? prisma.lab.findMany({ where: { ...where, NOT: { draft: { equals: Prisma.AnyNull } } }, select: { labId: true } })
+                ? keep('drafted', () => prisma.lab.findMany({ where: { ...where, NOT: { draft: { equals: Prisma.AnyNull } } }, select: { labId: true } }))
                 : []
         ])
-        const waiting = new Map(queues.map((queue) => [queue.labId, queue._count]))
         const parked = new Set(drafted.map((lab) => lab.labId))
 
-        res.json(labs.map(({ members, _count, ...lab }) => ({
+        res.json(labs.map((lab) => ({
             ...lab,
             // officers: whether there are unpublished edits waiting on it
             // (j-board only hears about it on a lab they can edit)
             hasDraft: parked.has(lab.labId) && (staff || lab.jboardCanEdit === true),
             // the true total, this person included — the card doesn't have to
             // add itself back in
-            taken: _count.members,
+            taken: seats(lab.labId).taken,
             // on the waitlist behind those seats
-            waitlistCount: waiting.get(lab.labId) ?? 0,
+            waitlistCount: seats(lab.labId).waiting,
             // null when they have nothing to do with it
-            mine: members[0]?.attendanceStatus ?? null,
-            quizPassed: members[0]?.quizPassed ?? null,
+            mine: mine.get(lab.labId)?.attendanceStatus ?? null,
+            quizPassed: mine.get(lab.labId)?.quizPassed ?? null,
             // unpaid dues: { schoolYear, amount, price } — the card shows the
             // price, the page warns about it (see src/dues.js)
             dues: owe(lab.date?.toISOString().slice(0, 10), lab.nonmemberPrice)
@@ -206,28 +202,38 @@ router.get('/:id', async (req, res) => {
     try {
         const officer = RANK_OFFICER.includes(req.role)
         // everything that doesn't depend on their row, alongside it
-        const [link, taken, waitlistCount, owe] = await Promise.all([
+        const [link, seats, owe] = await Promise.all([
             prisma.memberLab.findUnique({
                 where: { memberId_labId: { memberId: req.userId, labId } }
             }),
-            prisma.memberLab.count({ where: { labId, ...TAKEN } }),
-            prisma.memberLab.count({ where: { labId, ...WAITING } }),
+            seatCounts('lab'),
             duesLookup(prisma, req.userId)
         ])
+        const { taken, waiting: waitlistCount } = seats(labId)
         const unlocked = officer || link?.quizPassed === true
         const quizOpen = !unlocked && link?.attendanceStatus === 'attended'
 
-        const lab = unlocked
+        // The lab itself — its text, lessons and quiz — is the same for every
+        // member who's reached the same point, and this page asks again every
+        // few seconds while check-in is open. So a member's copy is kept
+        // (src/memo.js) until the lab, a lesson or the quiz is written. An
+        // officer's carries the parked edits and is always read fresh.
+        const lab = officer
             ? await prisma.lab.findUnique({
                 where: { labId },
                 include: { lessons: true, quizQuestions: QUIZ_SELECT },
                 // an officer's editor loads the parked edits too
-                ...(officer ? { omit: { draft: false } } : {})
+                omit: { draft: false }
             })
-            : await prisma.lab.findUnique({
-                where: { labId },
-                select: { ...PREVIEW_SELECT, prelabPdfName: true, ...(quizOpen ? { quizQuestions: QUIZ_SELECT } : {}) }
-            })
+            : unlocked
+                ? await memo(`lab:${labId}:full`, SHARED_MS, () => prisma.lab.findUnique({
+                    where: { labId },
+                    include: { lessons: true, quizQuestions: QUIZ_SELECT }
+                }))
+                : await memo(`lab:${labId}:preview:${quizOpen}`, SHARED_MS, () => prisma.lab.findUnique({
+                    where: { labId },
+                    select: { ...PREVIEW_SELECT, prelabPdfName: true, ...(quizOpen ? { quizQuestions: QUIZ_SELECT } : {}) }
+                }))
         if (!lab || (!lab.published && !officer)) { return res.status(404).json({ message: 'Lab not found' }) }
         const prelab = { prelabPdfName: lab.prelabPdfName }
 

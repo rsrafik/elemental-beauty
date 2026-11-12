@@ -1,6 +1,7 @@
 import express from 'express'
 import prisma from '../prismaClient.js'
 import { readImage } from '../images.js'
+import { memo, SHARED_MS } from '../memo.js'
 import { onLandingPage, publicPill, readWebsite, sponsorName } from '../sponsors.js'
 
 // What the public landing page (/landing) shows in place of the placeholders
@@ -85,19 +86,29 @@ function fail(res, err) {
 
 // ---- the public page --------------------------------------------------------
 
+// The home page asks this on every visit, from anyone, and it only changes
+// when an admin saves something on /landing-editor or /sponsors — so the
+// answer is kept (src/memo.js) and a visit costs the database nothing. Any
+// write to the three tables clears it (KEPT in src/prismaClient.js). Only the
+// columns the page shows are read.
+const PILL_SELECT = { sponsorId: true, landingTitle: true, website: true, imageUrl: true, landingOrder: true }
+const readLanding = () => memo('landing', SHARED_MS, async () => {
+    const [people, album, sponsors] = await Promise.all([
+        prisma.landingPerson.findMany({ ...PEOPLE, select: { personId: true, title: true, name: true, description: true, imageUrl: true, position: true } }),
+        prisma.albumCard.findMany({ ...ALBUM, select: { cardId: true, title: true, date: true, description: true, imageUrl: true } }),
+        prisma.sponsor.findMany({ where: { onLanding: true, status: 'active' }, ...PILLS, select: PILL_SELECT })
+    ])
+    return {
+        people: people.map(personOut),
+        album: album.map(cardOut),
+        // a pill with neither a title nor a picture has nothing to show
+        sponsors: sponsors.map(publicPill).filter((pill) => pill.title || pill.imageUrl)
+    }
+})
+
 publicRouter.get('/', async (req, res) => {
     try {
-        const [people, album, sponsors] = await Promise.all([
-            prisma.landingPerson.findMany(PEOPLE),
-            prisma.albumCard.findMany(ALBUM),
-            prisma.sponsor.findMany({ where: { onLanding: true, status: 'active' }, ...PILLS })
-        ])
-        res.json({
-            people: people.map(personOut),
-            album: album.map(cardOut),
-            // a pill with neither a title nor a picture has nothing to show
-            sponsors: sponsors.map(publicPill).filter((pill) => pill.title || pill.imageUrl)
-        })
+        res.json(await readLanding())
     } catch (err) {
         fail(res, err)
     }

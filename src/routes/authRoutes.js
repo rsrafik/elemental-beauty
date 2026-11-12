@@ -1,6 +1,7 @@
 import express from 'express'
 import jwt from 'jsonwebtoken'
 import prisma from '../prismaClient.js'
+import { memo } from '../memo.js'
 import authMiddleware from '../middleware/authMiddleware.js'
 import { sendEmail } from '../email.js'
 import { fromEmail, takenMessage } from '../accountEmail.js'
@@ -105,7 +106,10 @@ router.get('/me', authMiddleware, async (req, res) => {
     try {
         // the account and this year's dues together — every page load asks
         const schoolYear = schoolYearOf(clubToday())
-        const [user, paid] = await Promise.all([prisma.user.findUnique({
+        // — and the onboarding page every few seconds — so the pair is kept
+        // half a minute (src/memo.js), and dropped the moment any account,
+        // membership or dues payment is written (KEPT in src/prismaClient.js)
+        const [user, paid] = await memo(`auth:me:${req.userId}:${schoolYear}`, 30_000, () => Promise.all([prisma.user.findUnique({
             where: { userId: req.userId },
             select: {
                 userId: true,
@@ -129,7 +133,7 @@ router.get('/me', authMiddleware, async (req, res) => {
         prisma.duesPayment.findUnique({
             where: { memberId_schoolYear: { memberId: req.userId, schoolYear } },
             select: { duesId: true }
-        })])
+        })]))
         if (!user) { return res.status(404).json({ message: 'Account not found' }) }
 
         const { member, ...account } = user

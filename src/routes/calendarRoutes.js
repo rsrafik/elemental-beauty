@@ -23,7 +23,9 @@ import prisma from '../prismaClient.js'
 import { APP_URL } from '../verification.js'
 import { clubToday, dateColumn } from '../clubTime.js'
 import { buildCalendar } from '../calendarFeed.js'
-import { EVENT_TRACKS, MEETING_TRACKS, TAKEN, WAITING, hiddenTracks, visibleWhere } from './eventRoutes.js'
+import { EVENT_TRACKS, MEETING_TRACKS, hiddenTracks, visibleWhere } from './eventRoutes.js'
+import { memo, SHARED_MS } from '../memo.js'
+import { seatCounts, standings } from '../seats.js'
 
 const router = express.Router()
 export const feedRouter = express.Router()
@@ -62,13 +64,6 @@ function signedUpLine(taken, waiting, capacity) {
     const count = taken + waiting
     return capacity == null ? `Signed up: ${count}` : `Signed up: ${count}/${capacity}`
 }
-
-// Each row's own status and its counts, for buildCalendar's entries:
-// `members` is the person's row (at most one), `_count.members` the seats.
-const STANDING = (userId) => ({
-    members: { where: { memberId: userId }, select: { attendanceStatus: true } },
-    _count: { select: { members: { where: TAKEN } } },
-})
 
 // The feed token: who it's for and what it's for, and nothing that changes —
 // no timestamp (noTimestamp), no expiry, no tracks — so signing it again gives
@@ -213,58 +208,57 @@ async function entriesFor(userId, member, site) {
     const from = new Date(dateColumn(clubToday()))
     from.setUTCMonth(from.getUTCMonth() - MONTHS_BACK)
 
+    // Every subscriber's calendar app fetches its feed on its own clock, day
+    // and night — and the rows are the same for everyone with the same picks
+    // and role. So they're kept (src/memo.js) until an event or a lab is
+    // written, and so are the seat counts (src/seats.js); a fetch reads only
+    // this person's own sign-up rows. `since` is in the key, so the window
+    // still moves on with the day.
     const viewer = { role: member.role, teams: member.jboardTeams ?? [] }
-    const events = await prisma.event.findMany({
-        // a draft event never goes out either, as a lab's doesn't below
-        where: { published: true, date: { gte: from }, track: { in: tracks }, AND: visibleWhere(viewer) },
-        select: {
-            eventId: true, title: true, date: true, startTime: true, endTime: true,
-            location: true, description: true, track: true, meetingUrl: true, capacity: true,
-            ...STANDING(userId),
-        },
-        orderBy: [{ date: 'asc' }, { startTime: 'asc' }],
-    })
-    // drafts never go out, not even on a staff feed: a lab only exists for
-    // the club once it's published, and publishing needs a date
-    const labs = tracks.includes(LAB_TRACK)
-        ? await prisma.lab.findMany({
-            where: { published: true, date: { gte: from } },
+    const since = from.toISOString().slice(0, 10)
+    const [events, labs, eventSeats, labSeats, eventMine, labMine] = await Promise.all([
+        memo(`feed:events:${since}:${JSON.stringify([tracks, viewer])}`, SHARED_MS, () => prisma.event.findMany({
+            // a draft event never goes out either, as a lab's doesn't below
+            where: { published: true, date: { gte: from }, track: { in: tracks }, AND: visibleWhere(viewer) },
             select: {
-                labId: true, title: true, date: true, startTime: true, endTime: true,
-                location: true, description: true, capacity: true,
-                ...STANDING(userId),
+                eventId: true, title: true, date: true, startTime: true, endTime: true,
+                location: true, description: true, track: true, meetingUrl: true, capacity: true,
             },
-            orderBy: { date: 'asc' },
-        })
-        : []
-
-    // who's waiting on each, asked of the rows just found
-    const [labQueues, eventQueues] = await Promise.all([
-        labs.length
-            ? prisma.memberLab.groupBy({ by: ['labId'], where: { ...WAITING, labId: { in: labs.map((lab) => lab.labId) } }, _count: true })
+            orderBy: [{ date: 'asc' }, { startTime: 'asc' }],
+        })),
+        // drafts never go out, not even on a staff feed: a lab only exists for
+        // the club once it's published, and publishing needs a date
+        tracks.includes(LAB_TRACK)
+            ? memo(`feed:labs:${since}`, SHARED_MS, () => prisma.lab.findMany({
+                where: { published: true, date: { gte: from } },
+                select: {
+                    labId: true, title: true, date: true, startTime: true, endTime: true,
+                    location: true, description: true, capacity: true,
+                },
+                orderBy: { date: 'asc' },
+            }))
             : [],
-        events.length
-            ? prisma.memberEvent.groupBy({ by: ['eventId'], where: { ...WAITING, eventId: { in: events.map((event) => event.eventId) } }, _count: true })
-            : [],
+        seatCounts('event'),
+        seatCounts('lab'),
+        standings('event', userId, ['attendanceStatus']),
+        standings('lab', userId, ['attendanceStatus']),
     ])
-    const labWaiting = new Map(labQueues.map((queue) => [queue.labId, queue._count]))
-    const eventWaiting = new Map(eventQueues.map((queue) => [queue.eventId, queue._count]))
 
     const day = (date) => date.toISOString().slice(0, 10)
-    const titled = (row) => NO_STANDING_ROLES.includes(member.role)
+    const titled = (row, mine) => NO_STANDING_ROLES.includes(member.role)
         ? row.title
-        : `${standingTag(row.members[0]?.attendanceStatus)} ${row.title}`
-    const described = (row, waiting, ...rest) =>
-        [signedUpLine(row._count.members, waiting, row.capacity), ...rest].filter(Boolean).join('\n\n')
+        : `${standingTag(mine?.attendanceStatus)} ${row.title}`
+    const described = (row, seats, ...rest) =>
+        [signedUpLine(seats.taken, seats.waiting, row.capacity), ...rest].filter(Boolean).join('\n\n')
     return [
         ...labs.map((lab) => ({
             uid: `lab-${lab.labId}`,
-            title: titled(lab),
+            title: titled(lab, labMine.get(lab.labId)),
             day: day(lab.date),
             startTime: lab.startTime,
             endTime: lab.endTime,
             location: lab.location,
-            description: described(lab, labWaiting.get(lab.labId) ?? 0, lab.description),
+            description: described(lab, labSeats(lab.labId), lab.description),
             url: `${site}/labs/view?id=${lab.labId}`,
         })),
         ...events.map((event) => {
@@ -272,12 +266,12 @@ async function entriesFor(userId, member, site) {
             const join = MEETING_TRACKS.includes(event.track) && event.meetingUrl ? `Join: ${event.meetingUrl}` : null
             return {
                 uid: `event-${event.eventId}`,
-                title: titled(event),
+                title: titled(event, eventMine.get(event.eventId)),
                 day: day(event.date),
                 startTime: event.startTime,
                 endTime: event.endTime,
                 location: event.location,
-                description: described(event, eventWaiting.get(event.eventId) ?? 0, event.description, join),
+                description: described(event, eventSeats(event.eventId), event.description, join),
                 url: `${site}/events/view?id=${event.eventId}`,
             }
         }),

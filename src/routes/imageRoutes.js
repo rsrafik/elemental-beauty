@@ -5,6 +5,7 @@ import { onTreasuryTeam } from '../middleware/treasury.js'
 import { runsDoor } from '../payments.js'
 import authMiddleware from '../middleware/authMiddleware.js'
 import { onLandingPage } from '../sponsors.js'
+import { memo } from '../memo.js'
 
 // GET /api/img/:kind/:id/:key — one picture, as the picture itself (see
 // src/images.js). Mounted behind imageAuth (below) in server.js: everything
@@ -152,12 +153,17 @@ router.get('/:kind/:id/:key', async (req, res) => {
     try {
         const name = `${req.params.kind}/${id}/${key}`
         const hit = spec.private ? null : recall(name)
-        // the row is read every time, for who may see it — a few bytes; the
-        // picture only when it isn't already in hand
-        const row = await prisma[spec.model].findUnique({
+        // the row is checked every time, for who may see it; the picture is
+        // read only when it isn't already in hand. With the picture in hand
+        // the check is kept a minute too (cleared by any write to the table,
+        // KEPT in src/prismaClient.js) — a page of thirty covers is otherwise
+        // thirty queries on every visit, and the landing page's are asked for
+        // by everyone who opens the site.
+        const check = () => prisma[spec.model].findUnique({
             where: { [spec.id]: id },
             select: { ...access.select, [spec.key]: true, ...(hit ? {} : { [spec.field]: true }) }
         })
+        const row = hit ? await memo(`img:${spec.model}:${id}`, 60_000, check) : await check()
         if (!row || row[spec.key] !== key || !access.allowed(req, row)) { return res.sendStatus(404) }
 
         const picture = hit ?? decodeDataUrl(row[spec.field])
