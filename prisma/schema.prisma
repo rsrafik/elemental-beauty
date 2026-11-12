@@ -925,6 +925,9 @@ model AlbumCard {
   image       String
   // fingerprint of image — served at /api/img/album/:id/:key, to anyone
   imageKey    String?   @map("image_key")
+  // the order in the deck, as dragged on /landing-editor; lowest first (a new
+  // card goes in front)
+  position    Int       @default(0)
   createdAt   DateTime  @default(now()) @map("created_at") @db.Timestamptz()
 
   @@map("album_cards")

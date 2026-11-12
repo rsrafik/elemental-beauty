@@ -182,6 +182,36 @@ test('an album card needs a title and a photo, and its photo can be changed but 
     })
 })
 
+test('a new album card goes on the front of the deck, and the cards and pills keep the order they are dragged into', { skip }, async () => {
+    await admin(async (base) => {
+        const older = await (await send(`${base}/api/landing/album`, 'POST', { title: `${tag} Older`, image: PNG })).json()
+        const newer = await (await send(`${base}/api/landing/album`, 'POST', { title: `${tag} Newer`, image: PNG })).json()
+        let deck = (await publicPage(base)).album.map((row) => row.cardId)
+        assert.ok(deck.indexOf(newer.cardId) < deck.indexOf(older.cardId))
+
+        const everyCard = (await (await fetch(`${base}/api/landing/admin`)).json()).album.map((row) => row.cardId)
+        // an order has to name every card
+        assert.equal((await send(`${base}/api/landing/album/order`, 'PUT', { ids: [newer.cardId] })).status, 400)
+        const moved = [older.cardId, ...everyCard.filter((id) => id !== older.cardId)]
+        const after = await (await send(`${base}/api/landing/album/order`, 'PUT', { ids: moved })).json()
+        assert.deepEqual(after.map((row) => row.cardId), moved)
+        deck = (await publicPage(base)).album.map((row) => row.cardId)
+        assert.ok(deck.indexOf(older.cardId) < deck.indexOf(newer.cardId))
+
+        const a = await (await send(`${base}/api/landing/sponsors`, 'POST', { title: `${tag} First` })).json()
+        const b = await (await send(`${base}/api/landing/sponsors`, 'POST', { title: `${tag} Second` })).json()
+        const everyPill = (await (await fetch(`${base}/api/landing/admin`)).json()).sponsors.map((row) => row.sponsorId)
+        assert.ok(everyPill.indexOf(a.sponsorId) < everyPill.indexOf(b.sponsorId))
+        // a sponsor that isn't on the page isn't part of the order
+        const offPage = await prisma.sponsor.create({ data: { companyName: `${tag} Off page` } })
+        assert.equal((await send(`${base}/api/landing/sponsors/order`, 'PUT', { ids: [...everyPill, offPage.sponsorId] })).status, 400)
+        const pills = await (await send(`${base}/api/landing/sponsors/order`, 'PUT', { ids: [...everyPill].reverse() })).json()
+        assert.deepEqual(pills.map((row) => row.sponsorId), [...everyPill].reverse())
+        const shown = (await publicPage(base)).sponsors.map((row) => row.sponsorId)
+        assert.ok(shown.indexOf(b.sponsorId) < shown.indexOf(a.sponsorId))
+    })
+})
+
 test('a sponsor pill needs a title or a picture; its website is made a link, and nonsense is refused', { skip }, async () => {
     await admin(async (base) => {
         assert.equal((await send(`${base}/api/landing/sponsors`, 'POST', { website: `${tag}.com` })).status, 400)
