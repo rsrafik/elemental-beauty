@@ -633,7 +633,7 @@ function PeopleCard({ people, editable, onChange, onError }) {
 		<Card>
 			<CardHead
 				title="about us · the people"
-				note="The names on the two rails under “who we are”. The rail shows each one’s title; clicking it opens their portrait, name and description. They run in this order: drag a card by its dots to move it."
+				note="The names on the two rails under “who we are”. The rail shows each one’s title; clicking it opens their portrait, name and description. They run in this order: drag a card to move it."
 			>
 				{editable && <AddButton onClick={() => setEditing({ person: null })}>add a person</AddButton>}
 			</CardHead>
@@ -720,7 +720,7 @@ function AlbumCardsCard({ album, editable, onChange, onError }) {
 		<Card>
 			<CardHead
 				title="album"
-				note="The deck of cards: one per card here, left to right in this order (a new one goes first; drag a card by its dots to move it). Each needs a title and a photo."
+				note="The deck of cards: one per card here, left to right in this order (a new one goes first; drag a card to move it). Each needs a title and a photo."
 			>
 				{editable && <AddButton onClick={() => setEditing({ card: null })}>add a card</AddButton>}
 			</CardHead>
@@ -905,7 +905,7 @@ function SponsorsCard({ sponsors, editable, onChange, onError }) {
 		<Card>
 			<CardHead
 				title="sponsors"
-				note="The pills under “kept stable by”: a picture behind a title (one of the two is enough). One with a website opens it in a new tab. They run in this order: drag a card by its dots to move it. Connecting a sponsor from the sponsors page makes it active there."
+				note="The pills under “kept stable by”: a picture behind a title (one of the two is enough). One with a website opens it in a new tab. They run in this order: drag a card to move it. Connecting a sponsor from the sponsors page makes it active there."
 			>
 				{editable && <ConnectSponsor onConnected={onChange} onError={onError} />}
 				{editable && <AddButton onClick={() => setEditing({ pill: null })}>add a pill</AddButton>}
