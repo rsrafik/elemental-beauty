@@ -14,6 +14,7 @@ import EmailAllPopup from '@/components/EmailAllPopup'
 import ConfirmationPopup from '@/components/ConfirmationPopup'
 import LastSent from '@/components/LastSent'
 import DuesPopup from '@/components/checkin/DuesPopup'
+import { FeedbackControls } from '@/components/feedback/Feedback'
 import { PaymentDetails, ReviewButtons, ScreenshotCircle } from '@/components/payments/PaymentReview'
 import { Popup, PopupButton, priceText } from '@/components/labs/LabViewParts'
 import {
@@ -1263,6 +1264,9 @@ export default function CheckInView({ kind, id }) {
 									>
 										{`payments${waitingPayments.length ? ` · ${waitingPayments.length}` : ''}`}
 									</EditorButton>
+									{/* "release feedback form" and the list of what came in
+									    (components/feedback/Feedback.js) */}
+									<FeedbackControls kind={kind} id={id} title={item.title} className={BUTTON} />
 									{early && changes && (
 										<EditorButton
 											className={`

@@ -520,3 +520,21 @@ export const dues = {
 	// money they paid stays in the ledger
 	clear: (schoolYear) => api(`/dues?schoolYear=${encodeURIComponent(schoolYear)}`, { method: 'DELETE' }),
 }
+
+// The feedback form after a lab or event (src/feedback.js). `kind` is 'lab'
+// or 'event'.
+const feedbackBase = (kind, id) => `/${kind === 'lab' ? 'labs' : 'events'}/${id}`
+export const feedback = {
+	// the member's own: { eligible, open, entry: { body, name } | null, points }
+	mine: (kind, id) => api(`${feedbackBase(kind, id)}/feedback/mine`),
+	// sends or edits theirs: { entry, awarded } — awarded is 0 on an edit
+	send: (kind, id, entry) => api(`${feedbackBase(kind, id)}/feedback/mine`, { method: 'PUT', body: entry }),
+	// what the site should ask about when it's opened: [{ kind, id, title, date }]
+	pending: () => api('/feedback/pending'),
+	// the "would you like to give feedback?" popup was shown for this one
+	asked: (kind, id) => api(`${feedbackBase(kind, id)}/feedback/asked`, { method: 'POST' }),
+	// Officers, on the check-in page: { released, open, endsAt, entries: [{ body, name }] }
+	list: (kind, id) => api(`${feedbackBase(kind, id)}/feedback`),
+	// the check-in page's "release feedback form"
+	release: (kind, id, released) => api(`${feedbackBase(kind, id)}/feedback-release`, { method: 'PUT', body: { released } }),
+}

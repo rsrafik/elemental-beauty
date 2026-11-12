@@ -8,6 +8,7 @@ import LabLesson from '@/components/labs/LabLesson'
 import LabInstructions from '@/components/labs/LabInstructions'
 import FitTitle from '@/components/FitTitle'
 import StoredImage from '@/components/StoredImage'
+import { FeedbackButton } from '@/components/feedback/Feedback'
 
 // The full lab, once the member has passed the quiz. Two columns:
 //
@@ -221,6 +222,22 @@ export default function MemberLabContent({ lab }) {
 				lg:pl-[11.5px]
 				lg:pt-[38.2px]
 			">
+				{/* the feedback form, centred over the photo — it draws nothing
+				    until the lab is over (or released) and only for someone who
+				    came. On a wide screen it sits in the gap above the photo
+				    rather than pushing the page down. */}
+				<div className="
+					w-full
+					max-w-[261px]
+					flex
+					justify-center
+					empty:hidden
+					mb-3
+					lg:-mt-[31px]
+					lg:mb-[6px]
+				">
+					<FeedbackButton kind="lab" id={lab.labId} title={lab.title} />
+				</div>
 				<div className="
 					w-full
 					max-w-[261px]

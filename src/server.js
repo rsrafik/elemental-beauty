@@ -26,6 +26,7 @@ import { enforcePaymentRules } from './payments.js'
 import offerRoutes from './routes/offerRoutes.js'
 import duesRoutes from './routes/duesRoutes.js'
 import activityRoutes from './routes/activityRoutes.js'
+import feedbackRoutes from './routes/feedbackRoutes.js'
 import { sendReminders } from './reminders.js'
 import { mailService } from './email.js'
 import prisma from './prismaClient.js'
@@ -165,6 +166,7 @@ app.use('/api/img', authMiddleware, imageRoutes)
 app.use('/api/members', authMiddleware, requireRole('member'), memberRoutes)
 app.use('/api/labs', authMiddleware, requireRole('member'), labRoutes)
 app.use('/api/events', authMiddleware, requireRole('member'), eventRoutes)
+app.use('/api/feedback', authMiddleware, requireRole('member'), feedbackRoutes)
 // "subscribe" on /calendar. The feed is fetched by Google itself, with no
 // login — the signed link is the proof — so it's mounted first and on its own,
 // with a limit loose enough for Google's shared IPs polling it. The popup's

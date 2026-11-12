@@ -7,6 +7,7 @@ import requireRole from '../middleware/requireRole.js'
 import { onTreasuryTeam } from '../middleware/treasury.js'
 import { eventPoints } from '../points.js'
 import { mountRoster, requireNotAttendee } from './roster.js'
+import { mountFeedback } from '../feedback.js'
 import { OFFER_HOURS, acceptOffer, confirmSpot, expireOffers, lockParent, offerNext, startsAt } from '../offers.js'
 import { PARENT_SELECT, dueOverrideError, payable, paymentDueAt, readDueOverride, resweep } from '../payable.js'
 import { enforcePaymentRules, owingLate } from '../payments.js'
@@ -673,6 +674,10 @@ mountRoster(router, {
     points: (event) => eventPoints(event.type),
     label: 'Event'
 })
+
+// The feedback form, and the check-in page's list of what came in (see
+// src/feedback.js).
+mountFeedback(router, 'event')
 
 // ---- member actions ----
 

@@ -229,6 +229,8 @@ model Member {
   reimbursements Reimbursement[]
   dues           DuesPayment[]
   payments       MemberPayment[]
+  labFeedback    LabFeedback[]
+  eventFeedback  EventFeedback[]
 
   @@map("members")
 }
@@ -334,12 +336,17 @@ model Lab {
   // signed up get their QR code on the lab's page before its start time. The
   // door opens on its own at the start time regardless (see roster.js).
   checkinOpen   Boolean @default(false) @map("checkin_open")
+  // The check-in page's "release feedback form": opens the feedback form to
+  // the people who came before it has ended (it opens on its own once it has
+  // — see src/feedback.js).
+  feedbackReleased Boolean @default(false) @map("feedback_released")
 
   lessons       LabLesson[]
   quizQuestions LabQuizQuestion[]
   members       MemberLab[]
   payments      MemberPayment[]
   emailSends    EmailSend[]
+  feedback      LabFeedback[]
 
   @@map("labs")
 }
@@ -443,6 +450,8 @@ model Event {
   meetingUrl     String?  @map("meeting_url")
   // Check-in opened early from the check-in page, as a lab's checkinOpen.
   checkinOpen    Boolean  @default(false) @map("checkin_open")
+  // "release feedback form", as a lab's feedbackReleased
+  feedbackReleased Boolean @default(false) @map("feedback_released")
   // Who added it. Decides one thing: a j-board event added by an officer,
   // treasurer or admin is read-only to j-board (see eventRoutes.js). Null for
   // events from before this was kept, and for a creator since deleted.
@@ -472,6 +481,7 @@ model Event {
   members    MemberEvent[]
   payments   MemberPayment[]
   emailSends EmailSend[]
+  feedback   EventFeedback[]
 
   @@index([date])
   @@index([categoryId])
@@ -508,6 +518,9 @@ model MemberLab {
   // and the income row a paid one wrote — what undoing it takes back out
   doorPayment       DoorPayment?     @map("door_payment")
   doorTransactionId Int?             @unique @map("door_transaction_id")
+  // when the site asked them, once, whether they'd give feedback on it (the
+  // popup on opening the site — src/feedback.js); null = not asked yet
+  feedbackAskedAt   DateTime?        @map("feedback_asked_at") @db.Timestamptz()
 
   member          Member       @relation(fields: [memberId], references: [userId], onDelete: Cascade)
   lab             Lab          @relation(fields: [labId], references: [labId], onDelete: Cascade)
@@ -543,6 +556,9 @@ model MemberEvent {
   // and the income row a paid one wrote — what undoing it takes back out
   doorPayment       DoorPayment?     @map("door_payment")
   doorTransactionId Int?             @unique @map("door_transaction_id")
+  // when the site asked them, once, whether they'd give feedback on it (the
+  // popup on opening the site — src/feedback.js); null = not asked yet
+  feedbackAskedAt   DateTime?        @map("feedback_asked_at") @db.Timestamptz()
 
   member          Member       @relation(fields: [memberId], references: [userId], onDelete: Cascade)
   event           Event        @relation(fields: [eventId], references: [eventId], onDelete: Cascade)
@@ -551,6 +567,46 @@ model MemberEvent {
   @@id([memberId, eventId])
   @@index([eventId])
   @@map("member_event")
+}
+
+// ---------- Feedback ----------
+
+// The feedback form a member fills in after a lab or event they came to (see
+// src/feedback.js). One per member per lab/event: sending it again edits the
+// same row. Who wrote it is kept — that's what makes it one each, earns the
+// point once and fills the form back in — but staff are never told: the
+// check-in page's list only ever carries `name`, which is null unless the
+// member chose to sign it.
+model LabFeedback {
+  memberId  Int      @map("member_id")
+  labId     Int      @map("lab_id")
+  body      String
+  name      String?
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz()
+  updatedAt DateTime @default(now()) @updatedAt @map("updated_at") @db.Timestamptz()
+
+  member Member @relation(fields: [memberId], references: [userId], onDelete: Cascade)
+  lab    Lab    @relation(fields: [labId], references: [labId], onDelete: Cascade)
+
+  @@id([memberId, labId])
+  @@index([labId])
+  @@map("lab_feedback")
+}
+
+model EventFeedback {
+  memberId  Int      @map("member_id")
+  eventId   Int      @map("event_id")
+  body      String
+  name      String?
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz()
+  updatedAt DateTime @default(now()) @updatedAt @map("updated_at") @db.Timestamptz()
+
+  member Member @relation(fields: [memberId], references: [userId], onDelete: Cascade)
+  event  Event  @relation(fields: [eventId], references: [eventId], onDelete: Cascade)
+
+  @@id([memberId, eventId])
+  @@index([eventId])
+  @@map("event_feedback")
 }
 
 // ---------- Finances ----------

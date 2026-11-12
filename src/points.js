@@ -8,7 +8,9 @@ export const POINTS = {
     discord_join: 2,
     social_event: 3,
     official_event: 5,
-    lab: 8
+    lab: 8,
+    // sending the feedback form after a lab or event, once each (src/feedback.js)
+    feedback: 1
 }
 
 // The only actions officers may award by hand — attendance points are

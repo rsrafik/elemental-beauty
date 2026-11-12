@@ -5,6 +5,7 @@ import { Prisma } from '../generated/prisma/client.ts'
 import requireRole from '../middleware/requireRole.js'
 import { POINTS } from '../points.js'
 import { mountRoster, requireNotAttendee } from './roster.js'
+import { mountFeedback } from '../feedback.js'
 import { OFFER_HOURS, acceptOffer, confirmSpot, expireOffers, lockParent, offerNext, startsAt } from '../offers.js'
 import { PARENT_SELECT, dueOverrideError, payable, paymentDueAt, readDueOverride, resweep } from '../payable.js'
 import { enforcePaymentRules, owingLate } from '../payments.js'
@@ -864,6 +865,10 @@ mountRoster(router, {
     points: () => POINTS.lab,
     label: 'Lab'
 })
+
+// The feedback form, and the check-in page's list of what came in (see
+// src/feedback.js).
+mountFeedback(router, 'lab')
 
 // ---- member actions ----
 
