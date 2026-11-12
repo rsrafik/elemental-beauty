@@ -560,7 +560,7 @@
                phone allows, never wider than a comfortable close-up, and
                never so wide that its height would not fit in the window */
 .lp-deck {
-	--spread: 5;
+	--spread: 3.75;
 	--lean: 2;
 	--fan: 1;
 	--drop: 0;
@@ -569,9 +569,63 @@
 
 @media (min-width: 64rem) {
 	.lp-deck {
-		--spread: 7;
+		--spread: 5;
 		--lean: 3;
 	}
+}
+
+/* Wide windows have the room to open the fan further, so more of each card
+   under its neighbour shows: up to --most degrees between neighbours, but
+   never more than --room degrees across the whole fan, so a long deck still
+   fits the window. --gaps is the number of cards less one (set inline).
+   Registered so that its computed value is the plain number Album.js reads. */
+@property --spread {
+	syntax: '<number>';
+	inherits: true;
+	initial-value: 5;
+}
+
+@media (min-width: 80rem) {
+	.lp-deck {
+		--most: 6.5;
+		--room: 42;
+		--spread: min(var(--most), var(--room) / max(var(--gaps, 1), 1));
+	}
+}
+
+@media (min-width: 90rem) {
+	.lp-deck {
+		--room: 48;
+	}
+}
+
+@media (min-width: 100rem) {
+	.lp-deck {
+		--most: 7.5;
+		--room: 54;
+	}
+}
+
+/* The deck's height. The outermost cards turn down and out from the hinge, so
+   their outer foot corners hang below where an upright card's foot would be.
+   --sag is how far: the outermost card's tilt, plus the lean a hovered
+   neighbour gives it, applied to a corner half a card across and 2.5 card
+   heights above the hinge. The cards stand that far up from the deck's foot,
+   plus --foot of clear yellow under the lowest corner, so the space under the
+   fan is the same whatever the number of cards or the angle between them. */
+.lp-deck {
+	--card-w: clamp(10rem, 20vw, 17rem);
+	--card-h: calc(var(--card-w) * 1.4);
+	--tip: calc((var(--gaps, 0) / 2 * var(--spread) + var(--lean)) * 1deg);
+	--sag: calc(var(--card-w) / 2 * sin(var(--tip)) + var(--card-h) * 2.5 * (1 - cos(var(--tip))));
+	--head: calc(var(--card-w) * 0.15);
+	--foot: calc(var(--card-w) * 0.15);
+	height: calc(var(--head) + var(--card-h) + var(--sag) + var(--foot));
+}
+
+.lp-card {
+	width: var(--card-w);
+	bottom: calc(var(--sag) + var(--foot));
 }
 
 .lp-card {
@@ -579,7 +633,9 @@
 	   the small card and on the close-up (the second number is the first one
 	   times 5/7, the card's proportion, which keeps the corner round) */
 	border-radius: 9% / 6.43%;
-	transform-origin: 50% 250%;
+	/* the hinge, three card-heights below the card's middle: far enough down
+	   that the fan opens sideways more than it tilts (Album.js's HINGE) */
+	transform-origin: 50% 350%;
 	/* Read right to left, as the browser applies it: the card rises along its
 	   own length if it is the one being pointed at; it is turned from the
 	   leftmost card's tilt towards its own, by however far the fan is open;
