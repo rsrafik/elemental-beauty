@@ -8,6 +8,13 @@ import { useLandingContent } from './live'
 // The people, under "who we are": two rails of names, each name followed by a
 // small tilted portrait.
 //
+// Each person is shown by their title ("President"). Under the pointer the
+// title fades into their name, in the italic, and their portrait straightens
+// up and grows a little. The name is fitted into the title's own width,
+// smaller and on two lines if it has to be, so the rail never makes room for
+// it (useNameFits). With a website, the name and portrait are a link to it
+// that opens in a new tab.
+//
 // At rest the rails drift, slowly, the top one one way and the bottom one the
 // other. Scrolling the page pushes them: each rail moves as far as the page
 // did, in its own direction, and scrolling back up sends both the other way
@@ -81,8 +88,112 @@ const code = (index) => String(index + 1).padStart(2, '0')
 
 const stillMotion = () => window.matchMedia('(prefers-reduced-motion: reduce)').matches
 
-// what a person is called on the rail: their name once they have one
-const called = (person) => person.name || person.role
+// what a person is called on their page: their name once they have one
+const called = (person) => person.name || person.title
+
+// The rail's names are set at this size; useNameFits measures them at it.
+const RAIL_TYPE = 'type-serif text-[clamp(2.6rem,7vw,6.5rem)]'
+
+// a name on two lines is set this tight, so the pair stays close to the
+// height of the one line of the title
+const TWO_LINE_LEADING = 0.95
+// and the pair may stand no taller than the item does: the line of the
+// title (1.1) and the padding above and below it (0.35 each)
+const TWO_LINE_HEIGHT = 1.8
+
+// how much bigger two lines must make a name before it is broken over two
+const TWO_LINES_WORTH = 1.12
+
+// Where each person's name sits in their title's place: for each person, the
+// lines to break it into and the size to set them at (in ems of the rail's
+// type), or null for no name. Measured once per person, in a hidden copy of
+// the rail's type, rather than in each of the rails' many copies of them;
+// again once the fonts have come, and when the window changes width (the
+// rail's type is sized by it, and the face's optical sizes do not scale
+// evenly).
+function useNameFits(measureRef, people) {
+	const [fits, setFits] = useState([])
+
+	useEffect(() => {
+		const box = measureRef.current
+		if (!box) return
+		const [title, name] = box.children
+		const width = (element) => element.getBoundingClientRect().width
+		const setLines = (lines) => name.replaceChildren(...lines.map((line) => {
+			const span = document.createElement('span')
+			span.className = 'block'
+			span.textContent = line
+			return span
+		}))
+		// the largest size, up to `cap`, at which `lines` fit in `room`
+		const largest = (lines, room, cap) => {
+			setLines(lines)
+			name.style.fontSize = '1em'
+			let size = Math.min(cap, room / width(name))
+			for (let tries = 0; tries < 6; tries++) {
+				name.style.fontSize = `${size}em`
+				const wide = width(name)
+				if (wide <= room) break
+				size *= (room / wide) * 0.995
+			}
+			return size
+		}
+
+		const fit = (person) => {
+			if (!person.name) return null
+			title.textContent = person.title
+			// a hair inside the title, so nothing touches its edges
+			const room = width(title) * 0.98
+			const one = { lines: [person.name], size: largest([person.name], room, 1) }
+
+			const words = person.name.trim().split(/\s+/)
+			if (words.length < 2) return one
+			// the break that leaves the two lines closest to even
+			let best = null
+			for (let at = 1; at < words.length; at++) {
+				const lines = [words.slice(0, at).join(' '), words.slice(at).join(' ')]
+				setLines(lines)
+				name.style.fontSize = '1em'
+				const wide = width(name)
+				if (!best || wide < best.wide) best = { lines, wide }
+			}
+			const size = largest(best.lines, room, Math.min(1, TWO_LINE_HEIGHT / (2 * TWO_LINE_LEADING)))
+			return size > one.size * TWO_LINES_WORTH ? { lines: best.lines, size } : one
+		}
+
+		let frame = 0
+		let measuredAt = -1
+		let live = true
+		const run = () => {
+			cancelAnimationFrame(frame)
+			frame = requestAnimationFrame(() => {
+				if (!live || window.innerWidth === measuredAt) return
+				measuredAt = window.innerWidth
+				setFits(people.map(fit))
+			})
+		}
+		run()
+		document.fonts?.ready.then(() => {
+			measuredAt = -1
+			run()
+		})
+		window.addEventListener('resize', run)
+		return () => {
+			live = false
+			cancelAnimationFrame(frame)
+			window.removeEventListener('resize', run)
+		}
+	}, [measureRef, people])
+
+	return fits
+}
+
+// Until it has been measured, a name is guessed at: shrunk by how much longer
+// it is than the title. It is only seen under the pointer, by when it has been.
+const guess = (person) => ({
+	lines: [person.name],
+	size: Math.min(1, person.title.length / Math.max(1, person.name.length)),
+})
 
 const slides = (overlay, name) => [...(overlay?.querySelectorAll(`[data-${name}]`) || [])]
 
@@ -184,7 +295,7 @@ function Arrow({ back }) {
 // One rail. `way` is 1 or -1: which way it runs. Only the first copy of the
 // list is offered to the keyboard and to screen readers; the rest are the
 // same people again.
-function Rail({ way, order, people, onOpen }) {
+function Rail({ way, order, people, fits, onOpen }) {
 	return (
 		<div
 			data-rail={way}
@@ -206,90 +317,129 @@ function Rail({ way, order, people, onOpen }) {
 						items-center
 					"
 				>
-					{order.map((index) => {
-						const person = people[index]
-						return (
-							<li
-								key={index}
-								className="shrink-0"
-							>
-								<button
-									type="button"
-									data-person={index}
-									disabled={!TAKEOVER}
-									data-cursor={TAKEOVER ? 'meet' : undefined}
-									tabIndex={copy > 0 ? -1 : undefined}
-									aria-haspopup={TAKEOVER ? 'dialog' : undefined}
-									onClick={(event) => onOpen(index, event.currentTarget)}
-									className={`
-										lp-rail-item
-										type-serif
-										mr-[0.7em]
-										flex
-										${TAKEOVER ? 'cursor-pointer' : ''}
-										items-center
-										gap-[0.28em]
-										py-[0.35em]
-										text-[clamp(2.6rem,7vw,6.5rem)]
-										whitespace-nowrap
-									`}
-								>
-									{/* the name twice in one place, upright and in the
-									    italic: the pointer fades one into the other, and
-									    because both are always there the rail never has
-									    to make room */}
-									<span className="
-										lp-rail-name
-										inline-grid
-										justify-items-center
-									">
-										<span className="
-											lp-rail-roman
-											col-start-1
-											row-start-1
-										">
-											{called(person)}
-										</span>
-										<span
-											aria-hidden="true"
-											className="
-												lp-rail-italic
-												col-start-1
-												row-start-1
-												text-salmon-med
-												italic
-											"
-										>
-											{called(person)}
-										</span>
-									</span>
-									{/* the outer span rocks with the scroll, the inner one
-									    keeps the portrait's own tilt */}
-									<span className="
-										lp-rail-sway
-										block
-										w-[1.5em]
-									">
-										<span
-											style={{ rotate: `${person.tilt}deg` }}
-											className="
-												@container
-												block
-												aspect-[3/4]
-												overflow-hidden
-												shadow-soft
-											"
-										>
-											<Portrait person={person} index={index} />
-										</span>
-									</span>
-								</button>
-							</li>
-						)
-					})}
+					{order.map((index) => (
+						<li
+							key={index}
+							className="shrink-0"
+						>
+							<RailItem
+								person={people[index]}
+								index={index}
+								fit={fits[index]}
+								hidden={copy > 0}
+								onOpen={onOpen}
+							/>
+						</li>
+					))}
 				</ul>
 			))}
 		</div>
+	)
+}
+
+// One person on a rail: their title, with their name fitted over it, and
+// their portrait. A link to their website when they have one; otherwise a
+// button that opens the takeover (when it is switched on).
+function RailItem({ person, index, fit, hidden, onOpen }) {
+	const name = person.name ? (fit ?? guess(person)) : null
+	const label = person.name ? `${person.title}: ${person.name}` : undefined
+	const own = person.href
+		? {
+			href: person.href,
+			target: '_blank',
+			rel: 'noopener noreferrer',
+			'data-cursor': 'visit',
+			'aria-label': `${label ?? person.title} (opens in a new tab)`,
+		}
+		: {
+			type: 'button',
+			'data-person': index,
+			disabled: !TAKEOVER,
+			'data-cursor': TAKEOVER ? 'meet' : undefined,
+			'aria-haspopup': TAKEOVER ? 'dialog' : undefined,
+			'aria-label': label,
+			onClick: (event) => onOpen(index, event.currentTarget),
+		}
+	const Item = person.href ? 'a' : 'button'
+
+	return (
+		<Item
+			{...own}
+			tabIndex={hidden ? -1 : undefined}
+			className={`
+				lp-rail-item
+				${RAIL_TYPE}
+				mr-[0.7em]
+				flex
+				${person.href || TAKEOVER ? 'cursor-pointer' : ''}
+				items-center
+				gap-[0.28em]
+				py-[0.35em]
+				whitespace-nowrap
+			`}
+		>
+			{/* The title is what sizes the item; the name lies over it, in
+			    the italic, fitted to the title's width, and the pointer fades
+			    one into the other. Because the name never takes up room of
+			    its own, the rail never has to make any. Without a name it is
+			    the title again, in the italic. */}
+			<span className="
+				lp-rail-name
+				relative
+				inline-block
+			">
+				<span className="
+					lp-rail-roman
+					block
+				">
+					{person.title}
+				</span>
+				<span
+					aria-hidden="true"
+					style={name ? {
+						fontSize: `${name.size}em`,
+						lineHeight: name.lines.length > 1 ? TWO_LINE_LEADING : undefined,
+					} : undefined}
+					className="
+						lp-rail-italic
+						absolute
+						inset-0
+						flex
+						flex-col
+						items-center
+						justify-center
+						text-center
+						text-salmon-med
+						italic
+					"
+				>
+					{name
+						? name.lines.map((line, at) => <span key={at} className="block">{line}</span>)
+						: person.title}
+				</span>
+			</span>
+			{/* the outer span rocks with the scroll; the inner one keeps the
+			    portrait's own tilt, and lets go of it under the pointer */}
+			<span className="
+				lp-rail-sway
+				block
+				w-[1.5em]
+			">
+				<span
+					style={{ '--tilt': `${person.tilt}deg` }}
+					className="
+						lp-rail-portrait
+						@container
+						block
+						aspect-[3/4]
+						overflow-hidden
+						shadow-soft
+					"
+				>
+					<Portrait person={person} index={index} />
+				</span>
+			</span>
+		</Item>
 	)
 }
 
@@ -297,6 +447,7 @@ export default function Team() {
 	const { people } = useLandingContent()
 	const count = people.length
 	const rootRef = useRef(null)
+	const measureRef = useRef(null)
 	const overlayRef = useRef(null)
 	const openerRef = useRef(null)
 	const currentRef = useRef(0)
@@ -304,6 +455,8 @@ export default function Team() {
 	// closed, open, or closing: the stylesheet moves the panels on this
 	const [state, setState] = useState('closed')
 	const [current, setCurrent] = useState(0)
+
+	const fits = useNameFits(measureRef, people)
 
 	const forward = people.map((_, index) => index)
 	const backward = [...forward].reverse()
@@ -449,6 +602,7 @@ export default function Team() {
 			<div
 				ref={rootRef}
 				className="
+					relative
 					mt-[calc(var(--spacing-sec-l)*1.75)]
 					flex
 					flex-col
@@ -457,8 +611,26 @@ export default function Team() {
 				"
 			>
 				<h3 className="sr-only">{TEAM.title}</h3>
-				<Rail way={1} order={forward} people={people} onOpen={open} />
-				<Rail way={-1} order={backward} people={people} onOpen={open} />
+				<Rail way={1} order={forward} people={people} fits={fits} onOpen={open} />
+				<Rail way={-1} order={backward} people={people} fits={fits} onOpen={open} />
+				{/* where useNameFits sets each title and name to measure them */}
+				<div
+					ref={measureRef}
+					aria-hidden="true"
+					className={`
+						${RAIL_TYPE}
+						pointer-events-none
+						invisible
+						absolute
+						top-0
+						left-0
+						w-max
+						whitespace-nowrap
+					`}
+				>
+					<span className="inline-block" />
+					<span className="inline-block italic" />
+				</div>
 			</div>
 
 			{TAKEOVER && <div
@@ -635,14 +807,14 @@ export default function Team() {
 							">
 								{called(person)}
 							</h4>
-							{person.name && person.role && <p className="
+							{person.name && <p className="
 								mt-[0.5em]
 								text-h4
 								leading-[1.1]
 								text-salmon-dark
 								italic
 							">
-								{person.role}
+								{person.title}
 							</p>}
 							{person.text && <p className="
 								mt-[1.6em]

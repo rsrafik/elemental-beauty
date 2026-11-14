@@ -28,13 +28,14 @@ const prettyDate = (ymd) => {
 	return new Date(year, month - 1, day).toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' })
 }
 
-// The rail shows `name || role`, and the portrait's label is `role`: so the
-// title (what the rail shows) goes in `name`, and their name in `role`.
+// The rail shows `title`, and `name` in its place under the pointer; `href`
+// is where clicking them goes.
 const toPerson = (row, index) => ({
-	name: row.title,
-	role: or(row.name),
+	title: row.title,
+	name: or(row.name),
 	text: or(row.description),
 	src: or(row.imageUrl),
+	href: or(row.website),
 	shade: SHADES[index % SHADES.length],
 	tilt: TILTS[index % TILTS.length],
 })

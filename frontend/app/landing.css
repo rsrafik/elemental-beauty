@@ -339,15 +339,17 @@
 /* ---- who: the people ---------------------------------------------------------
    The rails (components/landing/Team.js). The script slides each rail and
    writes --sway, the degrees every portrait on it is rocked by; here is only
-   what a name does under the pointer. */
+   what a person does under the pointer: the title fades into their name, and
+   the portrait lets go of its tilt and comes forward a little. */
 .lp-rail-sway {
 	rotate: calc(var(--sway, 0) * 1deg);
 }
 
-/* A typeface cannot be eased from upright to italic, and the italic is a
-   different width, so the name is set twice on the same spot and the two are
-   faded across each other: nothing is re-set and nothing moves. `glide` both
-   ways, so it fades out as gently as it fades in. */
+/* A typeface cannot be eased from upright to italic, and the name is not the
+   title, so the two are set on the same spot and faded across each other:
+   the title sizes the item and the name is fitted inside it (Team.js), so
+   nothing is re-set and nothing moves. `glide` both ways, so it fades out as
+   gently as it fades in. */
 .lp-rail-roman,
 .lp-rail-italic {
 	transition: opacity 0.55s var(--ease-glide);
@@ -363,6 +365,18 @@
 
 .lp-rail-item:is(:hover, :focus-visible) .lp-rail-italic {
 	opacity: 1;
+}
+
+.lp-rail-portrait {
+	rotate: var(--tilt, 0deg);
+	transition:
+		rotate 0.8s var(--ease-glide),
+		scale 0.8s var(--ease-glide);
+}
+
+.lp-rail-item:is(:hover, :focus-visible) .lp-rail-portrait {
+	rotate: 0deg;
+	scale: 1.12;
 }
 
 /* The takeover. One attribute on it, data-state, moves everything:
@@ -660,10 +674,30 @@
 /* While the scroll is still bringing the deck in, the scroll is the only thing
    moving the cards: a transition on top of it would chase a target that
    changes every frame, and a card half-way to its place is not yet one to
-   pull. */
+   pull. The cards still answer the pointer meanwhile, so a card can be
+   hovered or opened as soon as it is on screen, wherever the scroll is: the
+   hover's own two numbers, --lift and --push, are eased instead of the whole
+   transform, so the card under the pointer rises as smoothly as it does once
+   the fan is open while the scroll keeps hold of everything else. They are
+   registered so that the browser can ease them. */
+@property --lift {
+	syntax: '<percentage>';
+	inherits: false;
+	initial-value: 0%;
+}
+
+@property --push {
+	syntax: '<number>';
+	inherits: false;
+	initial-value: 0;
+}
+
 .lp-deck[data-entering] .lp-card {
-	transition: none;
-	pointer-events: none;
+	transition:
+		--lift 0.9s var(--ease-spring),
+		--push 0.9s var(--ease-spring),
+		opacity 0.6s var(--ease-expo),
+		filter 0.6s var(--ease-expo);
 }
 
 /* Lifted under the pointer, and when the keyboard is on it. Not on any focus:
@@ -849,6 +883,10 @@
 	.lp-band-run,
 	.lp-team-name {
 		animation: none;
+	}
+
+	.lp-rail-portrait {
+		transition: none;
 	}
 
 	.lp-team-wipe,

@@ -47,20 +47,20 @@ export const WHO = {
 		'We are students who would rather *make* the moisturiser than just buy it. Chemists, engineers, artists and the simply *curious*, at one bench, turning oil and water into something that *holds*.',
 }
 
-// PLACEHOLDER: stand-in people, and the roles are guesses. Give each one a
-// `name` (it replaces the role on the rail, and the role moves to the label on
-// their portrait), a `src` (a file in public/, e.g. '/team/president.jpg',
-// taller than wide) and a line or two of `text`. `shade` is the colour of the
-// stand-in swatch; `tilt` is how many degrees their
+// PLACEHOLDER: stand-in people, and the titles are guesses. Give each one a
+// `name` (it takes the title's place on the rail under the pointer), a `src`
+// (a file in public/, e.g. '/team/president.jpg', taller than wide), an
+// `href` their name and portrait open, and a line or two of `text`. `shade`
+// is the colour of the stand-in swatch; `tilt` is how many degrees their
 // portrait leans.
 export const TEAM = {
 	title: 'the people',
 	people: [
-		{ role: 'President', shade: 'salmon', tilt: 5, text: 'A line or two about this person goes here: what they study, and the thing they most like to make.' },
-		{ role: 'Lab lead', shade: 'lilac', tilt: -6, text: 'A line or two about this person goes here: what they study, and the thing they most like to make.' },
-		{ role: 'Treasurer', shade: 'green', tilt: 6, text: 'A line or two about this person goes here: what they study, and the thing they most like to make.' },
-		{ role: 'Events', shade: 'yellow', tilt: -4, text: 'A line or two about this person goes here: what they study, and the thing they most like to make.' },
-		{ role: 'Outreach', shade: 'serum', tilt: 4, text: 'A line or two about this person goes here: what they study, and the thing they most like to make.' },
+		{ title: 'President', shade: 'salmon', tilt: 5, text: 'A line or two about this person goes here: what they study, and the thing they most like to make.' },
+		{ title: 'Lab lead', shade: 'lilac', tilt: -6, text: 'A line or two about this person goes here: what they study, and the thing they most like to make.' },
+		{ title: 'Treasurer', shade: 'green', tilt: 6, text: 'A line or two about this person goes here: what they study, and the thing they most like to make.' },
+		{ title: 'Events', shade: 'yellow', tilt: -4, text: 'A line or two about this person goes here: what they study, and the thing they most like to make.' },
+		{ title: 'Outreach', shade: 'serum', tilt: 4, text: 'A line or two about this person goes here: what they study, and the thing they most like to make.' },
 	],
 }
 

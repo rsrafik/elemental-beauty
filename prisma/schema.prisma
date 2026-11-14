@@ -955,13 +955,15 @@ model EmailSend {
 // by anyone at GET /api/landing (src/routes/landingRoutes.js). A section with
 // no rows keeps its placeholders.
 
-// "the people", under "who we are": the rail shows `title`; the portrait, the
-// name and the lines open when it's clicked
+// "the people", under "who we are": the rail shows `title`, and `name` in its
+// place under the pointer; `website`, when there is one, is where clicking
+// their name or portrait goes
 model LandingPerson {
   personId    Int      @id @default(autoincrement()) @map("person_id")
   title       String
   name        String?
   description String?
+  website     String?
   image       String?
   // fingerprint of image — served at /api/img/person/:id/:key, to anyone
   imageKey    String?  @map("image_key")

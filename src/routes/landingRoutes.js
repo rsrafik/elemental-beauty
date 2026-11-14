@@ -16,7 +16,8 @@ import { onLandingPage, publicPill, readWebsite, sponsorName } from '../sponsors
 // Pictures go out as addresses (/api/img/person|album|sponsor/...), which are
 // open to anyone too (src/routes/imageRoutes.js).
 //
-// The people:  title (required, what the rail shows), name, description, image
+// The people:  title (required, what the rail shows), name, description, image,
+//              website (where clicking them on the rail goes)
 // The album:   title and image (required), date, description
 //
 // Each section is in the order the editor's cards are dragged into
@@ -53,6 +54,7 @@ const personOut = (row) => ({
     title: row.title,
     name: row.name,
     description: row.description,
+    website: row.website,
     imageUrl: row.imageUrl,
     position: row.position
 })
@@ -94,7 +96,7 @@ function fail(res, err) {
 const PILL_SELECT = { sponsorId: true, landingTitle: true, website: true, imageUrl: true, landingOrder: true }
 const readLanding = () => memo('landing', SHARED_MS, async () => {
     const [people, album, sponsors] = await Promise.all([
-        prisma.landingPerson.findMany({ ...PEOPLE, select: { personId: true, title: true, name: true, description: true, imageUrl: true, position: true } }),
+        prisma.landingPerson.findMany({ ...PEOPLE, select: { personId: true, title: true, name: true, description: true, website: true, imageUrl: true, position: true } }),
         prisma.albumCard.findMany({ ...ALBUM, select: { cardId: true, title: true, date: true, description: true, imageUrl: true } }),
         prisma.sponsor.findMany({ where: { onLanding: true, status: 'active' }, ...PILLS, select: PILL_SELECT })
     ])
@@ -136,11 +138,14 @@ function readPerson(body) {
     if (!title) { return { error: 'Give them a title — it’s what the landing page shows before they’re clicked' } }
     const picture = readPicture(body.image)
     if (picture.error) { return { error: picture.error } }
+    const link = readWebsite(body.website)
+    if (link.error) { return { error: link.error } }
     return {
         fields: {
             title,
             name: text(body.name, 80),
             description: text(body.description, 600),
+            website: link.website,
             ...(picture.keep ? {} : { image: picture.image })
         }
     }
