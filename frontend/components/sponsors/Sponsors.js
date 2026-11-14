@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from 'react'
 import DashboardShell from '@/components/dashboards/DashboardShell'
+import StoredImage from '@/components/StoredImage'
 import { Card, CardNote, CardTitle, ConfirmDialog, Dialog, DialogActions, FIELD, Label, PencilIcon, PlusIcon, TrashIcon } from '@/components/analytics/parts'
 import { sponsors as sponsorsApi } from '@/lib/api'
 import { useDismiss } from '@/lib/dismiss'
@@ -234,6 +235,29 @@ function Contact({ value }) {
 	)
 }
 
+// The pill's picture, as the landing page shows it: the sponsor pill's 22:9
+// shape (lib/images.js FRAMES.sponsor). Only to look at — it's changed on
+// the landing editor.
+function PillPreview({ src, name }) {
+	return (
+		<div
+			title="The picture on its landing page pill. Change it on the landing editor."
+			className="
+				w-[110px]
+				shrink-0
+				aspect-[22/9]
+				rounded-full
+				overflow-hidden
+				bg-white
+				ring-1
+				ring-black/10
+			"
+		>
+			<StoredImage src={src} alt={`${name}’s pill picture`} draggable={false} className="w-full h-full object-cover pointer-events-none select-none" />
+		</div>
+	)
+}
+
 const received = (date) => new Date(date).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })
 
 function SponsorRow({ sponsor, editable, onEdit, onMove, onRemove }) {
@@ -253,30 +277,38 @@ function SponsorRow({ sponsor, editable, onEdit, onMove, onRemove }) {
 				justify-between
 				gap-3
 			">
-				<div className="min-w-0">
-					<p className="
-						font-vietnam
-						font-semibold
-						text-base
-						text-black
-						break-words
-					">
-						{name}
-					</p>
-					<div className="
-						mt-1.5
-						flex
-						flex-wrap
-						gap-1.5
-					">
-						<Tag className={sponsor.source === 'form' ? 'bg-blue-light text-black/75' : 'bg-white text-black/60'}>
-							{sponsor.source === 'form' ? `sent in on the form · ${received(sponsor.createdAt)}` : 'added by hand'}
-						</Tag>
-						{sponsor.onLanding && (
-							<Tag className={sponsor.shown ? 'bg-yellow text-black/75' : 'bg-black/10 text-black/55'}>
-								{sponsor.shown ? 'a pill on the landing page' : 'has a pill, hidden until it’s active'}
+				<div className="
+					flex
+					min-w-0
+					items-start
+					gap-3
+				">
+					{sponsor.imageUrl && <PillPreview src={sponsor.imageUrl} name={name} />}
+					<div className="min-w-0">
+						<p className="
+							font-vietnam
+							font-semibold
+							text-base
+							text-black
+							break-words
+						">
+							{name}
+						</p>
+						<div className="
+							mt-1.5
+							flex
+							flex-wrap
+							gap-1.5
+						">
+							<Tag className={sponsor.source === 'form' ? 'bg-blue-light text-black/75' : 'bg-white text-black/60'}>
+								{sponsor.source === 'form' ? `sent in on the form · ${received(sponsor.createdAt)}` : 'added by hand'}
 							</Tag>
-						)}
+							{sponsor.onLanding && (
+								<Tag className={sponsor.shown ? 'bg-yellow text-black/75' : 'bg-black/10 text-black/55'}>
+									{sponsor.shown ? 'a pill on the landing page' : 'has a pill, hidden until it’s active'}
+								</Tag>
+							)}
+						</div>
 					</div>
 				</div>
 
