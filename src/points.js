@@ -11,7 +11,9 @@ export const POINTS = {
     social_event: 3,
     official_event: 5,
     lab: 8,
-    vip_dues: 4
+    vip_dues: 4,
+    // sending the feedback form after a lab or event, once each (src/feedback.js)
+    feedback: 1
 }
 
 // The only actions officers may award by hand — attendance points are

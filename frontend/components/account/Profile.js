@@ -866,13 +866,17 @@ function HistoryDialog({ which, history, error, onClose }) {
 				title: `${AWARD_REASON[row.reason] ?? 'bonus points'}${row.undone ? ' (taken back)' : ''}`,
 				sub: `from ${row.by} · ${longDate(row.at).toLowerCase()}`, points: row.points, at: row.at,
 			})),
+			...(history.feedback ?? []).map((row) => ({
+				key: `feedback-${row.kind}-${row.id}`, title: `feedback on ${row.title}`,
+				sub: `${row.kind} feedback · ${longDate(row.at).toLowerCase()}`, points: row.points, at: row.at,
+			})),
 		].sort((a, b) => String(b.at ?? '').localeCompare(String(a.at ?? '')))
 
 		content = (
 			<>
 				<p className={hint}>
 					Where your {history.points} {history.points === 1 ? 'point' : 'points'} came from: 8 for a lab, 5 for
-					an official event, 3 for a social one, plus anything e-board gave you.
+					an official event, 3 for a social one, 1 for feedback, plus anything e-board gave you.
 				</p>
 				{earned.length === 0 && history.earlier === 0
 					? <p className={hint}>No points yet. Check into a lab or event to start.</p>

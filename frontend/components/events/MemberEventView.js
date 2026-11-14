@@ -11,6 +11,7 @@ import { LinkList } from '@/components/events/EventLinks'
 import PaySection from '@/components/payments/PaySection'
 import usePoll from '@/lib/usePoll'
 import { SkeletonDetail } from '@/components/Skeleton'
+import { FeedbackButton } from '@/components/feedback/Feedback'
 
 // /events/view?id=N for a user or member: one event — its date, time and room,
 // what it is, and the one button that is your relationship with it. The same
@@ -260,6 +261,11 @@ export default function MemberEventView({ preview = false }) {
 					">
 						{button}
 						{caption && <ButtonCaption>{caption}</ButtonCaption>}
+						{/* the feedback form, for someone who was checked in — it
+						    draws nothing until it's over or released */}
+						{mine === 'attended' && (
+							<FeedbackButton kind="event" id={event.eventId} title={event.title} className="mt-4" />
+						)}
 						{holding && !event.started && !ended && event.confirmedAt && (
 							<ButtonCaption>spot confirmed ✓</ButtonCaption>
 						)}

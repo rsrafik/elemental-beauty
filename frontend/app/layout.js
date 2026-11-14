@@ -7,6 +7,7 @@ import { SessionProvider } from "@/lib/session";
 import ZoomReset from "@/components/ZoomReset";
 import { NavTracker } from "@/lib/history";
 import { LeaveGuard } from "@/components/LeaveGuard";
+import { FeedbackReminder } from "@/components/feedback/Feedback";
 import "./globals.css";
 
 const bevietnampro = Be_Vietnam_Pro({
@@ -123,7 +124,12 @@ export default function RootLayout({ children }) {
           and every page reads the answer off the context, rather than each of
           them fetching the same thing on every navigation. */}
       <body className="min-h-full flex flex-col" suppressHydrationWarning>
-        <SessionProvider>{children}</SessionProvider>
+        <SessionProvider>
+          {children}
+          {/* asks once whether they'd give feedback on a lab or event they
+              came to (components/feedback/Feedback.js) */}
+          <FeedbackReminder />
+        </SessionProvider>
         {/* lets the back arrow tell a page reached from inside the app from
             one opened fresh (lib/history.js) */}
         <NavTracker />

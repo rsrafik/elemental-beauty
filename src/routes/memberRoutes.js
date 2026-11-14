@@ -251,6 +251,9 @@ router.get('/me/qr', async (req, res) => {
 //   labs / events   every sign-up, with its status: the "done" tiles show the
 //                   attended ones, the "rsvp'd" tiles the ones still ahead
 //   awards          points an officer gave by hand, off the activity log
+//   feedback        the point each feedback form sent earned, worked out
+//                   from the entries (src/feedback.js) — not the log, which
+//                   staff read and the entries are anonymous to them
 //   earlier         points that neither of those explains — the ones from
 //                   before the log was kept (or seeded) — so the breakdown
 //                   always adds up to the number on the tile
@@ -263,7 +266,7 @@ router.get('/me/history', async (req, res) => {
         const me = await prisma.member.findUnique({ where: { userId: req.userId }, select: { points: true } })
         if (!me) { return res.status(404).json({ message: 'Member profile not found' }) }
 
-        const [labRows, eventRows, awardRows] = await Promise.all([
+        const [labRows, eventRows, awardRows, labFeedback, eventFeedback] = await Promise.all([
             prisma.memberLab.findMany({
                 where: { memberId: req.userId },
                 select: {
@@ -283,6 +286,14 @@ router.get('/me/history', async (req, res) => {
                 where: { targetId: req.userId, action: 'points_awarded' },
                 orderBy: { createdAt: 'desc' },
                 select: { activityId: true, points: true, details: true, createdAt: true, actorName: true }
+            }),
+            prisma.labFeedback.findMany({
+                where: { memberId: req.userId },
+                select: { createdAt: true, lab: { select: { labId: true, title: true } } }
+            }),
+            prisma.eventFeedback.findMany({
+                where: { memberId: req.userId },
+                select: { createdAt: true, event: { select: { eventId: true, title: true } } }
             })
         ])
 
@@ -306,13 +317,17 @@ router.get('/me/history', async (req, res) => {
             at: row.createdAt,
             by: row.actorName
         }))
+        const feedback = [
+            ...labFeedback.map((row) => ({ kind: 'lab', id: row.lab.labId, title: row.lab.title, at: row.createdAt, points: POINTS.feedback })),
+            ...eventFeedback.map((row) => ({ kind: 'event', id: row.event.eventId, title: row.event.title, at: row.createdAt, points: POINTS.feedback }))
+        ]
         // newest first, with anything undated (a draft) at the end
         const byDate = (a, b) => (b.date?.getTime() ?? 0) - (a.date?.getTime() ?? 0)
         labs.sort(byDate)
         events.sort(byDate)
 
-        const explained = [...labs, ...events, ...awards].reduce((sum, row) => sum + row.points, 0)
-        res.json({ points: me.points, labs, events, awards, earlier: me.points - explained })
+        const explained = [...labs, ...events, ...awards, ...feedback].reduce((sum, row) => sum + row.points, 0)
+        res.json({ points: me.points, labs, events, awards, feedback, earlier: me.points - explained })
     } catch (err) {
         console.error(err.message)
         res.sendStatus(500)
