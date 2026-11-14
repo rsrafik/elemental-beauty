@@ -14,8 +14,10 @@ import { canChange } from '@/lib/roles'
 // /landing-editor: what the public landing page (/landing) shows, for an admin
 // to keep. Three cards, one per section that has placeholders today:
 //
-//   the people   under "who we are": title (required — the rail shows it
-//                before they're clicked), name, description, picture
+//   the people   under "who we are": title (required — the rail shows it,
+//                and their name in its place under the pointer), name,
+//                description, picture, and a website their name and
+//                portrait open in a new tab
 //   the album    the deck of cards: title and photo (required), date,
 //                description; one card on the page per card here
 //   sponsors     the pills: a picture behind a title (one of the two
@@ -121,6 +123,15 @@ function Field({ field, value, onChange, onError }) {
 				rows={Input === 'textarea' ? 4 : undefined}
 				className={`${FIELD} ${Input === 'textarea' ? 'resize-y' : ''}`}
 			/>
+			{field.hint && <span className="
+				mt-1
+				block
+				font-vietnam
+				text-xs
+				text-black/50
+			">
+				{field.hint}
+			</span>}
 		</label>
 	)
 }
@@ -610,6 +621,7 @@ const PERSON_FIELDS = [
 	{ key: 'image', label: 'portrait (optional)', kind: 'image', frame: FRAMES.person, hint: 'Cropped to the portrait’s shape (3 by 4). Without one, the page shows a coloured swatch.' },
 	{ key: 'title', label: 'title', kind: 'text', max: 80, placeholder: 'President' },
 	{ key: 'name', label: 'name (optional)', kind: 'text', max: 80, placeholder: 'Ada Lovelace' },
+	{ key: 'website', label: 'website (optional)', kind: 'text', max: 500, placeholder: 'linkedin.com/in/ada', hint: 'Clicking their name or portrait on the page opens this in a new tab.' },
 	{ key: 'description', label: 'description (optional)', kind: 'textarea', max: 600, placeholder: 'What they study, and the thing they most like to make.' },
 ]
 
@@ -622,7 +634,7 @@ function PeopleCard({ people, editable, onChange, onError }) {
 	}, onError)
 
 	const save = async (values) => {
-		const body = { title: clean(values.title), name: clean(values.name), description: clean(values.description), image: values.image ?? null }
+		const body = { title: clean(values.title), name: clean(values.name), description: clean(values.description), website: clean(values.website), image: values.image ?? null }
 		if (editing.person) await landingApi.updatePerson(editing.person.personId, body)
 		else await landingApi.addPerson(body)
 		await onChange()
@@ -641,7 +653,7 @@ function PeopleCard({ people, editable, onChange, onError }) {
 		<Card>
 			<CardHead
 				title="about us · the people"
-				note="The names on the two rails under “who we are”. The rail shows each one’s title; clicking it opens their portrait, name and description. They run in this order: drag a card to move it."
+				note="The names on the two rails under “who we are”. The rail shows each one’s title, and their name in its place when the pointer is on it. One with a website opens it in a new tab when their name or portrait is clicked. They run in this order: drag a card to move it."
 			>
 				{editable && <AddButton onClick={() => setEditing({ person: null })}>add a person</AddButton>}
 			</CardHead>
@@ -656,7 +668,7 @@ function PeopleCard({ people, editable, onChange, onError }) {
 							drag={dragProps(person.personId)}
 							tall
 							image={person.image}
-							lines={[person.title, person.name, person.description]}
+							lines={[person.title, person.name, person.website?.replace(/^https?:\/\//, '').replace(/\/$/, ''), person.description]}
 							label={person.title}
 							editable={editable}
 							onEdit={() => setEditing({ person })}

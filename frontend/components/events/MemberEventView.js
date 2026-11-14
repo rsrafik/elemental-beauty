@@ -11,6 +11,7 @@ import { LinkList } from '@/components/events/EventLinks'
 import PaySection from '@/components/payments/PaySection'
 import usePoll from '@/lib/usePoll'
 import { SkeletonDetail } from '@/components/Skeleton'
+import { FeedbackButton } from '@/components/feedback/Feedback'
 
 // /events/view?id=N for a user or member: one event — its date, time and room,
 // what it is, and the one button that is your relationship with it. The same
@@ -225,7 +226,23 @@ export default function MemberEventView({ preview = false }) {
 					<LabIntro
 						lab={event}
 						accent="text-blue"
-						aside={<LinkList links={event.links} className="mt-4" />}
+						aside={
+							<>
+								<LinkList links={event.links} className="mt-4" />
+								{/* the survey, for someone who was checked in — it
+								    draws nothing until it's over or released */}
+								{!preview && mine === 'attended' && (
+									<div className="
+										flex
+										justify-center
+										empty:hidden
+										mt-2
+									">
+										<FeedbackButton drawn kind="event" id={event.eventId} title={event.title} />
+									</div>
+								)}
+							</>
+						}
 					>
 						{event.category?.name && (
 							<p className="

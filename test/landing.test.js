@@ -124,6 +124,21 @@ test('a person needs a title; the rest is optional, and the public page lists th
     })
 })
 
+test('a person’s website is made into a link that opens, and anything else is refused', { skip }, async () => {
+    await admin(async (base) => {
+        const row = await (await send(`${base}/api/landing/people`, 'POST', { title: `${tag} Events`, website: ' ada.dev/about ' })).json()
+        assert.equal(row.website, 'https://ada.dev/about')
+        const shown = (await publicPage(base)).people.find((person) => person.personId === row.personId)
+        assert.equal(shown.website, 'https://ada.dev/about')
+
+        assert.equal((await send(`${base}/api/landing/people`, 'POST', { title: `${tag} x`, website: 'javascript:alert(1)' })).status, 400)
+        assert.equal((await send(`${base}/api/landing/people`, 'POST', { title: `${tag} x`, website: 'not an address' })).status, 400)
+
+        const cleared = await (await send(`${base}/api/landing/people/${row.personId}`, 'PUT', { title: `${tag} Events`, website: '' })).json()
+        assert.equal(cleared.website, null)
+    })
+})
+
 test('editing a person keeps their picture when its address is sent back, and null takes it off', { skip }, async () => {
     await admin(async (base) => {
         const row = await (await send(`${base}/api/landing/people`, 'POST', { title: `${tag} Lab lead`, image: PNG })).json()

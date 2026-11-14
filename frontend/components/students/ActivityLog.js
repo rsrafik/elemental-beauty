@@ -94,6 +94,9 @@ function sentence(entry) {
 				return <>{actor} rejected {target}&apos;s {paidFor(d)}{d.reason ? `: ${d.reason}` : ''}{d.moved ? ' (moved to the waitlist)' : ''}</>
 			}
 			return <>{actor} sent back {target}&apos;s {paidFor(d)}: {d.reason}</>
+		case 'feedback_sent':
+			// that they took it, never what they wrote (src/feedback.js)
+			return <>{target} took the survey for {d.title} (+{pts})</>
 		case 'dues_reset':
 			return <>{actor} cleared everyone&apos;s {d.schoolYear} dues ({d.count} {d.count === 1 ? 'payment' : 'payments'})</>
 		default:
@@ -117,6 +120,7 @@ const DOT = {
 	dues_reset: 'bg-black/30',
 	door_payment_undone: 'bg-black/30',
 	payment_rejected: 'bg-red',
+	feedback_sent: 'bg-salmon-light',
 }
 
 function SearchIcon({ className = '' }) {

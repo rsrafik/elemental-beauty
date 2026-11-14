@@ -8,6 +8,7 @@ import LabLesson from '@/components/labs/LabLesson'
 import LabInstructions from '@/components/labs/LabInstructions'
 import FitTitle from '@/components/FitTitle'
 import StoredImage from '@/components/StoredImage'
+import { FeedbackButton } from '@/components/feedback/Feedback'
 
 // The full lab, once the member has passed the quiz. Two columns:
 //
@@ -221,6 +222,24 @@ export default function MemberLabContent({ lab }) {
 				lg:pl-[11.5px]
 				lg:pt-[38.2px]
 			">
+				{/* the survey, centred over the photo — it draws nothing until
+				    the lab is over (or released) and only for someone who came.
+				    The same hand-drawn button as the event page's, and the same
+				    22px between it and the photo: 8px here plus the button's own
+				    14px padding (HandDrawnButton.css). On a wide screen the
+				    -52.2px takes back the column's 38.2px top padding and that
+				    14px, so the button starts where the column does. */}
+				<div className="
+					w-full
+					max-w-[261px]
+					flex
+					justify-center
+					empty:hidden
+					mb-2
+					lg:-mt-[52.2px]
+				">
+					<FeedbackButton drawn kind="lab" id={lab.labId} title={lab.title} />
+				</div>
 				<div className="
 					w-full
 					max-w-[261px]
