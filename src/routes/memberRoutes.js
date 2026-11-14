@@ -253,7 +253,7 @@ router.get('/me/qr', async (req, res) => {
 //   awards          points an officer gave by hand, off the activity log
 //   feedback        the point each feedback form sent earned, worked out
 //                   from the entries (src/feedback.js) — not the log, which
-//                   staff read and the entries are anonymous to them
+//                   only has the ones sent since it started noting them
 //   earlier         points that neither of those explains — the ones from
 //                   before the log was kept (or seeded) — so the breakdown
 //                   always adds up to the number on the tile

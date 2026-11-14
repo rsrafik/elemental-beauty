@@ -222,21 +222,23 @@ export default function MemberLabContent({ lab }) {
 				lg:pl-[11.5px]
 				lg:pt-[38.2px]
 			">
-				{/* the feedback form, centred over the photo — it draws nothing
-				    until the lab is over (or released) and only for someone who
-				    came. On a wide screen it sits in the gap above the photo
-				    rather than pushing the page down. */}
+				{/* the survey, centred over the photo — it draws nothing until
+				    the lab is over (or released) and only for someone who came.
+				    The same hand-drawn button as the event page's, and the same
+				    22px between it and the photo: 8px here plus the button's own
+				    14px padding (HandDrawnButton.css). On a wide screen the
+				    -52.2px takes back the column's 38.2px top padding and that
+				    14px, so the button starts where the column does. */}
 				<div className="
 					w-full
 					max-w-[261px]
 					flex
 					justify-center
 					empty:hidden
-					mb-3
-					lg:-mt-[31px]
-					lg:mb-[6px]
+					mb-2
+					lg:-mt-[52.2px]
 				">
-					<FeedbackButton kind="lab" id={lab.labId} title={lab.title} />
+					<FeedbackButton drawn kind="lab" id={lab.labId} title={lab.title} />
 				</div>
 				<div className="
 					w-full

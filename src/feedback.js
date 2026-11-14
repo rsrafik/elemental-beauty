@@ -1,4 +1,5 @@
 import prisma from './prismaClient.js'
+import { log } from './activity.js'
 import requireRole from './middleware/requireRole.js'
 import { requireNotAttendee } from './routes/roster.js'
 import { POINTS } from './points.js'
@@ -20,8 +21,11 @@ import { clubInstant, clubToday, dateColumn } from './clubTime.js'
 // so it can be one each and filled back in for them — but nothing that
 // reaches staff says who wrote it. The check-in page's list carries the text
 // and `name`, and `name` is only ever what the member typed in themselves.
-// For the same reason the point isn't written to the activity log (staff
-// read that): /account's history works it out from the entries instead.
+// The first send is written to the activity log as `feedback_sent` — who
+// filled it in, for which lab or event, and the point — but never what it
+// said, so staff see that someone took the survey without being able to tie
+// them to an entry. /account's history still works the point out from the
+// entries, which also covers the ones sent before the log line existed.
 //
 // Mounted on the lab and event routers:
 //
@@ -172,6 +176,14 @@ export function mountFeedback(router, kindName) {
                     where: { userId: req.userId },
                     data: { points: { increment: POINTS.feedback } }
                 })
+                // that they sent one, not what it says
+                await log({
+                    actorId: req.userId,
+                    action: 'feedback_sent',
+                    targetId: req.userId,
+                    points: POINTS.feedback,
+                    details: { kind: kindName, id: parentId, title: row.title }
+                }, tx)
                 return { entry, awarded: POINTS.feedback }
             })
             res.json(result)

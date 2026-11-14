@@ -30,6 +30,9 @@ import prisma from './prismaClient.js'
 //                    event (the check-in page's grey $)
 //   payment_rejected the treasurer sent a payment a      details { kind, schoolYear, title, reason }
 //                    member made back
+//   feedback_sent    someone sent the survey after a     details { kind, id, title } — never the
+//                    lab or event (the first send, the   entry itself (src/feedback.js)
+//                    one with the point)
 //
 // Names are copied in as they are at the time, so the log still reads right
 // after someone is renamed or removed.
@@ -37,7 +40,7 @@ import prisma from './prismaClient.js'
 export const ACTIONS = [
     'role_changed', 'team_changed', 'points_awarded', 'checked_in', 'checkin_undone',
     'member_added', 'member_removed', 'account_deleted', 'dues_paid', 'dues_cleared', 'dues_waived',
-    'fee_paid', 'dues_reset', 'door_payment_undone', 'payment_rejected'
+    'fee_paid', 'dues_reset', 'door_payment_undone', 'payment_rejected', 'feedback_sent'
 ]
 
 export const fullName = (user) =>

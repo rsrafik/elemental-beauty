@@ -226,7 +226,23 @@ export default function MemberEventView({ preview = false }) {
 					<LabIntro
 						lab={event}
 						accent="text-blue"
-						aside={<LinkList links={event.links} className="mt-4" />}
+						aside={
+							<>
+								<LinkList links={event.links} className="mt-4" />
+								{/* the survey, for someone who was checked in — it
+								    draws nothing until it's over or released */}
+								{!preview && mine === 'attended' && (
+									<div className="
+										flex
+										justify-center
+										empty:hidden
+										mt-2
+									">
+										<FeedbackButton drawn kind="event" id={event.eventId} title={event.title} />
+									</div>
+								)}
+							</>
+						}
 					>
 						{event.category?.name && (
 							<p className="
@@ -261,11 +277,6 @@ export default function MemberEventView({ preview = false }) {
 					">
 						{button}
 						{caption && <ButtonCaption>{caption}</ButtonCaption>}
-						{/* the feedback form, for someone who was checked in — it
-						    draws nothing until it's over or released */}
-						{mine === 'attended' && (
-							<FeedbackButton kind="event" id={event.eventId} title={event.title} className="mt-4" />
-						)}
 						{holding && !event.started && !ended && event.confirmedAt && (
 							<ButtonCaption>spot confirmed ✓</ButtonCaption>
 						)}

@@ -7,6 +7,7 @@ import { feedback as feedbackApi } from '@/lib/api'
 import { useSession } from '@/lib/session'
 import { hasRole } from '@/lib/roles'
 import { EditorButton } from '@/components/labs/EditorParts'
+import HandDrawnButton from '@/components/HandDrawnButton'
 
 // The feedback form after a lab or event (src/feedback.js), and everything
 // that leads to it:
@@ -102,7 +103,7 @@ export function FeedbackPopup({ kind, id, title, entry, points = 1, onSaved, onC
 						we could do better.
 					</p>
 					<p className={line}>
-						It&apos;s anonymous: nobody on e-board sees who sent it unless you add your name below.
+						It&apos;s anonymous: e-board can see that you took it, but not which answer is yours unless you add your name below.
 						{editing
 							? ' You can change it as often as you like.'
 							: ` Sending it gets you ${points} club ${points === 1 ? 'point' : 'points'}.`}
@@ -166,8 +167,9 @@ export function FeedbackPopup({ kind, id, title, entry, points = 1, onSaved, onC
 
 // The button on a lab's or event's page. It asks the server whether this
 // member may give feedback here, and draws nothing until the answer is yes and
-// the form is open.
-export function FeedbackButton({ kind, id, title, className = '' }) {
+// the form is open. `drawn` makes it the big hand-drawn survey button
+// (HandDrawnButton.js) — the event page's, under its photo.
+export function FeedbackButton({ kind, id, title, className = '', drawn = false }) {
 	const [mine, setMine] = useState(null)
 	const [open, setOpen] = useState(false)
 
@@ -180,6 +182,29 @@ export function FeedbackButton({ kind, id, title, className = '' }) {
 	}, [kind, id])
 
 	if (!mine?.eligible || !mine.open) return null
+
+	const popup = open && (
+		<FeedbackPopup
+			kind={kind}
+			id={id}
+			title={title}
+			entry={mine.entry}
+			points={mine.points}
+			onSaved={(entry) => setMine((was) => ({ ...was, entry }))}
+			onClose={() => setOpen(false)}
+		/>
+	)
+
+	if (drawn) {
+		return (
+			<>
+				<HandDrawnButton onClick={() => setOpen(true)} className={className}>
+					{mine.entry ? 'edit your survey' : 'take the survey!'}
+				</HandDrawnButton>
+				{popup}
+			</>
+		)
+	}
 
 	return (
 		<>
@@ -207,17 +232,7 @@ export function FeedbackButton({ kind, id, title, className = '' }) {
 			>
 				{mine.entry ? 'edit your feedback' : 'give feedback'}
 			</button>
-			{open && (
-				<FeedbackPopup
-					kind={kind}
-					id={id}
-					title={title}
-					entry={mine.entry}
-					points={mine.points}
-					onSaved={(entry) => setMine((was) => ({ ...was, entry }))}
-					onClose={() => setOpen(false)}
-				/>
-			)}
+			{popup}
 		</>
 	)
 }

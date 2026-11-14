@@ -34,6 +34,7 @@ before(async () => {
 
 after(async () => {
     if (skip) { return }
+    await prisma.activityLog.deleteMany({ where: { targetId: { in: made.users } } })
     await prisma.lab.deleteMany({ where: { labId: { in: made.labs } } })
     await prisma.event.deleteMany({ where: { eventId: { in: made.events } } })
     await prisma.user.deleteMany({ where: { userId: { in: made.users } } })
@@ -139,6 +140,14 @@ test('someone who came to a lab and passed its quiz sends feedback once, edits i
         assert.deepEqual(prefill.entry, { body: 'loved it, more glitter', name: 'Sam' })
     })
     assert.equal(await prisma.labFeedback.count({ where: { labId } }), 1)
+
+    // the activity log has that they sent it — once, for the first send — and
+    // nothing of what it said
+    const lines = await prisma.activityLog.findMany({ where: { targetId: member, action: 'feedback_sent' } })
+    assert.equal(lines.length, 1)
+    assert.equal(lines[0].points, POINTS.feedback)
+    assert.deepEqual(lines[0].details, { kind: 'lab', id: labId, title: `${tag} lab` })
+    assert.ok(!/glitter|loved|Sam/.test(JSON.stringify(lines[0])), 'no entry text or signed name in the log')
 })
 
 test('feedback is refused to anyone who didn\'t come, or hasn\'t passed the quiz', { skip }, async () => {
