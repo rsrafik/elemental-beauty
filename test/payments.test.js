@@ -496,6 +496,81 @@ test('"reject" moves them to the waitlist; "send back" holds the spot for 48 hou
     assert.equal((await prisma.memberPayment.findUnique({ where: { paymentId: two.paymentId } })).status, 'declined')
 })
 
+test('"no due date": rejecting or sending back leaves the spot alone, and nobody owing is moved', { skip }, async () => {
+    const method = await aMethod()
+    const officer = await person('officer')
+    const rejected = await person('member')
+    const sentBack = await person('member')
+    const unpaid = await person('member')
+    const labId = await lab([rejected, sentBack, unpaid])
+    await as(officer, 'officer', 'labs', async (base) => {
+        assert.equal((await send(`${base}/${labId}`, 'PUT', { noPaymentDue: 'yes' })).status, 400)
+        const saved = await (await send(`${base}/${labId}`, 'PUT', { noPaymentDue: true })).json()
+        assert.equal(saved.noPaymentDue, true)
+    })
+    const pay = async (who, ref) => {
+        let payment
+        await as(who, 'member', 'payments', async (base) => {
+            payment = await (await send(base, 'POST', { kind: 'fee', labId, methodId: method.methodId, reference: ref })).json()
+        })
+        return payment
+    }
+    const status = async (memberId) => (await prisma.memberLab.findUnique({ where: { memberId_labId: { memberId, labId } } })).attendanceStatus
+    const one = await pay(rejected, 'N1')
+    const two = await pay(sentBack, 'N2')
+
+    await as(officer, 'officer', 'payments', async (base) => {
+        const reply = await (await send(`${base}/${one.paymentId}/reject`, 'POST', { reason: 'Not ours' })).json()
+        assert.equal(reply.status, 'declined')
+        assert.equal(reply.noDue, true)
+        assert.equal(await status(rejected), 'rsvped')
+        await send(`${base}/${two.paymentId}/send-back`, 'POST', { reason: 'Wrong id' })
+        assert.equal(await status(sentBack), 'rsvped')
+    })
+    // no due date on the page, and no 48 hours on the one sent back
+    await as(sentBack, 'member', 'labs', async (base) => {
+        const page = await json(`${base}/${labId}`)
+        assert.equal(page.paymentDueAt, null)
+        assert.equal(page.pay.dueAt, null)
+        assert.equal(page.pay.fixBy, null)
+    })
+
+    // full, someone waiting, long past the 48 hours and the usual due date:
+    // nobody's moved
+    await fill(labId, await person('member'))
+    const { enforcePaymentRules } = await import('../src/payments.js')
+    const later = new Date(new Date(DAY).getTime() - 3_600_000)
+    assert.equal(await enforcePaymentRules(later, { only: ['lab', labId] }), 0)
+    for (const who of [rejected, sentBack, unpaid]) assert.equal(await status(who), 'rsvped')
+    assert.equal((await prisma.memberPayment.findUnique({ where: { paymentId: two.paymentId } })).status, 'rejected')
+
+    // back on: the one sent back gets its 48 hours from now
+    const before = Date.now()
+    await as(officer, 'officer', 'labs', async (base) => {
+        const saved = await (await send(`${base}/${labId}`, 'PUT', { noPaymentDue: false })).json()
+        assert.equal(saved.noPaymentDue, false)
+    })
+    const reviewed = (await prisma.memberPayment.findUnique({ where: { paymentId: two.paymentId } })).reviewedAt
+    assert.ok(reviewed.getTime() >= before)
+})
+
+test('"no due date" can only go back off to a due date that’s still ahead', { skip }, async () => {
+    const officer = await person('officer')
+    // three days out: the week before has passed
+    const soon = new Date(Date.now() + 3 * 86_400_000).toISOString().slice(0, 10)
+    const labId = await lab([], soon)
+    await prisma.lab.update({ where: { labId }, data: { noPaymentDue: true } })
+    await as(officer, 'officer', 'labs', async (base) => {
+        const refused = await send(`${base}/${labId}`, 'PUT', { noPaymentDue: false })
+        assert.equal(refused.status, 400)
+        assert.match((await refused.json()).message, /already passed/)
+        const due = new Date(Date.now() + 86_400_000).toISOString()
+        const saved = await (await send(`${base}/${labId}`, 'PUT', { noPaymentDue: false, paymentDueOverride: due })).json()
+        assert.equal(saved.noPaymentDue, false)
+        assert.equal(saved.paymentDueOverride, due)
+    })
+})
+
 test('past the due date, a full lab with someone waiting moves whoever owes and sent nothing; a payment waiting keeps the spot', { skip }, async () => {
     const method = await aMethod()
     const officer = await person('officer')

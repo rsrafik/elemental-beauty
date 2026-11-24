@@ -11,7 +11,7 @@ import { eventPoints } from '../points.js'
 import { mountRoster, requireNotAttendee } from './roster.js'
 import { mountFeedback } from '../feedback.js'
 import { OFFER_HOURS, acceptOffer, confirmSpot, expireOffers, lockParent, offerNext, startsAt } from '../offers.js'
-import { PARENT_SELECT, dueOverrideError, payable, paymentDueAt, readDueOverride, resweep } from '../payable.js'
+import { PARENT_SELECT, dueBackOnError, dueDateBack, dueOverrideError, payable, paymentDueAt, readDueOverride, readNoDue, resweep } from '../payable.js'
 import { enforcePaymentRules, owingLate } from '../payments.js'
 import { log } from '../activity.js'
 import { readEndTime } from '../clubTime.js'
@@ -552,6 +552,10 @@ router.put('/:id', requireRole('officer'), async (req, res) => {
     const dueRead = readDueOverride(req.body.paymentDueOverride)
     if (dueRead.error) { return res.status(400).json({ message: dueRead.error }) }
     if (dueRead.due !== undefined) { data.paymentDueOverride = dueRead.due }
+    // "no due date" (the check-in page's payments popup)
+    const noDueRead = readNoDue(req.body.noPaymentDue)
+    if (noDueRead.error) { return res.status(400).json({ message: noDueRead.error }) }
+    if (noDueRead.noDue !== undefined) { data.noPaymentDue = noDueRead.noDue }
     if (req.body.startTime !== undefined) {
         if (req.body.startTime && !TIME.test(req.body.startTime)) {
             return res.status(400).json({ message: 'startTime must be HH:MM' })
@@ -589,7 +593,7 @@ router.put('/:id', requireRole('officer'), async (req, res) => {
         // this edit
         const existing = await prisma.event.findUnique({
             where: { eventId },
-            select: { track: true, team: true, date: true, startTime: true, endTime: true, paymentDueOverride: true, published: true }
+            select: { track: true, team: true, date: true, startTime: true, endTime: true, paymentDueOverride: true, noPaymentDue: true, published: true }
         })
         if (req.body.discardDraft === true) {
             const event = await prisma.event.update({ where: { eventId }, data: { draft: Prisma.DbNull }, include: { createdBy: CREATOR } })
@@ -621,9 +625,12 @@ router.put('/:id', requireRole('officer'), async (req, res) => {
         }
         // the due date against the day and start it'll have; moved, the sweep
         // that enforces it is owed again if it's still to come
-        if (data.paymentDueOverride !== undefined || data.date !== undefined || data.startTime !== undefined) {
+        // ("no due date" turned back off goes back to one that has to still
+        // be ahead, and starts what was left from before over — dueDateBack)
+        const dueBack = existing.noPaymentDue && data.noPaymentDue === false
+        if (data.paymentDueOverride !== undefined || data.date !== undefined || data.startTime !== undefined || data.noPaymentDue !== undefined) {
             const after = { ...existing, ...data }
-            const badDue = dueOverrideError(after, existing.paymentDueOverride)
+            const badDue = dueOverrideError(after, existing.paymentDueOverride) ?? (dueBack ? dueBackOnError(after) : null)
             if (badDue) { return res.status(400).json({ message: badDue }) }
             Object.assign(data, resweep(after))
         }
@@ -645,6 +652,7 @@ router.put('/:id', requireRole('officer'), async (req, res) => {
                 : { ...data, published: false }
         }
         const event = await prisma.event.update({ where: { eventId }, data: update, include: { createdBy: CREATOR }, omit: { draft: false } })
+        if (dueBack && update.noPaymentDue === false) { await dueDateBack(prisma, 'event', eventId) }
         const { draft, ...rest } = event
         res.json({ ...withCreator(rest, req.role), draft: draft ?? null, hasDraft: draft != null })
     } catch (err) {

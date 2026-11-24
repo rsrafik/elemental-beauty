@@ -23,7 +23,10 @@ import {
 //                    spot in the lab or event it was sent from
 //   declinePayment   "reject": not accepted, and they're moved to that lab's
 //                    or event's waitlist ("send back" is the gentler one: they
-//                    fix it and send it again, within 48 hours)
+//                    fix it and send it again, within 48 hours). With "no
+//                    due date" on (noPaymentDue) neither touches their spot:
+//                    rejecting only turns it down, and a sent-back one has no
+//                    48 hours on it
 //   enforcePaymentRules  the hourly sweep: past a payment due date (a week
 //                    before, 11:59 PM, or someone's confirmation deadline if
 //                    that's sooner), whoever owes and sent nothing — and
@@ -84,8 +87,8 @@ export function itemOf(row) {
 // The include every payment read needs: who, from where, and how.
 export const PAYMENT_INCLUDE = {
     member: { select: { role: true, user: { select: { firstName: true, lastName: true, username: true, email: true } } } },
-    lab: { select: { labId: true, title: true, date: true, startTime: true, paymentDueOverride: true } },
-    event: { select: { eventId: true, title: true, date: true, startTime: true, paymentDueOverride: true } }
+    lab: { select: { labId: true, title: true, date: true, startTime: true, paymentDueOverride: true, noPaymentDue: true } },
+    event: { select: { eventId: true, title: true, date: true, startTime: true, paymentDueOverride: true, noPaymentDue: true } }
 }
 
 // Approve `payment` (read with PAYMENT_INCLUDE) inside `tx`: the income row,
@@ -193,7 +196,8 @@ export async function approvePayment(tx, payment, actorId) {
 // "Reject", inside `tx`: not accepted, and they're moved to the back of the
 // waitlist of the lab or event it was sent from (VIP dues sent from /vip have
 // none, so they're only turned down — and so is a goggle rental, which no
-// spot hangs on). `reason` is optional. Returns the payment, with `moved`.
+// spot hangs on — and neither does anyone's at a lab or event with "no due
+// date" on). `reason` is optional. Returns the payment, with `moved`.
 export async function declinePayment(tx, payment, reason) {
     if (payment.status !== 'pending') throw conflict('Only a pending payment can be rejected')
     const declined = await tx.memberPayment.update({
@@ -202,7 +206,8 @@ export async function declinePayment(tx, payment, reason) {
         include: PAYMENT_INCLUDE
     })
     let moved = false
-    const at = payment.kind === 'goggles' ? null : itemOf(payment)
+    const noDue = (payment.lab ?? payment.event)?.noPaymentDue
+    const at = payment.kind === 'goggles' || noDue ? null : itemOf(payment)
     if (at) {
         await lockParent(tx, at[0], at[1])
         moved = await moveToWaitlist(tx, at[0], at[1], payment.memberId)
@@ -240,8 +245,9 @@ export async function declinePayment(tx, payment, reason) {
 // until they pay or it lapses.
 //
 // A payment waiting to be checked keeps their spot through all of it, and so
-// does one sent back that's still inside its 48 hours. Returns how many were
-// moved.
+// does one sent back that's still inside its 48 hours. A lab or event with "no
+// due date" on (noPaymentDue) is left out: nobody's overdue for it. Returns
+// how many were moved.
 //
 // `only` ([kindName, id]) narrows it to one lab or event — what its check-in
 // page and a sign-up there need, without sweeping every other one (the hourly
@@ -286,6 +292,8 @@ export async function enforcePaymentRules(now = new Date(), { only = null } = {}
             await prisma.memberPayment.update({ where: { paymentId: payment.paymentId }, data: { status: 'declined' } })
             continue
         }
+        // "no due date": no 48 hours to miss
+        if (parent.noPaymentDue) continue
         const standing = await payable(prisma, payment.memberId, kindName, id, parent)
         if (!standing?.owes || standing.sent) continue
         add(kindName, id, payment.memberId, { reason: 'not_revised', paymentId: payment.paymentId })
@@ -318,6 +326,8 @@ export async function enforcePaymentRules(now = new Date(), { only = null } = {}
                 await remindOne(kindName, parent, link, standing, now)
                 continue
             }
+            // "no due date": nothing's due, so nobody's overdue or late
+            if (parent.noPaymentDue) continue
             if (paymentDueAt(parent, link).getTime() > now.getTime()) {
                 if (!link.payBy) continue
                 if (link.payRemindedAt && link.payRemindedAt.getTime() > remindedBefore.getTime()) continue
@@ -352,7 +362,7 @@ export async function enforcePaymentRules(now = new Date(), { only = null } = {}
         const parents = await prisma[kind.model].findMany({
             where: { ...mine(kindName), paymentsDueSweptAt: null, ...(kindName === 'lab' ? { date: { not: null } } : {}) },
             // what paymentDueAt reads
-            select: { [kind.key]: true, date: true, startTime: true, paymentDueOverride: true }
+            select: { [kind.key]: true, date: true, startTime: true, paymentDueOverride: true, noPaymentDue: true }
         })
         for (const parent of parents) {
             const due = paymentDueAt(parent)
@@ -407,7 +417,8 @@ export async function owingLate(kindName, id, memberId, { now = new Date(), remi
     if (link?.attendanceStatus !== 'rsvped' || link.payBy || !parent?.date) return false
     if (startsAt(parent).getTime() <= now.getTime()) return false
     const due = paymentDue(parent, link)
-    if (due.at.getTime() > now.getTime()) return false
+    // ("no due date": there's none to have passed)
+    if (!due || due.at.getTime() > now.getTime()) return false
     const standing = await payable(prisma, memberId, kindName, id, parent)
     if (!standing?.owes || standing.sent || standing.fixBy) return false
     const started = await prisma[kind.link].update({
@@ -429,7 +440,7 @@ async function remindOne(kindName, parent, link, standing, now, { record = true 
     await remindUnpaid(
         {
             kind: kindName, id: parent[kind.key], title: parent.title, date: parent.date, startTime: parent.startTime,
-            paymentDueOverride: parent.paymentDueOverride, price: standing.price, duesAmount: standing.choices.find((choice) => choice.kind === 'dues')?.amount ?? 0,
+            paymentDueOverride: parent.paymentDueOverride, noPaymentDue: parent.noPaymentDue, price: standing.price, duesAmount: standing.choices.find((choice) => choice.kind === 'dues')?.amount ?? 0,
             schoolYear: standing.schoolYear
         },
         [{ email: user.email, firstName: user.firstName, confirmBy: link.confirmBy, payBy: link.payBy, offerBy }],
@@ -601,9 +612,11 @@ const PAYER = {
         lines: [
             `Your payment of ${whatFor(p)} by ${p.methodTitle} (transaction #${p.reference}) wasn’t registered or accepted.`,
             `Why: ${p.rejectionReason}`,
-            titleOf(p)
+            titleOf(p) && !(p.lab ?? p.event)?.noPaymentDue
                 ? `Fix it and send it again from the same page within 48 hours, by ${dueText(reviseBy(p.reviewedAt))}, or your spot in ${titleOf(p)} may go to someone on the waitlist.`
-                : 'You can fix it and send it again from the same page.'
+                : titleOf(p)
+                    ? `Fix it and send it again from the same page. Your spot in ${titleOf(p)} is still yours.`
+                    : 'You can fix it and send it again from the same page.'
         ],
         button: { label: 'Fix it', url: pageFor(p) }
     }),
@@ -664,7 +677,7 @@ export async function notifyPayer(payment, status = payment.status) {
     const link = at ? await dueLinkOf(prisma, payment.memberId, ...at) : null
     const was = paymentDueAt(from, link)
     const due = !from ? {}
-        : status === 'rejected'
+        : status === 'rejected' && !from.noPaymentDue
             ? {
                 callout: { label: 'New payment due', text: dueText(reviseBy(payment.reviewedAt)) },
                 after: was ? [`It was due ${dueText(was)}. Since it was sent back, the new due date above takes its place.`] : []
@@ -717,12 +730,13 @@ function attachment(dataUrl, name) {
 
 // The check-in page's "email unpaid", and the daily reminders: a reminder to
 // each of `people` ({ email, firstName, confirmBy, payBy, offerBy }) signed up
-// for `item` ({ kind, id, title, date, startTime, paymentDueOverride, price,
-// duesAmount, schoolYear }) and owing for it — pay by the due date (a week
+// for `item` ({ kind, id, title, date, startTime, paymentDueOverride,
+// noPaymentDue, price, duesAmount, schoolYear }) and owing for it — pay by the due date (a week
 // before, 11:59 PM, or the one an officer set in its place; their
 // confirmation deadline if that's sooner, or the 48 hours they were
 // given owing late) or their spot may go to the waitlist — with every accepted
-// payment's QR code attached. `offered` is for people holding an offer of a
+// payment's QR code attached (with "no due date" on, just a nudge to pay
+// before they come). `offered` is for people holding an offer of a
 // spot instead: it's theirs once they pay, by when the offer lapses
 // (`offerBy`) or else before it starts. Returns how many went out (or were
 // printed, with no mail service).
@@ -761,7 +775,9 @@ export async function remindUnpaid(item, people, { offered = false } = {}) {
                     `Hi${person.firstName ? ` ${person.firstName}` : ''}, you’re signed up for ${item.title} on ${dayText(item.date)}, but we haven’t got a payment from you yet. Your spot can only be confirmed once you pay.`,
                     overdue
                         ? `Payment was due ${dueText(due)}. Please pay ${amounts.join(', or ')} now to keep your spot. If someone on the waitlist needs it, it may go to them.`
-                        : `Please pay ${amounts.join(', or ')}${when ? ` ${when}` : ''}. If you don’t, your spot may go to someone on the waitlist.`,
+                        : item.noPaymentDue
+                            ? `Please pay ${amounts.join(', or ')} before you come.`
+                            : `Please pay ${amounts.join(', or ')}${when ? ` ${when}` : ''}. If you don’t, your spot may go to someone on the waitlist.`,
                     'Payments aren’t refunded if you can’t make it, because we buy your materials ahead of time.',
                     ...(ways.length
                         ? ['You can pay with any of these. Their QR codes are attached:', ...ways]

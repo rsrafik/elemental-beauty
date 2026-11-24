@@ -570,6 +570,9 @@ export async function sendConfirmations(kindName, parentId, deadline) {
                         'To officially confirm your spot, you need to pay. Send your payment on its page. Once it’s sent your spot is held, and it’s confirmed when we approve it.',
                         standing.fixBy
                             ? `Your payment was sent back, so the due date has moved. It was due ${dueText(paymentDueAt(parent, { confirmBy: deadline }))}. Fix it and send it again by ${dueText(standing.fixBy)}, or your spot may go to someone on the waitlist.`
+                            : !paymentDueAt(parent, { confirmBy: deadline, payBy: row.payBy })
+                                // "no due date": nothing to miss
+                                ? 'Please pay before you come.'
                             : paymentDueAt(parent, { confirmBy: deadline, payBy: row.payBy }) <= new Date()
                                 ? `Payment was due ${dueText(paymentDueAt(parent, { confirmBy: deadline, payBy: row.payBy }))}. Pay now to keep your spot. If someone on the waitlist needs it, it may go to them.`
                                 : `Payment is due ${dueWhen(parent, { confirmBy: deadline, payBy: row.payBy })}. If you haven’t paid by then, your spot may go to someone on the waitlist.`,

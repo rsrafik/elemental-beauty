@@ -7,7 +7,7 @@ import { POINTS } from '../points.js'
 import { mountRoster, requireNotAttendee } from './roster.js'
 import { mountFeedback } from '../feedback.js'
 import { OFFER_HOURS, acceptOffer, confirmSpot, expireOffers, lockParent, offerNext, startsAt } from '../offers.js'
-import { PARENT_SELECT, dueOverrideError, payable, paymentDueAt, readDueOverride, resweep } from '../payable.js'
+import { PARENT_SELECT, dueBackOnError, dueDateBack, dueOverrideError, payable, paymentDueAt, readDueOverride, readNoDue, resweep } from '../payable.js'
 import { enforcePaymentRules, owingLate } from '../payments.js'
 import { log } from '../activity.js'
 import { readImage } from '../images.js'
@@ -66,15 +66,16 @@ const PREVIEW_SELECT = {
     acceptingRsvps: true,
     // what someone unpaid is charged at the door — read into `dues` below
     nonmemberPrice: true,
-    // and when it's due, if set by hand — read into `paymentDueAt`
-    paymentDueOverride: true
+    // and when it's due, if set by hand — read into `paymentDueAt` — or
+    // that it isn't due by any day ("no due date")
+    paymentDueOverride: true, noPaymentDue: true
 }
 
 // ?fields=summary — what the calendars and dashboards place a lab with: its
 // day, time, place and seats, no description or cover
 const SUMMARY_SELECT = {
     labId: true, title: true, date: true, startTime: true, endTime: true, location: true, checkinOpen: true,
-    capacity: true, published: true, acceptingRsvps: true, nonmemberPrice: true, paymentDueOverride: true
+    capacity: true, published: true, acceptingRsvps: true, nonmemberPrice: true, paymentDueOverride: true, noPaymentDue: true
 }
 
 // 'HH:MM' — what <input type="time"> hands back, same rule as events.
@@ -449,6 +450,10 @@ function labData(body) {
     const { due, error: dueError } = readDueOverride(body.paymentDueOverride)
     if (dueError) { return { error: dueError } }
     if (due !== undefined) { data.paymentDueOverride = due }
+    // "no due date" (the check-in page's payments popup)
+    const { noDue, error: noDueError } = readNoDue(body.noPaymentDue)
+    if (noDueError) { return { error: noDueError } }
+    if (noDue !== undefined) { data.noPaymentDue = noDue }
     return { data }
 }
 
@@ -620,7 +625,7 @@ router.put('/:id', requireRole('officer'), requireLabEditor('id'), async (req, r
     try {
         const current = await prisma.lab.findUnique({
             where: { labId },
-            select: { published: true, date: true, startTime: true, paymentDueOverride: true }
+            select: { published: true, date: true, startTime: true, paymentDueOverride: true, noPaymentDue: true }
         })
         if (!current) { return res.status(404).json({ message: 'Lab not found' }) }
 
@@ -655,15 +660,19 @@ router.put('/:id', requireRole('officer'), requireLabEditor('id'), async (req, r
         if ('date' in update || 'startTime' in update) { update.reminderSentAt = null }
         // its due date against the day and start it'll have; moved, the sweep
         // that enforces it is owed again if it's still to come
-        if ('date' in update || 'startTime' in update || 'paymentDueOverride' in update) {
+        // ("no due date" turned back off goes back to one that has to still
+        // be ahead, and starts what was left from before over — dueDateBack)
+        const dueBack = current.noPaymentDue && update.noPaymentDue === false
+        if ('date' in update || 'startTime' in update || 'paymentDueOverride' in update || 'noPaymentDue' in update) {
             const after = { ...current, ...update }
-            const badDue = dueOverrideError(after, current.paymentDueOverride)
+            const badDue = dueOverrideError(after, current.paymentDueOverride) ?? (dueBack ? dueBackOnError(after) : null)
             if (badDue) { return res.status(400).json({ message: badDue }) }
             Object.assign(update, resweep(after))
         }
 
         // the editor keeps what's parked (`draft`) from the reply
         const lab = await prisma.lab.update({ where: { labId }, data: update, omit: { draft: false } })
+        if (dueBack) { await dueDateBack(prisma, 'lab', labId) }
         res.json(lab)
     } catch (err) {
         if (err.code === 'P2025') { return res.status(404).json({ message: 'Lab not found' }) }

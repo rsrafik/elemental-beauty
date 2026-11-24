@@ -561,33 +561,47 @@ const PAYMENT_TABS = [
 // the usual, a week before at 11:59 PM; a date and time picked in the calendar
 // takes its place (paymentDueOverride — see paymentDue in src/payable.js), and
 // anyone signed up and still owing with nothing sent in by then can lose their
-// spot to the waitlist. A day picked with no time is 11:59 PM that day (dueBody). Saved
-// with its own button, so picking a day and then a time doesn't save twice.
-// `item` is the lab or event as GET /:id has it; `onSaved` gets the new
-// override.
+// spot to the waitlist. A day picked with no time is 11:59 PM that day (dueBody).
+//
+// "no due date" (noPaymentDue) turns all of that off: payment isn't due by any
+// day, nobody loses their spot over it, and sending a payment back or
+// rejecting it leaves their spot alone — no 48 hours to fix it, no waitlist.
+// Turned back off, the due date has to still be ahead (the API holds it to
+// that), so one that's passed needs a new one picked with it.
+//
+// Saved with its own button, so picking a day and then a time doesn't save
+// twice. `item` is the lab or event as GET /:id has it; `onSaved` gets
+// { paymentDueOverride, noPaymentDue } as saved.
 function PaymentDueSetting({ kind, item, readOnly, onSaved }) {
 	const saved = item.paymentDueOverride ? new Date(item.paymentDueOverride).toISOString() : null
+	const savedNoDue = Boolean(item.noPaymentDue)
 	const [value, setValue] = useState(() => dueInput(item.paymentDueOverride))
+	const [noDue, setNoDue] = useState(savedNoDue)
 	const [busy, setBusy] = useState(false)
 	const [error, setError] = useState(null)
 	const day = String(item.date ?? '').slice(0, 10)
 	const usual = usualDueText(day)
-	const ok = dueOk(value, day, item.startTime ?? '')
-	const dirty = dueBody(value) !== saved
+	const ok = noDue || dueOk(value, day, item.startTime ?? '')
+	const dirty = noDue !== savedNoDue || (!noDue && dueBody(value) !== saved)
 
 	const save = async () => {
 		if (!ok || !dirty || busy) return
 		setBusy(true)
 		setError(null)
 		try {
-			const reply = await API[kind].update(item[kind === 'lab' ? 'labId' : 'eventId'], { paymentDueOverride: dueBody(value) })
-			onSaved(reply.paymentDueOverride ?? null)
+			const body = noDue
+				? { noPaymentDue: true }
+				: { noPaymentDue: false, paymentDueOverride: dueBody(value) }
+			const reply = await API[kind].update(item[kind === 'lab' ? 'labId' : 'eventId'], body)
+			onSaved({ paymentDueOverride: reply.paymentDueOverride ?? null, noPaymentDue: Boolean(reply.noPaymentDue) })
 		} catch (err) {
 			setError(err.message)
 		} finally {
 			setBusy(false)
 		}
 	}
+
+	const shown = (at) => new Date(at).toLocaleString('en-US', { weekday: 'short', month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' })
 
 	return (
 		<div className="
@@ -616,19 +630,26 @@ function PaymentDueSetting({ kind, item, readOnly, onSaved }) {
 			<div className="
 				mt-2
 				flex
+				flex-wrap
 				items-center
 				justify-center
 				gap-3
 			">
 				<div className="w-[250px]">
-					{readOnly ? (
-						<p className="
+					{readOnly || noDue ? (
+						<p className={`
+							flex
+							items-center
+							justify-center
+							h-[36px]
 							font-vietnam
 							font-semibold
 							text-[15px]
-							text-black
-						">
-							{value ? new Date(dueBody(value)).toLocaleString('en-US', { weekday: 'short', month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' }) : usual ?? 'a week before, 11:59 PM'}
+							${noDue ? 'text-black/60' : 'text-black'}
+						`}>
+							{noDue
+								? 'No due date'
+								: value ? shown(dueBody(value)) : usual ?? 'a week before, 11:59 PM'}
 						</p>
 					) : (
 						<DateTimeField
@@ -649,6 +670,54 @@ function PaymentDueSetting({ kind, item, readOnly, onSaved }) {
 						/>
 					)}
 				</div>
+				{!readOnly && (
+					<button
+						type="button"
+						aria-pressed={noDue}
+						onClick={() => {
+							setNoDue((on) => !on)
+							setError(null)
+						}}
+						className={`
+							flex
+							items-center
+							gap-1.5
+							rounded-full
+							px-3
+							h-[32px]
+							font-vietnam
+							font-semibold
+							text-[13px]
+							whitespace-nowrap
+							cursor-pointer
+							transition-colors
+							duration-150
+							${noDue
+								? 'bg-black text-cream'
+								: 'border border-black/25 text-black/60 hover:border-black/60 hover:text-black'}
+						`}
+					>
+						<span
+							aria-hidden="true"
+							className={`
+								flex
+								items-center
+								justify-center
+								w-[14px]
+								h-[14px]
+								rounded-[4px]
+								${noDue ? 'bg-cream text-black' : 'border border-current'}
+							`}
+						>
+							{noDue && (
+								<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3.5" strokeLinecap="round" strokeLinejoin="round" className="w-[10px] h-[10px]">
+									<path d="m5 12 5 5 9-10" />
+								</svg>
+							)}
+						</span>
+						no due date
+					</button>
+				)}
 				{!readOnly && dirty && (
 					<PopupButton primary onClick={save} disabled={!ok || busy}>
 						{busy ? 'saving…' : 'save'}
@@ -657,35 +726,38 @@ function PaymentDueSetting({ kind, item, readOnly, onSaved }) {
 			</div>
 			<p className="
 				mt-2
+				max-w-[440px]
 				font-vietnam
 				text-[12px]
 				text-black/50
 			">
 				{error
 					? <span className="text-red">{error}</span>
-					: !ok
-						? <span className="text-red">Has to be before it starts</span>
-						: value
-							? (
-								<>
-									Anyone still owing by then can lose their spot to the waitlist.{' '}
-									{!readOnly && (
-										<button
-											type="button"
-											onClick={() => setValue('')}
-											className="
-												underline
-												underline-offset-2
-												cursor-pointer
-												hover:text-black
-											"
-										>
-											use the usual{usual ? ` (${usual})` : ''}
-										</button>
-									)}
-								</>
-							)
-							: `The usual: a week before${usual ? `, ${usual}` : ', 11:59 PM'}. Pick a date to change it.`}
+					: noDue
+						? 'Nobody loses their spot over payment. Sending a payment back or rejecting it won’t start a 48-hour clock or move anyone to the waitlist.'
+						: !ok
+							? <span className="text-red">Has to be before it starts</span>
+							: value
+								? (
+									<>
+										Anyone still owing by then can lose their spot to the waitlist.{' '}
+										{!readOnly && (
+											<button
+												type="button"
+												onClick={() => setValue('')}
+												className="
+													underline
+													underline-offset-2
+													cursor-pointer
+													hover:text-black
+												"
+											>
+												use the usual{usual ? ` (${usual})` : ''}
+											</button>
+										)}
+									</>
+								)
+								: `The usual: a week before${usual ? `, ${usual}` : ', 11:59 PM'}. Pick a date to change it.`}
 			</p>
 		</div>
 	)
@@ -802,7 +874,7 @@ function PaymentsPopup({ kind, item, title, payments: all, rentals = false, read
 											</div>
 										</div>
 									</div>
-									<ReviewButtons payment={payment} onDone={onChange} readOnly={readOnly} />
+									<ReviewButtons payment={payment} onDone={onChange} readOnly={readOnly} noDue={Boolean(item?.noPaymentDue)} />
 								</li>
 							))}
 						</ul>
@@ -1574,7 +1646,7 @@ export default function CheckInView({ kind, id }) {
 				<PaymentsPopup
 					kind={kind}
 					item={item}
-					onDueSaved={(paymentDueOverride) => setItem((prev) => ({ ...prev, paymentDueOverride }))}
+					onDueSaved={(due) => setItem((prev) => ({ ...prev, ...due }))}
 					title={item.title}
 					payments={waitingPayments}
 					rentals={kind === 'lab'}

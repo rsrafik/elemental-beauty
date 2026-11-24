@@ -22,7 +22,9 @@ import StoredImage from '@/components/StoredImage'
 //                    they're moved to the waitlist now — the reason's
 //                    optional). Each emails them. A goggle rental's answers
 //                    leave their spot alone: sent back, it's fixed by the
-//                    rental's deadline; rejected, it's only turned down.
+//                    rental's deadline; rejected, it's only turned down. So
+//                    do any for a lab or event with "no due date" on
+//                    (`noDue`): sent back, no 48 hours; rejected, no waitlist.
 //
 // `payment` is the API's shape: { paymentId, kind, title, schoolYear, amount,
 // methodTitle, reference, screenshot, submittedAt, ... }.
@@ -238,7 +240,16 @@ const GOGGLES_NO = {
 	reject: 'Why? (optional) The rental is turned down and they’re emailed',
 }
 
-export function ReviewButtons({ payment, onDone, readOnly = false }) {
+// and what they say for a lab or event with "no due date" on (no 48 hours,
+// no waitlist)
+const NO_DUE_NO = {
+	'send-back': 'What needs fixing? They’ll see this and can send it again any time. Their spot stays theirs',
+	reject: 'Why? (optional) It’s turned down and they’re emailed. Their spot stays theirs',
+}
+
+// `noDue` is whether its lab or event has "no due date" on, when the caller
+// knows it fresher than the payment does (the check-in page, just toggled).
+export function ReviewButtons({ payment, onDone, readOnly = false, noDue = payment.noDue }) {
 	const goggles = payment.kind === 'goggles'
 	const [busy, setBusy] = useState(null)
 	const [error, setError] = useState(null)
@@ -263,7 +274,8 @@ export function ReviewButtons({ payment, onDone, readOnly = false }) {
 		}
 	}
 
-	const no = asking ? { ...NO[asking], ...(goggles ? { placeholder: GOGGLES_NO[asking] } : {}) } : null
+	const quiet = goggles ? GOGGLES_NO : noDue ? NO_DUE_NO : null
+	const no = asking ? { ...NO[asking], ...(quiet ? { placeholder: quiet[asking] } : {}) } : null
 	const ready = no && (!no.required || reason.trim()) && !busy
 
 	return (

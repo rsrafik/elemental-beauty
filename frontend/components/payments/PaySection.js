@@ -162,7 +162,7 @@ function Status({ payment, noun, duesOnly = false, nextDue = null }) {
 		),
 		declined: `Your ${what} (#${payment.reference}) was rejected${payment.rejectionReason ? `: ${payment.rejectionReason}` : '.'}${goggles
 			? ' Bring your own goggles, or rent a pair again below.'
-			: payment.labId || payment.eventId ? ` You’ve been moved to the waitlist.` : ''}`,
+			: (payment.labId || payment.eventId) && !payment.noDue ? ` You’ve been moved to the waitlist.` : ''}`,
 		reversed: `Your ${what} approval was taken back, and you’re marked unpaid again. Send it again below.`,
 	}[payment.status]
 	return (

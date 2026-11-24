@@ -83,6 +83,9 @@ function shape(payment, { withMember = false } = {}) {
         rejectionReason: payment.rejectionReason,
         submittedAt: payment.submittedAt,
         reviewedAt: payment.reviewedAt,
+        // the lab or event it's for has "no due date" on: sending it back or
+        // rejecting it leaves their spot alone
+        noDue: Boolean(from?.noPaymentDue),
         ...(withMember ? {
             firstName: payment.member.user.firstName,
             lastName: payment.member.user.lastName,
