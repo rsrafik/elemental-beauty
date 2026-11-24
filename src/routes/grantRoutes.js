@@ -19,25 +19,40 @@ function readAwarded(body) {
     return { value: amount }
 }
 
+// amountRequested: a positive number, or null/'' for a draft that doesn't know
+// yet. Returns { value } (undefined = not sent) or { error }.
+function readRequested(body) {
+    if (body.amountRequested === undefined) { return {} }
+    if (body.amountRequested === null || body.amountRequested === '') { return { value: null } }
+    const amount = parseFloat(body.amountRequested)
+    if (isNaN(amount) || amount <= 0) { return { error: 'amountRequested must be a positive number' } }
+    return { value: amount }
+}
+
+const NEEDS_AMOUNT = 'amountRequested is required once a grant is past drafting'
+
 // A grant is tracked from before it's sent, so what's required to file one is
-// what an application has at that point: who it's from, what's being asked for,
-// and when it's due. The money is separate — awarding one doesn't bank it, so
+// what an application has at that point: who it's from and when it's due. What
+// it asks for can wait while it's still a draft — a draft is on the tracker for
+// its deadline — but anything past drafting has to say. The money is separate — awarding one doesn't bank it, so
 // dateGranted only turns up once the decision does, and the deposit itself is
 // an income transaction the treasurer records when it lands.
 router.post('/', requireRole('treasurer'), async (req, res) => {
-    const { name, org, amountRequested, status, deadline, dateGranted, expirationDate } = req.body
+    const { name, org, status, deadline, dateGranted, expirationDate } = req.body
     const awarded = readAwarded(req.body)
     if (awarded.error) { return res.status(400).json({ message: awarded.error }) }
 
-    if (!name || !org || amountRequested === undefined || !deadline) {
-        return res.status(400).json({ message: 'name, org, amountRequested, and deadline are required' })
-    }
-    const amount = parseFloat(amountRequested)
-    if (isNaN(amount) || amount <= 0) {
-        return res.status(400).json({ message: 'amountRequested must be a positive number' })
+    if (!name || !org || !deadline) {
+        return res.status(400).json({ message: 'name, org, and deadline are required' })
     }
     if (status !== undefined && !GRANT_STATUSES.includes(status)) {
         return res.status(400).json({ message: `status must be one of: ${GRANT_STATUSES.join(', ')}` })
+    }
+    const requested = readRequested(req.body)
+    if (requested.error) { return res.status(400).json({ message: requested.error }) }
+    const amount = requested.value ?? null
+    if (amount === null && (status ?? 'drafting') !== 'drafting') {
+        return res.status(400).json({ message: NEEDS_AMOUNT })
     }
     const due = new Date(deadline)
     if (isNaN(due.getTime())) {
@@ -130,13 +145,9 @@ router.put('/:id', requireRole('treasurer'), async (req, res) => {
     const data = {}
     if (req.body.name !== undefined) { data.name = req.body.name }
     if (req.body.org !== undefined) { data.org = req.body.org }
-    if (req.body.amountRequested !== undefined) {
-        const amount = parseFloat(req.body.amountRequested)
-        if (isNaN(amount) || amount <= 0) {
-            return res.status(400).json({ message: 'amountRequested must be a positive number' })
-        }
-        data.amountRequested = amount
-    }
+    const requested = readRequested(req.body)
+    if (requested.error) { return res.status(400).json({ message: requested.error }) }
+    if (requested.value !== undefined) { data.amountRequested = requested.value }
     const awarded = readAwarded(req.body)
     if (awarded.error) { return res.status(400).json({ message: awarded.error }) }
     if (awarded.value !== undefined) { data.amountAwarded = awarded.value }
@@ -177,6 +188,18 @@ router.put('/:id', requireRole('treasurer'), async (req, res) => {
     }
 
     try {
+        // blanking the amount, or moving a blank one past drafting, is checked
+        // against what the row ends up as — either half can arrive on its own
+        if (data.amountRequested === null || (data.status && data.status !== 'drafting')) {
+            const current = await prisma.grant.findUnique({ where: { grantId } })
+            if (!current) { return res.status(404).json({ message: 'Grant not found' }) }
+            const status = data.status ?? current.status
+            const amount = data.amountRequested !== undefined ? data.amountRequested : current.amountRequested
+            if (status !== 'drafting' && amount == null) {
+                return res.status(400).json({ message: NEEDS_AMOUNT })
+            }
+        }
+
         const grant = await prisma.grant.update({ where: { grantId }, data })
         res.json(grant)
     } catch (err) {

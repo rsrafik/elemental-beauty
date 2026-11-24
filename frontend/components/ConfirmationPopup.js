@@ -4,6 +4,7 @@ import { useState } from 'react'
 import { Popup, PopupButton } from '@/components/labs/LabViewParts'
 import DateTimeField from '@/components/labs/DateTimeField'
 import LastSent from '@/components/LastSent'
+import { EmailDraftFields, useEmailDraft } from '@/components/EmailDraft'
 
 // The check-in page's "confirmation": asks everyone signed up who hasn't
 // confirmed yet to confirm their spot. Each gets their own email with a
@@ -15,7 +16,11 @@ import LastSent from '@/components/LastSent'
 //   what      the lab or event's name
 //   prelab    the prelab's file name, or null
 //   startsAt  when the lab or event starts (a Date), or null
-//   onSend    (deadline: ISO string) -> the server's reply; throws if refused
+//   loadDraft () -> the email's usual { subject, message }, which the popup
+//             opens with for the officer to change (components/EmailDraft.js)
+//   onSend    (deadline: ISO string, custom) -> the server's reply; throws if
+//             refused. `custom` is the officer's { subject, message } if they
+//             changed it, else undefined
 //   lastSent  the last one that went out ({ sentAt, deadline }), if any — then
 //             sending is an update: the new deadline replaces it for everyone
 //             still asked, and their email says so
@@ -51,25 +56,26 @@ const FIELD = `
 	focus:border-black
 `
 
-export default function ConfirmationPopup({ count, what, prelab, startsAt, lastSent, onSend, onClose }) {
+export default function ConfirmationPopup({ count, what, prelab, startsAt, lastSent, loadDraft, onSend, onClose }) {
 	const [busy, setBusy] = useState(false)
 	const [status, setStatus] = useState(null)
 	const [deadline, setDeadline] = useState(() => defaultDeadline(startsAt))
 	// "has it passed?" is judged against when the popup opened — the server
 	// checks it again against the real time when it's sent
 	const [opened] = useState(() => Date.now())
+	const draft = useEmailDraft(loadDraft)
 
 	const when = deadline ? new Date(deadline) : null
 	const passed = when && when.getTime() <= opened
 	const afterStart = when && startsAt && when > startsAt
-	const ready = !busy && count > 0 && when && !passed
+	const ready = !busy && count > 0 && when && !passed && draft.ready
 
 	const send = async (dismiss) => {
 		if (!ready) return
 		setBusy(true)
 		setStatus(null)
 		try {
-			const reply = await onSend(when.toISOString())
+			const reply = await onSend(when.toISOString(), draft.custom)
 			setStatus({ text: reply?.message ?? 'Sent' })
 			setTimeout(() => dismiss(onClose), 1600)
 		} catch (err) {
@@ -81,7 +87,7 @@ export default function ConfirmationPopup({ count, what, prelab, startsAt, lastS
 	const line = 'font-vietnam text-sm text-black/60 mt-3'
 
 	return (
-		<Popup title="confirmation" onClose={onClose}>
+		<Popup title="confirmation" onClose={onClose} width="max-w-[560px]">
 			{(dismiss) => (
 				<>
 					{count > 0 ? (
@@ -131,6 +137,11 @@ export default function ConfirmationPopup({ count, what, prelab, startsAt, lastS
 									? `The prelab (${prelab}) will be attached.`
 									: 'No prelab uploaded, so it’ll go without one.'}
 							</p>
+							<EmailDraftFields
+								draft={draft}
+								placeholders={['{deadline}', '{first name}']}
+								note="Each person still gets their own confirm button. Anyone who owes also gets their payment due date and a pay button, and anyone who’s already paid gets a short “you’re all set” instead."
+							/>
 						</>
 					) : (
 						<p className={line}>Everyone signed up for {what} has already confirmed.</p>

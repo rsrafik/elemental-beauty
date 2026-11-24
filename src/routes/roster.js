@@ -1,6 +1,7 @@
 import prisma from '../prismaClient.js'
 import requireRole, { denyRole } from '../middleware/requireRole.js'
-import { OFF_WAITLIST, expireOffers, lockParent, offerNext, sendConfirmations, sendOffer } from '../offers.js'
+import { OFF_WAITLIST, confirmationDraft, expireOffers, lockParent, offerNext, sendConfirmations, sendOffer } from '../offers.js'
+import { readDraft } from '../emailDrafts.js'
 import { emailAll, readMessage } from '../emailAll.js'
 import { log } from '../activity.js'
 import { csvCell } from '../csv.js'
@@ -9,7 +10,7 @@ import { clubToday } from '../clubTime.js'
 import { lastSends, recordSend } from '../emailSends.js'
 import { PARENT_SELECT } from '../payable.js'
 import { versionOf } from '../changes.js'
-import { PAYMENT_INCLUDE, enforcePaymentRules, keepsBooks, notifyDoorUndone, notifyPayer, remindUnpaid, undoDoorPayment } from '../payments.js'
+import { PAYMENT_INCLUDE, enforcePaymentRules, keepsBooks, notifyDoorUndone, notifyPayer, remindUnpaid, undoDoorPayment, unpaidDraft } from '../payments.js'
 
 // The officer check-in page's roster, shared by labs and events: the same
 // three columns (not checked in / checked in / waitlist) and the same buttons
@@ -55,14 +56,22 @@ import { PAYMENT_INCLUDE, enforcePaymentRules, keepsBooks, notifyDoorUndone, not
 //                        get their QR code on its page early (members' pages
 //                        read `checkinOpen`). { open: false } closes it again;
 //                        from the start time it's open whatever this says
-//   POST /:id/remind-unpaid  the page's "email unpaid": everyone signed up who
-//                        owes for it and hasn't sent a payment in is reminded
-//                        to pay by the day, with the QR codes attached
-//   POST /:id/confirm-all  { deadline } — the page's "confirmation": everyone
-//                        signed up who hasn't confirmed yet is emailed a link
-//                        to confirm by then, with a lab's prelab attached
-//                        (see src/offers.js). Sent again, it's an update: the
-//                        new deadline replaces the old one for everyone asked
+//   POST /:id/remind-unpaid  { subject?, message? } — the page's "email
+//                        unpaid": everyone signed up who owes for it and
+//                        hasn't sent a payment in is reminded to pay by the
+//                        day, with a button to its page to pay
+//   GET  /:id/remind-unpaid/draft  that reminder's { subject, message } as it
+//                        goes out by default, for the popup to open with
+//   POST /:id/confirm-all  { deadline, subject?, message? } — the page's
+//                        "confirmation": everyone signed up who hasn't
+//                        confirmed yet is emailed a link to confirm by then,
+//                        with a lab's prelab attached (see src/offers.js).
+//                        Sent again, it's an update: the new deadline
+//                        replaces the old one for everyone asked
+//   GET  /:id/confirm-all/draft  the same for the confirmation
+//
+//     A subject and message sent with either is the officer's edit of the
+//     draft, sent in place of the usual words (src/emailDrafts.js)
 //   GET  /:id/last-sent  when each of the three last went out —
 //                        { email_all, unpaid_reminder, confirmation }, each
 //                        { sentAt, deadline, sent } or null (src/emailSends.js)
@@ -310,9 +319,25 @@ export function mountRoster(router, kind) {
     // Everyone signed up who'd be asked to pay at the door — the page's green
     // $ — and hasn't sent a payment in, reminded to pay by the day (see
     // remindUnpaid in src/payments.js).
+    router.get('/:id/remind-unpaid/draft', ...staffOnly, async (req, res) => {
+        const parentId = parseInt(req.params.id)
+        if (isNaN(parentId)) { return res.status(400).json({ message: `Invalid ${label.toLowerCase()} id` }) }
+        try {
+            const item = await parent.findUnique({ where: { [key]: parentId }, select: PARENT_SELECT[kindName] })
+            if (!item) { return res.status(404).json({ message: `${label} not found` }) }
+            const { price, duesAmount, schoolYear } = await standings(item, [])
+            res.json(await unpaidDraft({ kind: kindName, id: parentId, title: item.title, date: item.date, noPaymentDue: item.noPaymentDue, price, duesAmount, schoolYear }))
+        } catch (err) {
+            console.error(err.message)
+            res.sendStatus(500)
+        }
+    })
+
     router.post('/:id/remind-unpaid', ...staffOnly, async (req, res) => {
         const parentId = parseInt(req.params.id)
         if (isNaN(parentId)) { return res.status(400).json({ message: `Invalid ${label.toLowerCase()} id` }) }
+        const { custom, error } = readDraft(req.body)
+        if (error) { return res.status(400).json({ message: error }) }
         try {
             const item = await parent.findUnique({ where: { [key]: parentId }, select: PARENT_SELECT[kindName] })
             if (!item) { return res.status(404).json({ message: `${label} not found` }) }
@@ -326,8 +351,9 @@ export function mountRoster(router, kind) {
                 !DUES_EXEMPT.includes(row.member.role) && !settled.has(row.memberId) && !pending.has(row.memberId))
             if (owing.length === 0) { return res.status(400).json({ message: 'Everyone signed up has paid or sent a payment in' }) }
             const sent = await remindUnpaid(
-                { kind: kindName, id: parentId, title: item.title, date: item.date, paymentDueOverride: item.paymentDueOverride, price, duesAmount, schoolYear },
-                owing.map(({ member, confirmBy, payBy }) => ({ email: member.user.email, firstName: member.user.firstName, confirmBy, payBy }))
+                { kind: kindName, id: parentId, title: item.title, date: item.date, paymentDueOverride: item.paymentDueOverride, noPaymentDue: item.noPaymentDue, price, duesAmount, schoolYear },
+                owing.map(({ member, confirmBy, payBy }) => ({ email: member.user.email, firstName: member.user.firstName, confirmBy, payBy })),
+                { custom }
             )
             await recordSend({ kind: 'unpaid_reminder', kindName, id: parentId, sent, by: req.userId })
             res.json({ message: `Reminded ${sent} ${sent === 1 ? 'person' : 'people'}`, sent })
@@ -388,12 +414,27 @@ export function mountRoster(router, kind) {
         }
     })
 
-    router.post('/:id/confirm-all', ...staffOnly, async (req, res) => {
+    router.get('/:id/confirm-all/draft', ...staffOnly, async (req, res) => {
         const parentId = parseInt(req.params.id)
         if (isNaN(parentId)) { return res.status(400).json({ message: `Invalid ${label.toLowerCase()} id` }) }
         try {
+            const draft = await confirmationDraft(kindName, parentId)
+            if (!draft) { return res.status(404).json({ message: `${label} not found` }) }
+            res.json(draft)
+        } catch (err) {
+            console.error(err.message)
+            res.sendStatus(500)
+        }
+    })
+
+    router.post('/:id/confirm-all', ...staffOnly, async (req, res) => {
+        const parentId = parseInt(req.params.id)
+        if (isNaN(parentId)) { return res.status(400).json({ message: `Invalid ${label.toLowerCase()} id` }) }
+        const { custom, error } = readDraft(req.body)
+        if (error) { return res.status(400).json({ message: error }) }
+        try {
             const deadline = new Date(req.body?.deadline)
-            const { sent, attached, updated } = await sendConfirmations(kindName, parentId, deadline)
+            const { sent, attached, updated } = await sendConfirmations(kindName, parentId, deadline, { custom })
             await recordSend({ kind: 'confirmation', kindName, id: parentId, deadline, sent, by: req.userId })
             res.json({
                 message: `${updated ? 'Sent the new deadline to' : 'Asked'} ${sent} ${sent === 1 ? 'person' : 'people'}${updated ? '' : ' to confirm'}${attached ? `, with ${attached} attached` : ''}`,

@@ -328,7 +328,8 @@ const LEDGERS = {
 				align: 'right',
 				nowrap: true,
 				// the tracker's figure: what was granted, once it's awarded
-				sortValue: (row) => (row.status === 'awarded' ? grantValue(row) : row.amount),
+				// a draft with no figure yet sorts as the smallest
+				sortValue: (row) => (row.status === 'awarded' ? grantValue(row) : row.amount ?? -1),
 				cell: (row) => <GrantAmount grant={row} />,
 				tone: 'strong',
 			},
@@ -432,7 +433,7 @@ function LedgerCard({ tab, onTab, rows, year, onAdd, onEdit, onDelete, editable 
 	// The note counts what's on screen rather than what's on file, so a funnel
 	// with something ticked reads as an answer: four lab entries, this much.
 	const note = tab === 'grants'
-		? `${visible.length} applications · ${money(sum(visible.filter((row) => row.status === 'awarded').map(grantValue)))} awarded of ${money(sum(visible.map((row) => row.amount)), false)} applied for`
+		? `${visible.length} applications · ${money(sum(visible.filter((row) => row.status === 'awarded').map(grantValue)))} awarded of ${money(sum(visible.map((row) => row.amount ?? 0)), false)} applied for`
 		: `${visible.length} entries · ${money(total(visible))} in ${yearLabel(year)}`
 
 	return (
@@ -807,7 +808,7 @@ function GrantDialog({ grant, onClose, onSave }) {
 	const [form, setForm] = useState({
 		name: grant?.name ?? '',
 		org: grant?.org ?? '',
-		amount: grant ? String(grant.amount) : '',
+		amount: grant?.amount != null ? String(grant.amount) : '',
 		awarded: grant?.awarded != null ? String(grant.awarded) : '',
 		status: grant?.status ?? GRANT_STATUSES[0],
 		due: grant?.due ?? today(),
@@ -816,7 +817,11 @@ function GrantDialog({ grant, onClose, onSave }) {
 	const set = (key) => (event) =>
 		setForm((previous) => ({ ...previous, [key]: event.target.value }))
 
-	const amount = Number(form.amount)
+	// what was asked for — a draft can leave it blank until it's known (it's
+	// on the tracker for its deadline); anything past drafting has to say
+	const isDraft = form.status === 'drafting'
+	const amount = form.amount === '' ? null : Number(form.amount)
+	const amountOk = amount === null ? isDraft : Number.isFinite(amount) && amount > 0
 	// what was actually granted — only asked for once it's awarded, and
 	// optional even then (blank = the amount asked for, until it's known)
 	const isAwarded = form.status === 'awarded'
@@ -826,9 +831,7 @@ function GrantDialog({ grant, onClose, onSave }) {
 		form.name.trim() !== '' &&
 		form.org.trim() !== '' &&
 		form.due !== '' &&
-		form.amount !== '' &&
-		Number.isFinite(amount) &&
-		amount > 0 &&
+		amountOk &&
 		awardedOk
 
 	const submit = (event) => {
@@ -935,7 +938,7 @@ function GrantDialog({ grant, onClose, onSave }) {
 							step="50"
 							value={form.amount}
 							onChange={set('amount')}
-							placeholder="0.00"
+							placeholder={isDraft ? 'not sure yet' : '0.00'}
 							className={`${FIELD} pl-8 tabular-nums`}
 						/>
 					</div>

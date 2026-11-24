@@ -489,3 +489,105 @@ test('"start check-in" opens a lab before its start time, for its staff only', {
         server.close()
     }
 })
+
+// ---- walk-ins and edited emails ----------------------------------------------
+
+test('a walk-in goes straight in only while check-in is open, a seat is free and nobody is waiting', { skip }, async () => {
+    const jwt = (await import('jsonwebtoken')).default
+    const staff = await member()
+    await prisma.member.update({ where: { userId: staff }, data: { role: 'officer' } })
+    const id = await lab({ capacity: 2 })
+    const going = await member()
+    await join(id, going)
+    const [early, first, late, last] = [await member(), await member(), await member(), await member()]
+
+    const app = express()
+    app.use(express.json())
+    app.use((req, res, next) => { req.userId = staff; req.role = 'officer'; next() })
+    app.use('/labs', labRoutes)
+    const server = app.listen(0)
+    const base = `http://localhost:${server.address().port}/labs/${id}`
+    const scan = async (who) => {
+        const qrToken = jwt.sign({ id: who }, process.env.QR_SECRET)
+        let reply = await (await fetch(`${base}/checkin`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ qrToken }) })).json()
+        // (a dues prompt first if this year's dues are set — waived here)
+        if (reply.code === 'DUES_UNPAID') {
+            reply = await (await fetch(`${base}/checkin`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ qrToken, dues: 'waive' }) })).json()
+        }
+        return reply.code
+    }
+    try {
+        // a week out with check-in not started: the waitlist, seat or no seat
+        assert.equal(await scan(early), 'WAITLISTED')
+        assert.equal(await statusOf(id, early), 'waitlisted')
+
+        // open, a seat free — but someone's already waiting, so they're ahead
+        await prisma.lab.update({ where: { labId: id }, data: { checkinOpen: true } })
+        assert.equal(await scan(first), 'WAITLISTED')
+        const queue = await prisma.memberLab.findMany({ where: { labId: id, attendanceStatus: 'waitlisted' }, orderBy: { waitlistedAt: 'asc' } })
+        assert.deepEqual(queue.map((row) => row.memberId), [early, first])
+
+        // nobody waiting and a seat free: straight in, points and all
+        await prisma.memberLab.deleteMany({ where: { labId: id, attendanceStatus: 'waitlisted' } })
+        assert.equal(await scan(late), 'CHECKED_IN')
+        assert.equal(await statusOf(id, late), 'attended')
+
+        // full now (going + late): the waitlist again
+        assert.equal(await scan(last), 'WAITLISTED')
+        assert.equal(await statusOf(id, last), 'waitlisted')
+        // and the one signed up still checks in as ever
+        assert.equal(await scan(going), 'CHECKED_IN')
+    } finally {
+        server.close()
+    }
+})
+
+test('"email unpaid" and "confirmation" open with the usual email, and send an edited one in its place', { skip }, async () => {
+    const staff = await member()
+    await prisma.member.update({ where: { userId: staff }, data: { role: 'officer' } })
+    const id = await lab({ capacity: 3, hoursOut: 24 * 10 })
+    const one = await member()
+    await join(id, one)
+
+    const app = express()
+    app.use(express.json())
+    app.use((req, res, next) => { req.userId = staff; req.role = 'officer'; next() })
+    app.use('/labs', labRoutes)
+    const server = app.listen(0)
+    const base = `http://localhost:${server.address().port}/labs/${id}`
+    const send = (path, body) => fetch(`${base}${path}`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(body) })
+    const printed = []
+    const print = console.log
+    console.log = (...args) => {
+        const line = args.join(' ')
+        if (line.startsWith('[email fallback]')) { printed.push(line) } else { print(...args) }
+    }
+    try {
+        const draft = await (await fetch(`${base}/confirm-all/draft`)).json()
+        assert.equal(draft.subject, `Please confirm your spot: ${tag} lab`)
+        assert.match(draft.message, /Please confirm you’re still coming/)
+        assert.match(draft.message, /\{deadline\}/)
+        assert.match((await (await fetch(`${base}/remind-unpaid/draft`)).json()).message, /\{first name\}/)
+
+        // an empty edit is refused, not sent as the usual one
+        assert.equal((await send('/confirm-all', { deadline: new Date(Date.now() + 48 * HOUR).toISOString(), subject: 'x', message: ' ' })).status, 400)
+
+        const deadline = new Date(Date.now() + 48 * HOUR)
+        const reply = await send('/confirm-all', {
+            deadline: deadline.toISOString(),
+            subject: 'Coming, {first name}?',
+            message: 'Hi {first name}, bring an apron.\n\nConfirm by {deadline}.'
+        })
+        assert.equal(reply.status, 200)
+        assert.equal(printed.length, 1)
+        const name = (await prisma.user.findUnique({ where: { userId: one } })).firstName
+        assert.match(printed[0], new RegExp(`Subject: Coming, ${name}\\?`))
+        assert.match(printed[0], new RegExp(`Hi ${name}, bring an apron\\.`))
+        assert.doesNotMatch(printed[0], /\{deadline\}|\{first name\}/)
+        // their own button still goes along
+        assert.match(printed[0], /Confirm my spot: .*\/offer\?token=/)
+    } finally {
+        console.log = print
+        server.close()
+    }
+})

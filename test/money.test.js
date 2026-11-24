@@ -297,6 +297,36 @@ test('awarding a grant puts it in the income ledger, and un-awarding takes it ba
     })
 })
 
+test('a draft grant can go on without an amount, and has to have one to leave drafting', { skip }, async () => {
+    const treasurer = await person('treasurer')
+    await as(treasurer, 'treasurer', 'grants', async (base) => {
+        const created = await send(base, 'POST', { name: `${tag} draft`, org: 'Org', deadline: '2031-02-01' })
+        assert.equal(created.status, 201)
+        const grant = await created.json()
+        made.grants.push(grant.grantId)
+        assert.equal(grant.status, 'drafting')
+        assert.equal(grant.amountRequested, null)
+
+        // only a draft may be blank
+        const sentBlank = await send(base, 'POST', {
+            name: `${tag} sent`, org: 'Org', status: 'under_review', deadline: '2031-02-01'
+        })
+        assert.equal(sentBlank.status, 400)
+
+        // moving the blank draft along is refused until it says what it asks for
+        assert.equal((await send(`${base}/${grant.grantId}`, 'PUT', { status: 'under_review' })).status, 400)
+        const moved = await send(`${base}/${grant.grantId}`, 'PUT', { status: 'under_review', amountRequested: 500 })
+        assert.equal(moved.status, 200)
+
+        // and once it's past drafting the amount can't be blanked again
+        assert.equal((await send(`${base}/${grant.grantId}`, 'PUT', { amountRequested: null })).status, 400)
+        // back to drafting, it can
+        const back = await send(`${base}/${grant.grantId}`, 'PUT', { status: 'drafting', amountRequested: '' })
+        assert.equal(back.status, 200)
+        assert.equal((await back.json()).amountRequested, null)
+    })
+})
+
 test("an awarded grant's income row only changes through the grant", { skip }, async () => {
     const treasurer = await person('treasurer')
     const grant = await prisma.grant.create({

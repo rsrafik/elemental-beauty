@@ -2,6 +2,8 @@ import jwt from 'jsonwebtoken'
 import prisma from './prismaClient.js'
 import { sendEmail } from './email.js'
 import { actionEmail } from './emailTemplate.js'
+import { paragraphs } from './emailAll.js'
+import { fillDraft } from './emailDrafts.js'
 import { APP_URL } from './verification.js'
 import { clubFormat, startsAt } from './clubTime.js'
 import { OFFER_HOURS, PARENT_SELECT, dueCallout, dueText, dueWhen, payable, paymentDueAt } from './payable.js'
@@ -489,6 +491,31 @@ function deadlineText(at) {
     })
 }
 
+const LATER = 'If we don’t hear back by then, your spot may go to someone on the waitlist, and you’ll move to the back of it.'
+const PRELAB_LINE = 'The prelab is attached. Please read through it before the lab.'
+
+// the confirmation's ask, for everyone who doesn't owe
+function confirmAsk(parent) {
+    return `You’re signed up for ${parent.title} on ${when(parent)}. Please confirm you’re still coming.`
+}
+
+// "confirmation" as it goes out to someone asked to confirm, for the check-in
+// page to open with, with a placeholder where the deadline goes (and a name,
+// if the officer adds one) — see src/emailDrafts.js. Null if it doesn't exist.
+export async function confirmationDraft(kindName, parentId) {
+    const kind = KINDS[kindName]
+    const parent = await prisma[kind.parent].findUnique({ where: { [kind.key]: parentId }, select: PARENT_SELECT[kindName] })
+    if (!parent) return null
+    return {
+        subject: `Please confirm your spot: ${parent.title}`,
+        message: [
+            confirmAsk(parent),
+            `Please confirm by {deadline}. ${LATER}`,
+            ...(kindName === 'lab' && parent.prelabPdfName ? [PRELAB_LINE] : [])
+        ].join('\n\n')
+    }
+}
+
 // "confirmation": email everyone signed up a word about their spot, by
 // `deadline` (a Date), with the prelab attached:
 //
@@ -506,8 +533,15 @@ function deadlineText(at) {
 // it's sooner than the week before), in an email that says it's an updated
 // date and to disregard the one before.
 //
+// `custom` is an officer's own { subject, message } from the check-in page
+// (confirmationDraft below, src/emailDrafts.js), sent to everyone being asked
+// in place of the usual words. Each still gets their own heading, callout and
+// button, and the date-changed note when it's an update; anyone who owes keeps
+// the lines about paying under it. Whoever's already paid up isn't being
+// asked anything, and gets the usual "you're all set".
+//
 // Returns { sent, attached, updated } — `updated` when it replaced a deadline.
-export async function sendConfirmations(kindName, parentId, deadline) {
+export async function sendConfirmations(kindName, parentId, deadline, { custom = null } = {}) {
     if (!(deadline instanceof Date) || isNaN(deadline.getTime()) || deadline.getTime() <= Date.now()) {
         throw Object.assign(new Error('Pick a deadline that hasn’t passed yet'), { status: 400 })
     }
@@ -526,10 +560,9 @@ export async function sendConfirmations(kindName, parentId, deadline) {
     }
     const prelab = await prelabOf(kindName, parentId)
     const page = `${APP_URL}${kind.page(parentId)}`
-    const prelabLine = prelab ? ['The prelab is attached. Please read through it before the lab.'] : []
+    const prelabLine = prelab ? [PRELAB_LINE] : []
     const why = `You’re getting this because you signed up for ${parent.title}.`
 
-    const later = `If we don’t hear back by then, your spot may go to someone on the waitlist, and you’ll move to the back of it.`
     // asked before: it says so, up top, with the deadline it replaces
     const asUpdate = (email, previous) => previous
         ? {
@@ -542,6 +575,11 @@ export async function sendConfirmations(kindName, parentId, deadline) {
             ]
         }
         : email
+    // the officer's words in place of a variant's own: `keep` is what of it
+    // has to stay (the lines about paying), under them
+    const mine = (email, firstName, keep = []) => custom
+        ? { ...email, lines: [...paragraphs(fillDraft(custom.message, { firstName, deadline: deadlineText(deadline) })), ...keep], after: [] }
+        : email
     let sent = 0
     let updated = false
     for (const row of asking) {
@@ -550,6 +588,19 @@ export async function sendConfirmations(kindName, parentId, deadline) {
         if (previous) { updated = true }
         const standing = await payable(prisma, row.memberId, kindName, parentId, parent)
         const owes = Boolean(standing?.owes)
+        // what someone who owes and hasn't sent anything is told about paying
+        const payLines = [
+            standing?.fixBy
+                ? `Your payment was sent back, so the due date has moved. It was due ${dueText(paymentDueAt(parent, { confirmBy: deadline }))}. Fix it and send it again by ${dueText(standing.fixBy)}, or your spot may go to someone on the waitlist.`
+                : !paymentDueAt(parent, { confirmBy: deadline, payBy: row.payBy })
+                    // "no due date": nothing to miss
+                    ? 'Please pay before you come.'
+                : paymentDueAt(parent, { confirmBy: deadline, payBy: row.payBy }) <= new Date()
+                    ? `Payment was due ${dueText(paymentDueAt(parent, { confirmBy: deadline, payBy: row.payBy }))}. Pay now to keep your spot. If someone on the waitlist needs it, it may go to them.`
+                    : `Payment is due ${dueWhen(parent, { confirmBy: deadline, payBy: row.payBy })}. If you haven’t paid by then, your spot may go to someone on the waitlist.`,
+            'Payments aren’t refunded if you can’t make it, because we buy your materials ahead of time.'
+        ]
+        const heldLine = 'It’s being checked now. Your spot is held until then, and it’s officially confirmed once we approve it. There’s nothing else to do.'
         const token = jwt.sign(
             { purpose: 'confirm', kind: kindName, parentId, memberId: row.memberId },
             process.env.JWT_SECRET,
@@ -557,9 +608,11 @@ export async function sendConfirmations(kindName, parentId, deadline) {
         )
         await sendEmail({
             to: user.email,
-            subject: previous ? `Updated confirmation date: ${parent.title}` : `Please confirm your spot: ${parent.title}`,
+            subject: custom
+                ? fillDraft(custom.subject, { firstName: user.firstName, deadline: deadlineText(deadline) })
+                : previous ? `Updated confirmation date: ${parent.title}` : `Please confirm your spot: ${parent.title}`,
             ...actionEmail(asUpdate(owes && !standing.sent
-                ? {
+                ? mine({
                     heading: user.firstName ? `Pay to confirm your spot, ${user.firstName}` : 'Pay to confirm your spot',
                     // sent back: the 48 hours to fix it are the due date now
                     callout: standing.fixBy
@@ -568,38 +621,31 @@ export async function sendConfirmations(kindName, parentId, deadline) {
                     lines: [
                         `You’re signed up for ${parent.title} on ${when(parent)}.`,
                         'To officially confirm your spot, you need to pay. Send your payment on its page. Once it’s sent your spot is held, and it’s confirmed when we approve it.',
-                        standing.fixBy
-                            ? `Your payment was sent back, so the due date has moved. It was due ${dueText(paymentDueAt(parent, { confirmBy: deadline }))}. Fix it and send it again by ${dueText(standing.fixBy)}, or your spot may go to someone on the waitlist.`
-                            : paymentDueAt(parent, { confirmBy: deadline, payBy: row.payBy }) <= new Date()
-                                ? `Payment was due ${dueText(paymentDueAt(parent, { confirmBy: deadline, payBy: row.payBy }))}. Pay now to keep your spot. If someone on the waitlist needs it, it may go to them.`
-                                : `Payment is due ${dueWhen(parent, { confirmBy: deadline, payBy: row.payBy })}. If you haven’t paid by then, your spot may go to someone on the waitlist.`,
-                        'Payments aren’t refunded if you can’t make it, because we buy your materials ahead of time.'
+                        ...payLines
                     ],
                     button: { label: 'Pay to confirm my spot', url: page },
                     after: prelabLine,
                     reason: why
-                }
+                }, user.firstName, payLines)
                 : owes
-                ? {
+                ? mine({
                     heading: user.firstName ? `Your spot is held, ${user.firstName}` : 'Your spot is held',
                     callout: dueCallout(parent, { confirmBy: deadline, payBy: row.payBy }),
                     lines: [
                         `You’re signed up for ${parent.title} on ${when(parent)}, and we’ve got the payment you sent.`,
-                        'It’s being checked now. Your spot is held until then, and it’s officially confirmed once we approve it. There’s nothing else to do.'
+                        heldLine
                     ],
                     button: { label: `See the ${kind.noun}`, url: page },
                     after: prelabLine,
                     reason: why
-                }
-                : {
+                }, user.firstName, [`We’ve got the payment you sent. ${heldLine}`])
+                : mine({
                     heading: user.firstName ? `Still coming, ${user.firstName}?` : 'Still coming?',
-                    lines: [
-                        `You’re signed up for ${parent.title} on ${when(parent)}. Please confirm you’re still coming.`
-                    ],
+                    lines: [confirmAsk(parent)],
                     button: { label: 'Confirm my spot', url: `${APP_URL}/offer?token=${token}` },
-                    after: [`Please confirm by ${deadlineText(deadline)}. ${later}`, ...prelabLine],
+                    after: [`Please confirm by ${deadlineText(deadline)}. ${LATER}`, ...prelabLine],
                     reason: why
-                }, previous)),
+                }, user.firstName), previous)),
             ...(prelab ? { attachments: [prelab] } : {})
         })
         await prisma[kind.link].update({

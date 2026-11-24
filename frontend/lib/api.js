@@ -291,10 +291,15 @@ export const events = {
 	// the check-in page's "email all": { subject, message } to everyone signed up
 	emailAll: (id, message) => api(`/events/${id}/email-all`, { method: 'POST', body: message }),
 	// the check-in page's "email unpaid": everyone with a green $ reminded to pay
-	remindUnpaid: (id) => api(`/events/${id}/remind-unpaid`, { method: 'POST' }),
+	// `custom`: the officer's own { subject, message }, or undefined for the usual
+	remindUnpaid: (id, custom) => api(`/events/${id}/remind-unpaid`, { method: 'POST', body: custom ?? {} }),
+	// that reminder's usual { subject, message }, for its popup to open with
+	unpaidDraft: (id) => api(`/events/${id}/remind-unpaid/draft`),
 	// the check-in page's "confirmation": everyone signed up who hasn't
 	// confirmed is emailed a link to, by `deadline` (an ISO time)
-	confirmAll: (id, deadline) => api(`/events/${id}/confirm-all`, { method: 'POST', body: { deadline } }),
+	confirmAll: (id, deadline, custom) => api(`/events/${id}/confirm-all`, { method: 'POST', body: { deadline, ...custom } }),
+	// the confirmation's usual { subject, message }, for its popup to open with
+	confirmDraft: (id) => api(`/events/${id}/confirm-all/draft`),
 	// when the page's three emails last went out: { email_all, unpaid_reminder,
 	// confirmation }, each { sentAt, deadline, sent } or null
 	lastSent: (id) => api(`/events/${id}/last-sent`),
@@ -386,13 +391,18 @@ export const labs = {
 	// the check-in page's "email all": { subject, message } to everyone signed up
 	emailAll: (id, message) => api(`/labs/${id}/email-all`, { method: 'POST', body: message }),
 	// the check-in page's "email unpaid": everyone with a green $ reminded to pay
-	remindUnpaid: (id) => api(`/labs/${id}/remind-unpaid`, { method: 'POST' }),
+	// `custom`: the officer's own { subject, message }, or undefined for the usual
+	remindUnpaid: (id, custom) => api(`/labs/${id}/remind-unpaid`, { method: 'POST', body: custom ?? {} }),
+	// that reminder's usual { subject, message }, for its popup to open with
+	unpaidDraft: (id) => api(`/labs/${id}/remind-unpaid/draft`),
 	// the check-in page's "start check-in": QR codes before the start time
 	setCheckinOpen: (id, open) => api(`/labs/${id}/checkin-open`, { method: 'PUT', body: { open } }),
 	// the check-in page's "confirmation": everyone signed up who hasn't
 	// confirmed is emailed a link to, by `deadline` (an ISO time), with the
 	// prelab attached (src/offers.js)
-	confirmAll: (id, deadline) => api(`/labs/${id}/confirm-all`, { method: 'POST', body: { deadline } }),
+	confirmAll: (id, deadline, custom) => api(`/labs/${id}/confirm-all`, { method: 'POST', body: { deadline, ...custom } }),
+	// the confirmation's usual { subject, message }, for its popup to open with
+	confirmDraft: (id) => api(`/labs/${id}/confirm-all/draft`),
 	// when the page's three emails last went out, as an event's
 	lastSent: (id) => api(`/labs/${id}/last-sent`),
 	// a member confirming their own spot from the lab's page

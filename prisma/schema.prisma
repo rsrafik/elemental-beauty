@@ -305,6 +305,10 @@ model Lab {
   // popup — null is the usual a week before at 11:59 PM (paymentDue in
   // src/payable.js).
   paymentDueOverride DateTime? @map("payment_due_override") @db.Timestamptz()
+  // "no due date", in the same popup: payment isn't due by any day, so nobody
+  // loses their spot over it — a payment sent back gets no 48 hours to fix,
+  // and one rejected doesn't move them to the waitlist (src/payable.js).
+  noPaymentDue Boolean @default(false) @map("no_payment_due")
   // when its payment due date (a week before, 11:59 PM) was enforced:
   // everyone still owing with nothing sent in was moved to the waitlist, once
   // (src/payments.js). Set for any lab already past it when this was added.
@@ -461,6 +465,8 @@ model Event {
   // its payment due date set by hand, as a lab's — only a members-only one
   // takes payment, so anything else keeps null
   paymentDueOverride DateTime? @map("payment_due_override") @db.Timestamptz()
+  // "no due date", as a lab's
+  noPaymentDue Boolean @default(false) @map("no_payment_due")
   // when its payment due date was enforced, as a lab's (src/payments.js)
   paymentsDueSweptAt DateTime? @map("payments_due_swept_at") @db.Timestamptz()
   // the day-before reminder, same as a lab's (src/reminders.js)
@@ -653,7 +659,10 @@ model Grant {
   grantId         Int         @id @default(autoincrement()) @map("grant_id")
   name            String
   org             String
-  amountRequested Decimal     @map("amount_requested") @db.Decimal(10, 2)
+  // Blank only while it's being drafted: a draft can go on the tracker for its
+  // deadline before anyone knows what to ask for. Anything past drafting has
+  // to say (chk_grants_amount_past_drafting).
+  amountRequested Decimal?    @map("amount_requested") @db.Decimal(10, 2)
   // What was actually granted, which is often not what was asked for. Only
   // an awarded grant has one; the tracker's "remaining" is counted from it.
   amountAwarded   Decimal?    @map("amount_awarded") @db.Decimal(10, 2)

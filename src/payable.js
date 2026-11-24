@@ -26,6 +26,12 @@ import { memo } from './memo.js'
 // keeps their spot until it's looked at; one sent back has 48 hours to be
 // fixed (REVISE_HOURS) before it counts as overdue too; one rejected moves
 // them to the waitlist.
+//
+// Unless an officer turned on "no due date" in that same popup
+// (noPaymentDue): then payment isn't due by any day, and nobody loses their
+// spot over it. A payment sent back has no 48 hours on it — they fix it
+// whenever — and one rejected only turns it down; nobody's moved to the
+// waitlist for not paying.
 
 // the two kinds of thing a fee can be for
 export const ITEMS = {
@@ -39,7 +45,7 @@ export const ITEMS = {
 // up), so they read this much and no more.
 const PARENT_COMMON = {
     title: true, date: true, startTime: true, endTime: true, location: true, capacity: true,
-    nonmemberPrice: true, paymentDueOverride: true, paymentsDueSweptAt: true,
+    nonmemberPrice: true, paymentDueOverride: true, noPaymentDue: true, paymentsDueSweptAt: true,
     confirmSentAt: true, reminderSentAt: true, checkinOpen: true
 }
 export const PARENT_SELECT = {
@@ -82,9 +88,10 @@ export function offerLapse(link, parent, now = new Date()) {
 //   'confirm'  their confirmation deadline, when it's earlier than either
 //   'late'     the 48 hours they were given, owing after it had passed
 //
-// Null for a draft with no date.
+// Null for a draft with no date, and for one with "no due date" on
+// (noPaymentDue) — nothing's due by any day.
 export function paymentDue(row, link = null) {
-    if (!row?.date) return null
+    if (!row?.date || row.noPaymentDue) return null
     if (link?.payBy) return { at: new Date(link.payBy), by: 'late' }
     const usual = row.paymentDueOverride
         ? { at: new Date(row.paymentDueOverride), by: 'set' }
@@ -126,6 +133,43 @@ export function dueOverrideError(row, was, now = new Date()) {
     const changed = !was || new Date(was).getTime() !== due.getTime()
     if (changed && due.getTime() <= now.getTime()) return 'That payment due date has already passed'
     return null
+}
+
+// "No due date" as a request sent it (noPaymentDue): true or false. Returns
+// { noDue } (absent when the body didn't carry one) or { error }.
+export function readNoDue(value) {
+    if (value === undefined) return {}
+    if (typeof value !== 'boolean') return { error: 'noPaymentDue must be true or false' }
+    return { noDue: value }
+}
+
+// What's wrong with turning "no due date" back off on `row` (its date,
+// startTime and paymentDueOverride as they'll be after the save), or null.
+// The due date it goes back to has to still be ahead — the hourly sweep would
+// count everyone owing as overdue at once — so one that's passed needs a new
+// one picked with it.
+export function dueBackOnError(row, now = new Date()) {
+    const due = paymentDueAt({ ...row, noPaymentDue: false })
+    if (due && due.getTime() <= now.getTime()) {
+        return 'That payment due date has already passed. Pick a new one to bring the due date back'
+    }
+    return null
+}
+
+// After "no due date" is turned back off for one lab or event: whatever was
+// left from before it went on starts over, so nobody's overdue the moment it's
+// back. A payment sent back while it was on gets its 48 hours from now, and a
+// late clock (payBy) goes — they're under the due date like everyone else.
+export async function dueDateBack(db, kindName, id, now = new Date()) {
+    const kind = ITEMS[kindName]
+    await db.memberPayment.updateMany({
+        where: { [kind.key]: id, status: 'rejected', kind: { in: ['fee', 'dues'] } },
+        data: { reviewedAt: now }
+    })
+    await db[kind.link].updateMany({
+        where: { [kind.key]: id, payBy: { not: null } },
+        data: { payBy: null, payRemindedAt: null }
+    })
 }
 
 // After a save that moved a lab's or event's due date (its own, or its day):
@@ -195,7 +239,8 @@ export function reviseBy(reviewedAt) {
 //     sent       they've sent a payment in that covers it, waiting or
 //                approved (paymentSent)
 //     fixBy      their newest payment for it was sent back: the new due
-//                date, 48 hours on (reviseBy) — else null
+//                date, 48 hours on (reviseBy) — else null, and always null
+//                with no due date
 //     nextDue    from /vip only: when their dues have to be in by to keep a
 //                spot (nextDueOf), or null
 //     choices    [{ kind: 'fee' | 'dues', amount }] — what they could pay
@@ -238,7 +283,8 @@ export async function payable(db, memberId, kindName = null, id = null, known = 
     const owes = Boolean(item) && !exempt && !duesPaid && !door && charges && (price > 0 || duesAmount > 0)
     const due = paymentDue(row, link)
     const sent = item ? await paymentSent(db, memberId, kindName, id, schoolYear) : false
-    const fixBy = item && !sent ? await sentBackBy(db, memberId, kindName, id) : null
+    // (with no due date, one sent back has no 48 hours on it either)
+    const fixBy = item && !sent && !row.noPaymentDue ? await sentBackBy(db, memberId, kindName, id) : null
     const nextDue = !kindName && !exempt && !duesPaid ? await nextDueOf(db, memberId) : null
     return {
         item, schoolYear, exempt, duesPaid, door, holds, owes, price,
@@ -318,8 +364,11 @@ export async function duesDeadlines(db, memberId, now = new Date()) {
             due = lapse ? { at: lapse, by: 'offer' } : { at: starts, by: 'start' }
         } else if (standing.fixBy) {
             due = { at: standing.fixBy, by: 'fix' }
-        } else {
+        } else if (standing.dueAt) {
             due = { at: standing.dueAt, by: standing.dueBy }
+        } else {
+            // "no due date": nothing to put on the calendar
+            continue
         }
         const amount = standing.price > 0
             ? standing.price

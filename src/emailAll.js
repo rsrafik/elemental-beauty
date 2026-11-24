@@ -24,7 +24,7 @@ const RESEND_GAP_MS = 600
 const wait = (ms) => new Promise((resolve) => setTimeout(resolve, ms))
 
 // a blank line starts a new paragraph; single line breaks are kept inside one
-function paragraphs(message) {
+export function paragraphs(message) {
     return String(message)
         .split(/\n\s*\n/)
         .map((block) => block.trim())

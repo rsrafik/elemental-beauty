@@ -283,7 +283,8 @@ export function toExpenses(transactions) {
 		}))
 }
 
-// GET /grants. `amount` is what was asked for, `awarded` what was actually
+// GET /grants. `amount` is what was asked for (null on a draft that doesn't
+// know yet — it's on the tracker for its deadline), `awarded` what was actually
 // granted (null until it is — often less than was asked), and `due` is the
 // application deadline — an application that isn't awarded yet has no other
 // date on it.
@@ -292,7 +293,7 @@ export function toGrants(grants) {
 		id: row.grantId,
 		name: row.name,
 		org: row.org,
-		amount: Number(row.amountRequested),
+		amount: row.amountRequested == null ? null : Number(row.amountRequested),
 		awarded: row.amountAwarded == null ? null : Number(row.amountAwarded),
 		status: row.status,
 		due: day(row.deadline),
