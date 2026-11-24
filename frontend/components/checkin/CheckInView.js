@@ -1056,9 +1056,11 @@ export default function CheckInView({ kind, id }) {
 		const name = row ? fullName(row) : 'member'
 		const tone = { CHECKED_IN: 'green', ALREADY_CHECKED_IN: 'green', WAITLISTED: 'yellow', ALREADY_WAITLISTED: 'yellow' }[reply.code] ?? 'green'
 		const text = {
-			CHECKED_IN: `${name} checked in`,
+			// a walk-in let straight in: check-in's open, a spot was free and
+			// nobody was waiting for it (src/walkIns.js)
+			CHECKED_IN: reply.walkIn ? `${name} wasn't signed up, but a spot was free, so they're checked in` : `${name} checked in`,
 			ALREADY_CHECKED_IN: `${name} is already checked in`,
-			WAITLISTED: `${name} wasn't signed up, so they were added to the waitlist`,
+			WAITLISTED: `${name} wasn't signed up, so they were added to the end of the waitlist`,
 			ALREADY_WAITLISTED: `${name} is on the waitlist`,
 		}[reply.code] ?? reply.message
 		return { tone, text }

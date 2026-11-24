@@ -15,6 +15,7 @@ import { PARENT_SELECT, dueBackOnError, dueDateBack, dueOverrideError, payable, 
 import { enforcePaymentRules, owingLate } from '../payments.js'
 import { log } from '../activity.js'
 import { readEndTime } from '../clubTime.js'
+import { walkInRoom, waitlistWalkIn, walkInWaitlisted } from '../walkIns.js'
 import { DUES_ANSWERS, asksDues, duesAnswerProblem, duesLookup, doorOwed, duesUnpaid, readPaidBy, readPrice, settleDues } from '../dues.js'
 
 const router = express.Router()
@@ -846,8 +847,10 @@ router.delete('/:eventId/rsvp', async (req, res) => {
 })
 
 // Officer scans a member's QR. RSVP'd → checked in (+points: official 5,
-// social 3, awarded exactly once at the transition to attended). Not RSVP'd
-// → waitlisted with a distinct code.
+// social 3, awarded exactly once at the transition to attended). Not signed
+// up at all (a walk-in) → checked in only while check-in is open, a seat's
+// free and nobody's on the waitlist; otherwise to the back of the waitlist
+// (src/walkIns.js).
 //
 // A members-only event asks after dues the way a lab does: someone unpaid
 // comes back DUES_UNPAID, and the officer's answer is the same scan with
@@ -878,57 +881,64 @@ router.post('/:eventId/checkin', requireRole('officer'), requireNotAttendee('eve
             where: { memberId_eventId: { memberId: decoded.id, eventId } }
         })
 
-        if (!existing) {
-            // walk-in with no RSVP → waitlist (no points — waitlisting never earns)
-            const waitlisted = await prisma.memberEvent.create({
-                data: {
-                    memberId: decoded.id,
-                    eventId,
-                    attendanceStatus: 'waitlisted',
-                    waitlistedAt: new Date()
-                }
+        // walk-in with no row: the back of the waitlist (no points —
+        // waitlisting never earns) unless there's room for them ahead of it
+        if (!existing && !(await walkInRoom(prisma, 'event', eventId, event))) {
+            const waitlisted = await prisma.$transaction(async (tx) => {
+                await lockParent(tx, 'event', eventId)
+                return waitlistWalkIn(tx, 'event', eventId, decoded.id)
             })
-            return res.status(202).json({
-                code: 'WAITLISTED',
-                message: 'No RSVP found, so they were added to the waitlist',
-                attendance: waitlisted
-            })
+            return walkInWaitlisted(res, event, waitlisted)
         }
 
-        if (existing.attendanceStatus === 'attended') {
+        if (existing?.attendanceStatus === 'attended') {
             return res.json({ code: 'ALREADY_CHECKED_IN', message: 'Already checked in' })
         }
-        if (existing.attendanceStatus === 'waitlisted') {
+        if (existing?.attendanceStatus === 'waitlisted') {
             return res.status(202).json({ code: 'ALREADY_WAITLISTED', message: 'Still on the waitlist' })
         }
 
         const owed = asksDues('event', event)
-            ? await doorOwed(prisma, existing, event.date.toISOString().slice(0, 10), event.nonmemberPrice)
+            ? await doorOwed(prisma, existing ?? { memberId: decoded.id }, event.date.toISOString().slice(0, 10), event.nonmemberPrice)
             : null
         if (owed && !dues) { return duesUnpaid(res, decoded.id, owed) }
         const problem = owed && duesAnswerProblem(owed, dues)
         if (problem) { return res.status(400).json({ message: problem }) }
 
-        // rsvped → attended, points awarded atomically with the transition
+        // rsvped (or a walk-in let in) → attended, points awarded atomically
+        // with the transition
         const attendance = await prisma.$transaction(async (tx) => {
+            if (!existing) {
+                // the room's looked at again under the lock: the last seat may
+                // have gone (or someone joined the waitlist) since
+                await lockParent(tx, 'event', eventId)
+                if (!(await walkInRoom(tx, 'event', eventId, event))) {
+                    return { waitlisted: await waitlistWalkIn(tx, 'event', eventId, decoded.id) }
+                }
+            }
             const door = owed
                 ? await settleDues(tx, { owed, dues, memberId: decoded.id, actorId: req.userId, item: { kind: 'event', id: eventId, title: event.title }, paidBy: readPaidBy(req.body) })
                 : null
-            const row = await tx.memberEvent.update({
-                where: { memberId_eventId: { memberId: decoded.id, eventId } },
-                data: { attendanceStatus: 'attended', offerSentAt: null, ...(door ?? {}) }
-            })
+            const row = existing
+                ? await tx.memberEvent.update({
+                    where: { memberId_eventId: { memberId: decoded.id, eventId } },
+                    data: { attendanceStatus: 'attended', offerSentAt: null, ...(door ?? {}) }
+                })
+                : await tx.memberEvent.create({
+                    data: { memberId: decoded.id, eventId, attendanceStatus: 'attended', ...(door ?? {}) }
+                })
             await tx.member.update({
                 where: { userId: decoded.id },
                 data: { points: { increment: eventPoints(event.type) } }
             })
             await log({
                 actorId: req.userId, action: 'checked_in', targetId: decoded.id, points: eventPoints(event.type),
-                details: { kind: 'event', id: eventId, title: event.title, by: 'qr' }
+                details: { kind: 'event', id: eventId, title: event.title, by: 'qr', ...(existing ? {} : { walkIn: true }) }
             }, tx)
-            return row
+            return { row }
         })
-        res.json({ code: 'CHECKED_IN', message: `Checked in (+${eventPoints(event.type)} points)`, attendance })
+        if (attendance.waitlisted) { return walkInWaitlisted(res, event, attendance.waitlisted) }
+        res.json({ code: 'CHECKED_IN', message: `Checked in (+${eventPoints(event.type)} points)`, attendance: attendance.row, walkIn: !existing })
     } catch (err) {
         if (err.code === 'P2003') { return res.status(404).json({ message: 'Event or member not found' }) }
         // the treasurer marked them paid while the popup was up — scan again

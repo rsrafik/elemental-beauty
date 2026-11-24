@@ -14,6 +14,7 @@ import { readImage } from '../images.js'
 import { memo, SHARED_MS } from '../memo.js'
 import { seatCounts, standings } from '../seats.js'
 import { readEndTime } from '../clubTime.js'
+import { walkInRoom, waitlistWalkIn, walkInWaitlisted } from '../walkIns.js'
 import { DUES_ANSWERS, duesAnswerProblem, duesLookup, doorOwed, duesUnpaid, readPaidBy, readPrice, settleDues } from '../dues.js'
 
 const router = express.Router()
@@ -1019,10 +1020,11 @@ router.delete('/:labId/rsvp', async (req, res) => {
     }
 })
 
-// Officer scans a member's QR. RSVP'd → checked in. Not RSVP'd → waitlisted,
-// with a distinct code so the scanner UI can show it. Waitlisted members are
-// moved up from the check-in page's waitlist column (roster.js 'admit'), not
-// by re-scanning.
+// Officer scans a member's QR. RSVP'd → checked in. Not signed up at all (a
+// walk-in) → checked in only while check-in is open, a seat's free and nobody's
+// on the waitlist; otherwise to the back of the waitlist (src/walkIns.js).
+// Waitlisted members are moved up from the check-in page's waitlist column
+// (roster.js 'admit'), not by re-scanning.
 //
 // Dues: someone who hasn't paid for the lab's school year isn't checked in —
 // the reply is DUES_UNPAID and the page asks the officer what to do. Their
@@ -1049,63 +1051,70 @@ router.post('/:labId/checkin', requireRole('officer'), requireNotAttendee('labId
     }
 
     try {
-        const lab = await prisma.lab.findUnique({ where: { labId }, select: { title: true, date: true, nonmemberPrice: true } })
+        const lab = await prisma.lab.findUnique({ where: { labId }, select: PARENT_SELECT.lab })
         if (!lab) { return res.status(404).json({ message: 'Lab not found' }) }
         const existing = await prisma.memberLab.findUnique({
             where: { memberId_labId: { memberId: decoded.id, labId } }
         })
 
-        if (!existing) {
-            // walk-in with no RSVP → waitlist, timestamped for oldest-first admission
-            const waitlisted = await prisma.memberLab.create({
-                data: {
-                    memberId: decoded.id,
-                    labId,
-                    attendanceStatus: 'waitlisted',
-                    waitlistedAt: new Date()
-                }
+        // walk-in with no row: the back of the waitlist unless there's room
+        // for them ahead of it (and asked about dues first if there is)
+        if (!existing && !(await walkInRoom(prisma, 'lab', labId, lab))) {
+            const waitlisted = await prisma.$transaction(async (tx) => {
+                await lockParent(tx, 'lab', labId)
+                return waitlistWalkIn(tx, 'lab', labId, decoded.id)
             })
-            return res.status(202).json({
-                code: 'WAITLISTED',
-                message: 'No RSVP found, so they were added to the waitlist',
-                attendance: waitlisted
-            })
+            return walkInWaitlisted(res, lab, waitlisted)
         }
 
-        if (existing.attendanceStatus === 'attended') {
+        if (existing?.attendanceStatus === 'attended') {
             return res.json({ code: 'ALREADY_CHECKED_IN', message: 'Already checked in' })
         }
-        if (existing.attendanceStatus === 'waitlisted') {
+        if (existing?.attendanceStatus === 'waitlisted') {
             return res.status(202).json({ code: 'ALREADY_WAITLISTED', message: 'Still on the waitlist' })
         }
 
         // owes dues for the lab's year (today's, for one with no date)?
-        const owed = await doorOwed(prisma, existing, lab.date?.toISOString().slice(0, 10), lab.nonmemberPrice)
+        const owed = await doorOwed(prisma, existing ?? { memberId: decoded.id }, lab.date?.toISOString().slice(0, 10), lab.nonmemberPrice)
         if (owed && !dues) { return duesUnpaid(res, decoded.id, owed) }
         const problem = owed && duesAnswerProblem(owed, dues)
         if (problem) { return res.status(400).json({ message: problem }) }
 
-        // rsvped → attended; lab points awarded atomically with the transition
-        // (only this transition earns — rescans hit the guards above)
+        // rsvped (or a walk-in let in) → attended; lab points awarded
+        // atomically with the transition (only this transition earns —
+        // rescans hit the guards above)
         const attendance = await prisma.$transaction(async (tx) => {
+            if (!existing) {
+                // the room's looked at again under the lock: the last seat may
+                // have gone (or someone joined the waitlist) since
+                await lockParent(tx, 'lab', labId)
+                if (!(await walkInRoom(tx, 'lab', labId, lab))) {
+                    return { waitlisted: await waitlistWalkIn(tx, 'lab', labId, decoded.id) }
+                }
+            }
             const door = owed
                 ? await settleDues(tx, { owed, dues, memberId: decoded.id, actorId: req.userId, item: { kind: 'lab', id: labId, title: lab.title }, paidBy: readPaidBy(req.body) })
                 : null
-            const row = await tx.memberLab.update({
-                where: { memberId_labId: { memberId: decoded.id, labId } },
-                data: { attendanceStatus: 'attended', offerSentAt: null, ...(door ?? {}) }
-            })
+            const row = existing
+                ? await tx.memberLab.update({
+                    where: { memberId_labId: { memberId: decoded.id, labId } },
+                    data: { attendanceStatus: 'attended', offerSentAt: null, ...(door ?? {}) }
+                })
+                : await tx.memberLab.create({
+                    data: { memberId: decoded.id, labId, attendanceStatus: 'attended', ...(door ?? {}) }
+                })
             await tx.member.update({
                 where: { userId: decoded.id },
                 data: { points: { increment: POINTS.lab } }
             })
             await log({
                 actorId: req.userId, action: 'checked_in', targetId: decoded.id, points: POINTS.lab,
-                details: { kind: 'lab', id: labId, title: lab.title, by: 'qr' }
+                details: { kind: 'lab', id: labId, title: lab.title, by: 'qr', ...(existing ? {} : { walkIn: true }) }
             }, tx)
-            return row
+            return { row }
         })
-        res.json({ code: 'CHECKED_IN', message: `Checked in (+${POINTS.lab} points)`, attendance })
+        if (attendance.waitlisted) { return walkInWaitlisted(res, lab, attendance.waitlisted) }
+        res.json({ code: 'CHECKED_IN', message: `Checked in (+${POINTS.lab} points)`, attendance: attendance.row, walkIn: !existing })
     } catch (err) {
         if (err.code === 'P2003') { return res.status(404).json({ message: 'Lab or member not found' }) }
         // the treasurer marked them paid while the popup was up — scan again
