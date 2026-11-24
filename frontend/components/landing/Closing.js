@@ -2,6 +2,7 @@
 
 import { useState } from 'react'
 import Link from 'next/link'
+import { useSignedIn } from '@/lib/session'
 import { Arrow } from './Hero'
 import { CLUB, SPONSORS } from './content'
 import { useLandingContent } from './live'
@@ -308,6 +309,7 @@ function Pill({ sponsor, hidden }) {
 
 // The footer: a line about who made this, the links, and the small print.
 export function Footer() {
+	const signedIn = useSignedIn()
 	const links = [
 		['Instagram', CLUB.instagram],
 		['Discord', CLUB.discord],
@@ -374,7 +376,9 @@ export function Footer() {
 					lg:col-span-1
 				">
 					<li>
-						<Link href="/login" className="lp-underline">Sign in</Link>
+						<Link href={signedIn ? '/dashboard' : '/login'} className="lp-underline">
+							{signedIn ? 'Dashboard' : 'Sign in'}
+						</Link>
 					</li>
 					<li>
 						<Link href="/privacy" className="lp-underline">Privacy</Link>

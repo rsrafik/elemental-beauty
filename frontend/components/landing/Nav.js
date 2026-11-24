@@ -4,6 +4,7 @@ import { useCallback, useEffect, useRef, useState } from 'react'
 import Link from 'next/link'
 import gsap from 'gsap'
 import { ScrollToPlugin } from 'gsap/ScrollToPlugin'
+import { useSignedIn } from '@/lib/session'
 import { NAV } from './content'
 
 // The navigation: a bead of liquid glass.
@@ -26,6 +27,7 @@ export default function Nav() {
 	const [open, setOpen] = useState(false)
 	const [active, setActive] = useState(null)
 	const linksRef = useRef(null)
+	const signedIn = useSignedIn()
 
 	// Put the lens under a link, or put it away.
 	const aim = useCallback((link) => {
@@ -212,7 +214,7 @@ export default function Nav() {
 				</div>
 
 				<Link
-					href="/login"
+					href={signedIn ? '/dashboard' : '/login'}
 					className="
 						flex-none
 						rounded-full
@@ -231,7 +233,7 @@ export default function Nav() {
 						active:scale-95
 					"
 				>
-					sign in
+					{signedIn ? 'dashboard' : 'sign in'}
 				</Link>
 
 				<button

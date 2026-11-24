@@ -12,7 +12,7 @@
 // asks GET /api/auth/me once, and draws itself from the answer. That's what
 // `<Gate>` at the bottom of this file is for.
 
-import { createContext, useCallback, useContext, useEffect, useMemo, useState } from 'react'
+import { createContext, useCallback, useContext, useEffect, useMemo, useState, useSyncExternalStore } from 'react'
 import { useRouter } from 'next/navigation'
 import { auth, getToken, setToken } from '@/lib/api'
 
@@ -149,6 +149,24 @@ export function useSignOut() {
 		logout()
 		router.replace('/login')
 	}, [logout, router])
+}
+
+// Whether the landing page should offer "dashboard" instead of "sign in".
+// Linking a signed-in visitor to /login works (it bounces them on), but the
+// login panels paint for a frame first. Pointing the link straight at
+// /dashboard skips that.
+//
+// While the session is still being asked for, a stored token stands in for the
+// answer, so the label doesn't start as "sign in" and flip a beat later. An
+// expired token can show "dashboard" for that beat; following it just lands on
+// /login through the dashboard's own gate. The server snapshot is false so the
+// prerendered page and the first client render agree.
+const noSubscribe = () => () => {}
+
+export function useSignedIn() {
+	const { user, loading } = useSession()
+	const hasToken = useSyncExternalStore(noSubscribe, () => Boolean(getToken()), () => false)
+	return loading ? hasToken : Boolean(user)
 }
 
 // The person, in the shape the pages already expect: `id`, `first`, `last`.
