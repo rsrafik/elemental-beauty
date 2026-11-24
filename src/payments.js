@@ -1,5 +1,4 @@
 import prisma from './prismaClient.js'
-import { memo } from './memo.js'
 import { sendEmail } from './email.js'
 import { actionEmail } from './emailTemplate.js'
 import { paragraphs } from './emailAll.js'
@@ -722,14 +721,6 @@ export async function notifyDoorUndone({ memberId, kindName, id, title }) {
     })
 }
 
-// A data URL -> an email attachment
-function attachment(dataUrl, name) {
-    const match = /^data:([^;]+);base64,(.+)$/.exec(dataUrl ?? '')
-    if (!match) return null
-    const ext = match[1].split('/')[1]?.replace('jpeg', 'jpg') ?? 'png'
-    return { filename: `${name.replace(/[^\w -]+/g, '').trim() || 'qr'}.${ext}`, content: Buffer.from(match[2], 'base64'), contentType: match[1] }
-}
-
 // The check-in page's "email unpaid", and the daily reminders: a reminder to
 // each of `people` ({ email, firstName, confirmBy, payBy, offerBy }) signed up
 // for `item` ({ kind, id, title, date, startTime, paymentDueOverride,
@@ -737,21 +728,21 @@ function attachment(dataUrl, name) {
 // before, 11:59 PM, or the one an officer set in its place; their
 // confirmation deadline if that's sooner, or the 48 hours they were
 // given owing late) or their spot may go to the waitlist — with every accepted
-// payment's QR code attached (with "no due date" on, just a nudge to pay
-// before they come). `offered` is for people holding an offer of a
+// payment's QR code on its page, which the button goes to (with "no due
+// date" on, just a nudge to pay before they come). `offered` is for people holding an offer of a
 // spot instead: it's theirs once they pay, by when the offer lapses
 // (`offerBy`) or else before it starts. `custom` is an officer's own
 // { subject, message } from the check-in page (see unpaidDraft below and
 // src/emailDrafts.js), in place of the usual words. Returns how many went out
 // (or were printed, with no mail service).
 export async function remindUnpaid(item, people, { offered = false, custom = null } = {}) {
-    const { attachments, ways, url, amounts } = await unpaidParts(item)
+    const { url, amounts } = await unpaidParts(item)
 
     let sent = 0
     for (const person of people) {
         if (!person.email) continue
         if (offered) {
-            await sendEmail({ to: person.email, attachments, ...offerReminder(item, person, { amounts, ways, url }) })
+            await sendEmail({ to: person.email, ...offerReminder(item, person, { amounts, url }) })
             sent++
             continue
         }
@@ -766,13 +757,12 @@ export async function remindUnpaid(item, people, { offered = false, custom = nul
             subject: custom
                 ? fillDraft(custom.subject, values)
                 : overdue ? `Reminder: pay for ${item.title}` : `Reminder: pay for ${item.title} ${due ? `by ${dueText(due)}` : 'before you come'}`,
-            attachments,
             ...actionEmail({
                 heading: `Pay for ${item.title} before you come`,
                 callout: dueCallout(item, person),
                 lines: custom
                     ? paragraphs(fillDraft(custom.message, values))
-                    : unpaidLines(item, { amounts, ways, firstName: person.firstName, overdue, dueAt: due, when }),
+                    : unpaidLines(item, { amounts, firstName: person.firstName, overdue, dueAt: due, when }),
                 button: { label: 'Send your payment', url },
                 reason: 'You’re getting this because you’re signed up for it on Elemental Beauty.'
             })
@@ -782,14 +772,11 @@ export async function remindUnpaid(item, people, { offered = false, custom = nul
     return sent
 }
 
-// What every "email unpaid" shares: the accepted payments' QR codes (the one
-// place they're read whole outside GET /api/img), the list of them, the page
-// to pay on and what's owed.
-async function unpaidParts(item) {
-    const methods = await memo('methods:full', 60_000, () => prisma.paymentMethod.findMany({ orderBy: { methodId: 'asc' }, omit: { image: false } }))
+// What every "email unpaid" shares: the page to pay on — every way to pay
+// and its QR code are there, so the email doesn't carry them — and what's
+// owed.
+function unpaidParts(item) {
     return {
-        attachments: methods.map((method) => attachment(method.image, method.title)).filter(Boolean),
-        ways: methods.map((method) => `• ${method.title}${method.description ? `: ${method.description}` : ''}`),
         url: `${APP_URL}${ITEMS[item.kind].page(item.id)}`,
         amounts: [
             item.price > 0 && `${money(item.price)} for ${item.title}`,
@@ -800,31 +787,28 @@ async function unpaidParts(item) {
 
 // The reminder's paragraphs. `when` is how their due date reads in a
 // sentence ("a week before it starts, by …"), or null for none.
-function unpaidLines(item, { amounts, ways, firstName, overdue, dueAt, when }) {
+function unpaidLines(item, { amounts, firstName, overdue, dueAt, when }) {
+    const owed = `That’s ${amounts.join(', or ')}.`
     return [
         `Hi${firstName ? ` ${firstName}` : ''}, you’re signed up for ${item.title} on ${dayText(item.date)}, but we haven’t got a payment from you yet. Your spot can only be confirmed once you pay.`,
         item.noPaymentDue
             // "no due date": nothing to miss, so no spot to lose — a nudge
-            ? `Please pay ${amounts.join(', or ')} before you come.`
+            ? `Please pay before you come. ${owed}`
             : overdue
-                ? `Payment was due ${dueText(dueAt)}. Please pay ${amounts.join(', or ')} now to keep your spot. If someone on the waitlist needs it, it may go to them.`
-                : `Please pay ${amounts.join(', or ')}${when ? ` ${when}` : ''}. If you don’t, your spot may go to someone on the waitlist.`,
+                ? `Payment was due ${dueText(dueAt)}. Please pay now to keep your spot. ${owed} If someone on the waitlist needs your spot, it may go to them.`
+                : `Please pay ${when ?? 'before you come'}. ${owed} If you don’t, your spot may go to someone on the waitlist.`,
         'Payments aren’t refunded if you can’t make it, because we buy your materials ahead of time.',
-        ...(ways.length
-            // one paragraph, a line each, so it stays one block in the editor too
-            ? [['You can pay with any of these. Their QR codes are attached:', ...ways].join('\n')]
-            : []),
-        'Then tell us on the page below: pick how you paid and type the transaction id your app gave you.'
+        `Pay from ${item.title}’s page on the site: the button below takes you there, with every way to pay and its QR code. Once you’ve paid, pick how you paid and type in the transaction id your app gave you.`
     ]
 }
 
 // "email unpaid" as it'd go out, for the check-in page to open with: the
 // usual reminder, with its placeholders where each person's name and due
-// date go (src/emailDrafts.js). The heading, due-date callout, button and QR
-// codes aren't in it — they go out as they are.
+// date go (src/emailDrafts.js). The heading, due-date callout and button
+// aren't in it — they go out as they are.
 export async function unpaidDraft(item) {
-    const { ways, amounts } = await unpaidParts(item)
-    const lines = unpaidLines(item, { amounts, ways, firstName: '{first name}', overdue: false, when: 'by {due date}' })
+    const { amounts } = unpaidParts(item)
+    const lines = unpaidLines(item, { amounts, firstName: '{first name}', overdue: false, when: 'by {due date}' })
     return {
         subject: item.noPaymentDue ? `Reminder: pay for ${item.title} before you come` : `Reminder: pay for ${item.title} by {due date}`,
         message: lines.join('\n\n')
@@ -832,7 +816,7 @@ export async function unpaidDraft(item) {
 }
 
 // remindUnpaid's email for someone holding an offer they'd pay for
-function offerReminder(item, person, { amounts, ways, url }) {
+function offerReminder(item, person, { amounts, url }) {
     const by = person.offerBy ?? startsAt(item)
     return {
         subject: `A spot in ${item.title} is waiting: pay to take it`,
@@ -846,10 +830,7 @@ function offerReminder(item, person, { amounts, ways, url }) {
                     ? `Please pay by ${dueText(by)}. After that the spot may go to the next person on the waitlist, and you’ll move to the back of it.`
                     : 'Please pay before it starts, or the spot may go to someone else.',
                 'Payments aren’t refunded if you can’t make it, because we buy your materials ahead of time.',
-                ...(ways.length
-                    ? ['You can pay with any of these. Their QR codes are attached:', ...ways]
-                    : []),
-                'Then tell us on the page below: pick how you paid and type the transaction id your app gave you.'
+                `Pay from ${item.title}’s page on the site: the button below takes you there, with every way to pay and its QR code. Once you’ve paid, pick how you paid and type in the transaction id your app gave you.`
             ],
             button: { label: 'Pay to accept my spot', url },
             reason: 'You’re getting this because you were offered a spot off its waitlist on Elemental Beauty.'

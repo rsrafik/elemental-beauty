@@ -7,8 +7,9 @@ import { EmailDraftFields, useEmailDraft } from '@/components/EmailDraft'
 
 // The check-in page's "email unpaid": everyone with a green $ who hasn't sent
 // a payment in is reminded to pay by its payment due date, with every
-// accepted payment's QR code attached (remindUnpaid in src/payments.js). It
-// opens with the usual reminder written in, for the officer to change first.
+// accepted payment's QR code on the page its button goes to (remindUnpaid in
+// src/payments.js). It opens with the usual reminder written in, for the
+// officer to change first.
 //
 //   count      how many it'll go to
 //   intro      the line at the top, saying what they're reminded of
@@ -53,7 +54,7 @@ export default function UnpaidPopup({ count, intro, loadDraft, onSend, lastSent,
 					<EmailDraftFields
 						draft={draft}
 						placeholders={['{first name}', '{due date}']}
-						note="Their payment due date, a pay button and the QR codes go along as usual."
+						note="Their payment due date and a button to the page they pay on go along as usual."
 					/>
 
 					{status && (

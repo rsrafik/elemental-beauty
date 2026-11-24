@@ -1698,7 +1698,7 @@ export default function CheckInView({ kind, id }) {
 					intro={<>
 						{`The ${unpaid} ${unpaid === 1 ? 'person' : 'people'} with a green $ get a reminder to pay`}
 						{item.nonmemberPrice > 0 ? ` the ${priceText(item.nonmemberPrice)} entry` : ''}
-						{' '}(or their VIP dues) by {item.title}’s payment due date, or their spot may go to someone on the waitlist. Every accepted payment’s QR code is attached.
+						{' '}(or their VIP dues) by {item.title}’s payment due date, or their spot may go to someone on the waitlist. The email’s button takes them to its page to pay.
 					</>}
 					loadDraft={() => api.unpaidDraft(id)}
 					lastSent={lastSent?.unpaid_reminder}

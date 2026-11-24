@@ -59,7 +59,7 @@ import { PAYMENT_INCLUDE, enforcePaymentRules, keepsBooks, notifyDoorUndone, not
 //   POST /:id/remind-unpaid  { subject?, message? } — the page's "email
 //                        unpaid": everyone signed up who owes for it and
 //                        hasn't sent a payment in is reminded to pay by the
-//                        day, with the QR codes attached
+//                        day, with a button to its page to pay
 //   GET  /:id/remind-unpaid/draft  that reminder's { subject, message } as it
 //                        goes out by default, for the popup to open with
 //   POST /:id/confirm-all  { deadline, subject?, message? } — the page's
