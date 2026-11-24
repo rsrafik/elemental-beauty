@@ -659,7 +659,10 @@ model Grant {
   grantId         Int         @id @default(autoincrement()) @map("grant_id")
   name            String
   org             String
-  amountRequested Decimal     @map("amount_requested") @db.Decimal(10, 2)
+  // Blank only while it's being drafted: a draft can go on the tracker for its
+  // deadline before anyone knows what to ask for. Anything past drafting has
+  // to say (chk_grants_amount_past_drafting).
+  amountRequested Decimal?    @map("amount_requested") @db.Decimal(10, 2)
   // What was actually granted, which is often not what was asked for. Only
   // an awarded grant has one; the tracker's "remaining" is counted from it.
   amountAwarded   Decimal?    @map("amount_awarded") @db.Decimal(10, 2)

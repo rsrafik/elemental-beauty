@@ -1720,6 +1720,8 @@ export function SummaryCard({ title, categories, totals, total, goal, goalNote, 
 // the books' grants tab: what was granted, with what was asked for struck
 // through beside it when the two differ; what was asked for until then.
 export function GrantAmount({ grant }) {
+	// a draft that hasn't settled on a figure yet
+	if (grant.amount == null) return <span className="font-normal text-black/40">tbd</span>
 	return grant.status === 'awarded' && grant.awarded != null && grant.awarded !== grant.amount
 		? <>
 			{money(grant.awarded, false)}
@@ -1735,11 +1737,11 @@ export function GrantTracker({ grants, onEdit, onAdd }) {
 
 	// what was granted, not what was asked for — the two are rarely the same
 	const awarded = sum(grants.filter((grant) => grant.status === 'awarded').map(grantValue))
-	const requested = sum(grants.map((grant) => grant.amount))
+	const requested = sum(grants.map((grant) => grant.amount ?? 0))
 	const waiting = sum(
 		grants
 			.filter((grant) => grant.status === 'under_review' || grant.status === 'drafting')
-			.map((grant) => grant.amount)
+			.map((grant) => grant.amount ?? 0)
 	)
 
 	const Row = onEdit ? 'button' : 'div'
