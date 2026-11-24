@@ -12,6 +12,7 @@ import { INSET, EditorButton, IconLabel, UploadIcon, fieldClass } from '@/compon
 import DateTimeField from '@/components/labs/DateTimeField'
 import EmailAllPopup from '@/components/EmailAllPopup'
 import ConfirmationPopup from '@/components/ConfirmationPopup'
+import UnpaidPopup from '@/components/checkin/UnpaidPopup'
 import LastSent from '@/components/LastSent'
 import DuesPopup from '@/components/checkin/DuesPopup'
 import { FeedbackControls } from '@/components/feedback/Feedback'
@@ -1118,16 +1119,14 @@ export default function CheckInView({ kind, id }) {
 	const unpaid = waiting.filter((row) =>
 		(row.status === 'rsvped' || row.status === 'offered') && row.owesDues && !row.paymentPending).length
 
-	const remind = async () => {
+	// the popup shows what went wrong itself, so a refusal is thrown back to it
+	const remind = async (custom) => {
 		setError(null)
 		setNotice(null)
-		try {
-			const reply = await api.remindUnpaid(id)
-			setNotice(reply.message)
-			readLastSent()
-		} catch (err) {
-			setError(err.message)
-		}
+		const reply = await api.remindUnpaid(id, custom)
+		setNotice(reply.message)
+		readLastSent()
+		return reply
 	}
 
 	const undoEntry = async (row) => {
@@ -1694,37 +1693,18 @@ export default function CheckInView({ kind, id }) {
 				</Popup>
 			)}
 			{reminding && item && (
-				<Popup title="email unpaid" onClose={() => setReminding(false)}>
-					{(dismiss) => (
-						<>
-							<p className="
-								mt-3
-								font-vietnam
-								text-sm
-								text-black/70
-							">
-								{`The ${unpaid} ${unpaid === 1 ? 'person' : 'people'} with a green $ get a reminder to pay`}
-								{item.nonmemberPrice > 0 ? ` the ${priceText(item.nonmemberPrice)} entry` : ''}
-								{' '}(or their VIP dues) by {item.title}’s payment due date, or their spot may go to someone on the waitlist. Every accepted payment’s QR code is attached.
-							</p>
-							<div className="
-								mt-8
-								flex
-								justify-end
-								gap-3
-							">
-								<PopupButton onClick={() => dismiss(() => setReminding(false))}>cancel</PopupButton>
-								<PopupButton primary onClick={() => dismiss(() => {
-									setReminding(false)
-									remind()
-								})}>
-									send them
-								</PopupButton>
-							</div>
-							<LastSent last={lastSent?.unpaid_reminder} />
-						</>
-					)}
-				</Popup>
+				<UnpaidPopup
+					count={unpaid}
+					intro={<>
+						{`The ${unpaid} ${unpaid === 1 ? 'person' : 'people'} with a green $ get a reminder to pay`}
+						{item.nonmemberPrice > 0 ? ` the ${priceText(item.nonmemberPrice)} entry` : ''}
+						{' '}(or their VIP dues) by {item.title}’s payment due date, or their spot may go to someone on the waitlist. Every accepted payment’s QR code is attached.
+					</>}
+					loadDraft={() => api.unpaidDraft(id)}
+					lastSent={lastSent?.unpaid_reminder}
+					onSend={remind}
+					onClose={() => setReminding(false)}
+				/>
 			)}
 			{confirming && item && (
 				<ConfirmationPopup
@@ -1733,8 +1713,9 @@ export default function CheckInView({ kind, id }) {
 					prelab={kind === 'lab' ? item.prelabPdfName : null}
 					startsAt={startsAt(item)}
 					lastSent={lastSent?.confirmation}
-					onSend={async (deadline) => {
-						const reply = await api.confirmAll(id, deadline)
+					loadDraft={() => api.confirmDraft(id)}
+					onSend={async (deadline, custom) => {
+						const reply = await api.confirmAll(id, deadline, custom)
 						await loadRoster()
 						readLastSent()
 						return reply
